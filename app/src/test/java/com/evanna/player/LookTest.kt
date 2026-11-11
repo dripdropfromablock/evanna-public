@@ -1,0 +1,112 @@
+package com.evanna.player
+
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.toArgb
+import com.evanna.player.ui.MENU_SURFACE_ALPHA
+import org.junit.Assert.*
+import org.junit.Test
+
+class LookTest {
+    @Test fun animationSpeedDefaultsToMediumAndRespectsAndroidMotionScale() {
+        assertEquals(AnimationSpeed.MEDIUM, storedAnimationSpeed(null))
+        assertEquals(AnimationSpeed.MEDIUM, storedAnimationSpeed("unknown"))
+        assertEquals(AnimationSpeed.FAST, storedAnimationSpeed("FAST"))
+        val motion = AppMotionScale()
+        assertEquals(1f, motion.scaleFactor, 0f)
+        motion.systemScale = 2f
+        motion.speed = AnimationSpeed.SLOW
+        assertEquals(3f, motion.scaleFactor, 0f)
+        motion.speed = AnimationSpeed.FAST
+        assertEquals(4f / 3f, motion.scaleFactor, 0f)
+        motion.systemScale = 0f
+        assertEquals(0f, motion.scaleFactor, 0f)
+    }
+
+    @Test fun everyLookStartsMonochrome() {
+        for (look in EvannaLook.entries) {
+            val c = look.colors
+            val roles = listOf(c.primary, c.onPrimary, c.primaryContainer, c.onPrimaryContainer, c.secondaryContainer,
+                c.onSecondaryContainer, c.background, c.onBackground, c.surface, c.onSurface, c.onSurfaceVariant,
+                c.surfaceContainerLow, c.surfaceContainer, c.surfaceContainerHigh, c.surfaceContainerHighest, c.outline, c.outlineVariant, c.error)
+            for (color in roles) assertTrue("$look contains $color", color.red == color.green && color.green == color.blue)
+        }
+    }
+
+    @Test fun artworkPicksAColorFromTheDominantHueFamily() {
+        val blue = 0xFF2463C3.toInt()
+        val orange = 0xFFDB6021.toInt()
+        val pixels = IntArray(100) { when (it) {
+            in 0..44 -> blue
+            in 45..59 -> orange
+            else -> 0xFFB0B0B0.toInt()
+        } }
+        assertEquals(Color(blue), artworkAccent(pixels))
+        assertNull(artworkAccent(intArrayOf(0xFF202020.toInt(), 0xFFEEEEEE.toInt(), 0x0077FF55)))
+        assertNull(artworkAccent(intArrayOf()))
+    }
+
+    @Test fun artworkChangesBothTheAccentAndSurfacesInEveryLook() {
+        for (look in EvannaLook.entries) {
+            val warm = look.colors.withArtwork(Color(0xFFCB5525), look.dark, look.apple)
+            val cool = look.colors.withArtwork(Color(0xFF1550AD), look.dark, look.apple)
+            assertTrue(warm.primary.red > warm.primary.blue)
+            assertTrue(cool.primary.blue > cool.primary.red)
+            assertNotEquals(warm.surfaceContainer, cool.surfaceContainer)
+            assertEquals(look.colors.background, cool.background)
+            assertEquals(look.colors, look.colors.withArtwork(null, look.dark, look.apple))
+        }
+    }
+
+    @Test fun everyLookKeepsTheContrastFloorWithAndWithoutArtwork() {
+        val seeds = (0 until 360 step 15).flatMap { hue ->
+            listOf(Color.hsv(hue.toFloat(), 1f, 1f), Color.hsv(hue.toFloat(), 0.7f, 0.25f))
+        } + listOf(Color.Black, Color.White)
+        for (look in EvannaLook.entries) {
+            assertTextContrast(look, look.colors)
+            for (seed in seeds) {
+                val colors = look.colors.withArtwork(seed, look.dark, look.apple)
+                assertTextContrast(look, colors)
+                val artwork = if (look.dark) Color.White else Color.Black
+                val menu = colors.surfaceContainerHigh.copy(alpha = MENU_SURFACE_ALPHA).compositeOver(artwork)
+                assertTrue("$look $seed muted menu text over artwork",
+                    contrastRatio(colors.onSurfaceVariant.toArgb(), menu.toArgb()) >= 4.5)
+                val player = playerColorScheme(look, seed)
+                assertTrue("$look $seed on artwork backdrop",
+                    contrastRatio(player.primary.toArgb(), 0xFF4B4B4B.toInt()) >= 4.5)
+            }
+        }
+    }
+
+    private fun assertTextContrast(look: EvannaLook, c: EvannaPalette) {
+        val pairs = listOf(
+            "onBackground/background" to (c.onBackground to c.background),
+            "onSurface/surfaceContainer" to (c.onSurface to c.surfaceContainer),
+            "onSurface/surfaceContainerHigh" to (c.onSurface to c.surfaceContainerHigh),
+            "onSurfaceVariant/background" to (c.onSurfaceVariant to c.background),
+            "onSurfaceVariant/surfaceContainer" to (c.onSurfaceVariant to c.surfaceContainer),
+            "onSurfaceVariant/surfaceContainerHigh" to (c.onSurfaceVariant to c.surfaceContainerHigh),
+            "onSurfaceVariant/surfaceContainerHighest" to (c.onSurfaceVariant to c.surfaceContainerHighest),
+            "primary/background" to (c.primary to c.background),
+            "primary/surfaceContainer" to (c.primary to c.surfaceContainer),
+            "primary/surfaceContainerHighest" to (c.primary to c.surfaceContainerHighest),
+            "onPrimary/primary" to (c.onPrimary to c.primary),
+            "onPrimaryContainer/primaryContainer" to (c.onPrimaryContainer to c.primaryContainer),
+            "onSecondaryContainer/secondaryContainer" to (c.onSecondaryContainer to c.secondaryContainer)) +
+            if (look == EvannaLook.APPLE_LIGHT) listOf("primary/grouped" to (c.primary to LightGroupedBackground),
+                "onSurfaceVariant/grouped" to (c.onSurfaceVariant to LightGroupedBackground)) else emptyList()
+        for ((name, pair) in pairs) {
+            val ratio = contrastRatio(pair.first.compositeOver(pair.second).toArgb(), pair.second.toArgb())
+            assertTrue("$look $name is ${"%.2f".format(ratio)}", ratio >= 4.5)
+        }
+    }
+    @Test fun lightAndDarkFlagsMatchTheBackgrounds() {
+        for (look in EvannaLook.entries)
+            assertEquals(look.name, look.dark, relativeLuminance(look.colors.background.toArgb()) < 0.2)
+        assertEquals(Color.Black, EvannaLook.APPLE_DARK.colors.background)
+    }
+    @Test fun unknownOrMissingStoredLooksFallBackToEvanna() {
+        assertEquals(EvannaLook.APPLE_LIGHT, storedLook("APPLE_LIGHT"))
+        for (value in listOf(null, "", "apple_light", 3)) assertEquals(EvannaLook.EVANNA, storedLook(value))
+    }
+}

@@ -1,0 +1,22 @@
+/.tools/
+/.gradle/
+**/build/
+**/.cxx/
+/.kotlin/
+local.properties
+/.idea/
+*.iml
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+
+# Rebuildable local code maps and caches.
+/graphify-out/
+
+# Local credentials, signing material and generated logs.
+.env
+.env.*
+*.p12
+*.pfx
+*.log

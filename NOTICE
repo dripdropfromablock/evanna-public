@@ -1,0 +1,12 @@
+Evanna
+Copyright (C) 2026 Evanna contributors
+
+Original Evanna application code and project materials are licensed under
+GPL-3.0-only unless a file states otherwise. See LICENSE.
+
+The usbaudio module, third_party directory, Gradle wrapper and other
+third-party files retain their existing licences and copyright notices.
+See THIRD_PARTY.md and app/src/main/assets/third-party-notices.txt.
+
+Music, artwork and correction files selected by users retain their
+respective owners' rights and are outside Evanna's project licence.

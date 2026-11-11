@@ -1,0 +1,17 @@
+[extend]
+useDefault = true
+
+# Both matches are C function syntax in the unchanged, checksum-pinned FFmpeg source.
+[[allowlists]]
+description = "FFmpeg hsvkey function selection is not an API key"
+condition = "AND"
+paths = ['''third_party/ffmpeg/ffmpeg-9\.0\.2\.tar\.xz!ffmpeg-9\.0\.2/libavfilter/vf_hsvkey\.c$''']
+regexTarget = "line"
+regexes = ['''^\s*s->do_slice = s->depth <= 8 \? do_hsvkey_slice : do_hsvkey16_slice;\s*$''']
+
+[[allowlists]]
+description = "FFmpeg GnuTLS function parameters are not private key material"
+condition = "AND"
+paths = ['''third_party/ffmpeg/ffmpeg-9\.0\.2\.tar\.xz!ffmpeg-9\.0\.2/libavformat/tls_gnutls\.c$''']
+regexTarget = "line"
+regexes = ['''^\s*static int gnutls_gen_certificate\(gnutls_x509_privkey_t key, gnutls_x509_crt_t \*crt, char \*\*fingerprint\)\s*$''']

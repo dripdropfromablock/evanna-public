@@ -1,0 +1,13 @@
+PERFORMER "Evanna"
+TITLE "CUE fixture"
+FILE "album.flac" WAVE
+  TRACK 01 AUDIO
+    TITLE "One"
+    INDEX 01 00:00:00
+  TRACK 02 AUDIO
+    TITLE "Two"
+    INDEX 00 00:00:70
+    INDEX 01 00:01:05
+  TRACK 03 AUDIO
+    TITLE "Three"
+    INDEX 01 00:02:13

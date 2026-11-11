@@ -1,0 +1,403 @@
+package com.evanna.player.equalizer
+
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import com.evanna.player.EvannaDesign
+import com.evanna.player.ui.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import com.evanna.player.EvannaLook
+import com.evanna.player.EvannaMotion
+import com.evanna.player.LocalLookStyle
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.ln
+import kotlin.math.log10
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.roundToInt
+
+/**
+ * The EQ screen's colors, read from the mockup's CSS (`mockups/looks.html`) for each look.
+ * [fill] is the accent under text (Apple's darker red keeps white text at 4.5:1); [accent] draws lines, arcs and thumbs.
+ */
+internal class EqPalette(val card: Color, val chip: Color, val track: Color, val line: Color,
+    val accent: Color, val fill: Color, val onFill: Color, val accentSoft: Color, val grid: Color, val zero: Color,
+    val text: Color, val muted: Color, val tonal: Color, val onTonal: Color, val segment: Color, val whiteThumbs: Boolean)
+
+@Composable
+internal fun eqPalette(): EqPalette {
+    val c = EvannaDesign.colorScheme
+    return when (LocalLookStyle.current.look) {
+        EvannaLook.EVANNA -> EqPalette(card = c.surfaceContainer, chip = c.surfaceContainerHigh, track = c.surfaceContainerHighest,
+            line = c.outlineVariant, accent = c.primary, fill = c.primary,
+            onFill = c.onPrimary, accentSoft = c.primary.copy(alpha = 0.16f), grid = c.onSurface.copy(alpha = 0.10f), zero = c.onSurface.copy(alpha = 0.30f),
+            text = c.onSurface, muted = c.onSurfaceVariant, tonal = c.secondaryContainer, onTonal = c.onSecondaryContainer,
+            segment = Color.Transparent, whiteThumbs = false)
+        EvannaLook.APPLE_DARK -> EqPalette(card = c.surfaceContainer, chip = c.surfaceContainerHigh, track = c.surfaceContainerHighest,
+            line = Color.Transparent, accent = c.primary, fill = c.secondaryContainer, onFill = c.onSecondaryContainer,
+            accentSoft = c.primary.copy(alpha = 0.18f), grid = c.onSurface.copy(alpha = 0.08f), zero = c.onSurface.copy(alpha = 0.26f), text = c.onSurface, muted = c.onSurfaceVariant,
+            tonal = c.secondaryContainer, onTonal = c.onSecondaryContainer, segment = c.surfaceContainerHigh, whiteThumbs = true)
+        EvannaLook.APPLE_LIGHT -> EqPalette(card = c.surfaceContainer, chip = c.surfaceContainerHighest, track = Color(0xFFD1D1D1),
+            line = Color.Transparent, accent = c.primary, fill = c.secondaryContainer, onFill = c.onSecondaryContainer,
+            accentSoft = c.primary.copy(alpha = 0.12f), grid = c.onSurface.copy(alpha = 0.10f), zero = c.onSurface.copy(alpha = 0.30f), text = c.onSurface, muted = c.onSurfaceVariant,
+            tonal = c.secondaryContainer, onTonal = c.onSecondaryContainer, segment = c.surfaceContainerHighest, whiteThumbs = true)
+    }
+}
+
+/** The mockup's text sizes on the EQ screen. */
+internal fun eqText(size: TextUnit, line: TextUnit, weight: FontWeight = FontWeight.Normal, tabular: Boolean = false) = TextStyle(
+    fontFamily = FontFamily.SansSerif, fontWeight = weight, fontSize = size, lineHeight = line, fontFeatureSettings = if (tabular) "tnum" else null)
+
+/** Signed decibels with one decimal and a real minus sign, as the knobs show them: +2.0, −7.8, and 0.0 for flat. */
+internal fun eqSigned(db: Float): String =
+    if ((db * 10).roundToInt() == 0) "0.0" else String.format(Locale.ROOT, "%+.1f", db).replace('-', '−')
+
+/** The short form above a graphic slider: 0, +6, +0.5, −1.5. */
+internal fun eqShort(db: Float): String {
+    val tenths = (db * 10).roundToInt()
+    if (tenths == 0) return "0"
+    val whole = abs(tenths) / 10; val rest = abs(tenths) % 10
+    return (if (tenths > 0) "+" else "−") + whole + (if (rest == 0) "" else ".$rest")
+}
+
+/** Where the log frequency slider sits for [hz] (0 at 20 Hz, 1 at 24 kHz), and back. */
+internal fun frequencyPosition(hz: Float) = ((log10(hz.coerceIn(20f, 24000f)) - log10(20f)) / (log10(24000f) - log10(20f))).coerceIn(0f, 1f)
+internal fun frequencyAt(position: Float) = 10f.pow(log10(20f) + position.coerceIn(0f, 1f) * (log10(24000f) - log10(20f))).roundToInt().toFloat().coerceIn(20f, 24000f)
+
+/** Where the log Q slider sits for [q] (0 at 0.1, 1 at 12), and back with two decimals. */
+internal fun qPosition(q: Float) = (ln(q.coerceIn(0.1f, 12f) / 0.1f) / ln(120f)).coerceIn(0f, 1f)
+internal fun qAt(position: Float) = ((0.1f * exp(position.coerceIn(0f, 1f) * ln(120f))) * 100).roundToInt().div(100f).coerceIn(0.1f, 12f)
+
+/** A gain from a drag: tenths of a decibel, with a small catch around 0 so flat is easy to hit. */
+internal fun snapGain(db: Float, range: ClosedFloatingPointRange<Float> = -15f..15f): Float {
+    val tenths = ((db * 10).roundToInt() / 10f).coerceIn(range)
+    return if (abs(tenths) < 0.25f && 0f in range) 0f else tenths
+}
+
+@Composable
+internal fun EqCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val p = eqPalette()
+    Surface(modifier.fillMaxWidth(), shape = EvannaDesign.shapes.small, color = p.card) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), content = content)
+    }
+}
+
+/** Graphic | Parametric uses an outlined bar in Evanna dark and a solid segmented control in the other looks. */
+@Composable
+internal fun EqSegments(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, small: Boolean = false,
+    enabled: Boolean = true) {
+    val p = eqPalette(); val apple = LocalLookStyle.current.look.apple
+    val outer = if (apple) RoundedCornerShape(9.dp) else EvannaDesign.shapes.small
+    val position by animateFloatAsState(selected.toFloat(), EvannaMotion.enter, label = "EQ segment selection")
+    Row(modifier.fillMaxWidth().heightIn(min = if (apple || small) 32.dp else 40.dp).height(IntrinsicSize.Min).clip(outer)
+        .then(if (apple) Modifier.background(p.segment) else Modifier.border(1.dp, p.line, outer)).padding(2.dp)
+        .slidingSelectionPill(options.size, { position }) { p.text.copy(alpha = SELECTION_PILL_ALPHA) }
+        .selectableGroup().graphicsLayer { alpha = if (enabled) 1f else 0.6f }) {
+        options.forEachIndexed { index, label ->
+            Box(Modifier.weight(1f).fillMaxHeight().clip(CircleShape)
+                .selectable(index == selected, enabled = enabled, role = Role.Tab) { onSelect(index) },
+                contentAlignment = Alignment.Center) {
+                Text(label, style = eqText(if (apple || small) 13.sp else 14.sp, 18.sp, FontWeight.Medium), color = p.text, maxLines = 1)
+            }
+        }
+    }
+}
+
+/** Band types use a checked outline or a filled capsule according to the selected layout. */
+@Composable
+internal fun EqChip(label: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val p = eqPalette(); val apple = LocalLookStyle.current.look.apple
+    val shape = if (apple) CircleShape else RoundedCornerShape(8.dp)
+    Row(Modifier.heightIn(min = 30.dp).clip(shape)
+        .then(when { apple -> Modifier.background(if (selected) p.fill else p.chip); selected -> Modifier.background(p.tonal); else -> Modifier.border(1.dp, p.line, shape) })
+        .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+        .padding(start = if (selected && !apple) 6.dp else 10.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (selected && !apple) {
+            Icon(Icons.Filled.Check, contentDescription = null, tint = p.onTonal, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(label, style = eqText(13.sp, 18.sp, FontWeight.Medium), maxLines = 1,
+            color = when { apple && selected -> p.onFill; apple -> p.text; selected -> p.onTonal; else -> p.muted })
+    }
+}
+
+/** A 51 × 31 dp switch with a contrasting 27 dp knob. */
+@Composable
+internal fun AppleSwitch(checked: Boolean, enabled: Boolean, description: String, onChange: (Boolean) -> Unit) {
+    val p = eqPalette(); val dark = LocalLookStyle.current.look.dark
+    val knob by animateDpAsState(if (checked) 22.dp else 2.dp, label = "switch knob")
+    // The fade is a layer that always stays (see EqSegments); the knob moves in the layout step, without recomposing.
+    Box(Modifier.sizeIn(minWidth = 51.dp, minHeight = 48.dp)
+        .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onChange).semantics { contentDescription = description },
+        contentAlignment = Alignment.Center) {
+        Box(Modifier.size(51.dp, 31.dp).graphicsLayer { alpha = if (enabled) 1f else 0.5f }.clip(CircleShape)
+            .background(if (checked) p.fill else if (dark) Color(0xFF393939) else Color(0xFFE9E9E9))) {
+            Box(Modifier.offset { IntOffset(knob.roundToPx(), 2.dp.roundToPx()) }.size(27.dp).shadow(2.dp, CircleShape)
+                .background(if (checked) p.onFill else Color.White, CircleShape))
+        }
+    }
+}
+
+private fun DrawScope.thumb(p: EqPalette, center: Offset) {
+    if (p.whiteThumbs) {
+        drawCircle(Color.Black.copy(alpha = 0.22f), 10.5.dp.toPx(), center + Offset(0f, 1.dp.toPx()))
+        drawCircle(Color.White, 10.dp.toPx(), center)
+    } else {
+        val width = 16.dp.toPx()
+        val height = 7.dp.toPx()
+        drawRoundRect(p.accent, center - Offset(width / 2, height / 2), Size(width, height), CornerRadius(2.dp.toPx()))
+        drawLine(p.onFill, center - Offset(3.dp.toPx(), 0f), center + Offset(3.dp.toPx(), 0f), 1.dp.toPx())
+    }
+}
+
+/**
+ * The response curve (the mockup's plot): ±15 dB on a log axis from 20 Hz to 24 kHz at 48 kHz, one point per 2 dp,
+ * tinted down to 0 dB, with frequency labels under it. Parametric screens add a handle per band; the chosen one is a ring.
+ */
+@Composable
+internal fun EqCurve(config: EqualizerConfig, plotHeight: Dp, handles: List<Pair<Float, Float>> = emptyList(), selected: Int = -1) {
+    val p = eqPalette()
+    val measurer = rememberTextMeasurer()
+    val edge = eqText(10.sp, 12.sp).copy(color = p.muted)
+    val axis = eqText(10.5.sp, 14.sp).copy(color = p.muted)
+    val split = config.bands.any { it.channels != 0 }
+    // The axis labels get one line under the plot: 18 dp at the normal font size, more at large ones.
+    val labels = plotHeight + 4.dp + with(LocalDensity.current) { 14.sp.toDp() }
+    BoxWithConstraints(Modifier.fillMaxWidth().semantics { contentDescription = "EQ curve, plus and minus 15 dB" }) {
+        val count = max(2, (maxWidth.value / 2f).toInt() + 1)
+        val frequencies = remember(count) { curveFrequencies(count) }
+        val left = remember(config, count) { equalizerCurveDb(config, frequencies, channel = 0) }
+        val right = remember(config, count, split) { if (split) equalizerCurveDb(config, frequencies, channel = 1) else null }
+        Canvas(Modifier.fillMaxWidth().height(labels)) {
+            val w = size.width; val h = plotHeight.toPx(); val hair = 1.dp.toPx()
+            val l0 = log10(20f); val l1 = log10(24000f)
+            fun x(f: Float) = (log10(f) - l0) / (l1 - l0) * w
+            fun y(db: Float) = h / 2 - db * (h / 30f)
+            for (db in listOf(-10f, -5f, 5f, 10f)) drawLine(p.grid, Offset(0f, y(db)), Offset(w, y(db)), hair)
+            for (f in listOf(100f, 1000f, 10000f)) drawLine(p.grid, Offset(x(f), 0f), Offset(x(f), h), hair)
+            drawLine(p.zero, Offset(0f, y(0f)), Offset(w, y(0f)), hair)
+            fun path(values: DoubleArray) = Path().apply {
+                values.forEachIndexed { i, v ->
+                    val px = w * i / (values.size - 1); val py = y(v.toFloat().coerceIn(-15.5f, 15.5f))
+                    if (i == 0) moveTo(px, py) else lineTo(px, py)
+                }
+            }
+            val curve = path(left)
+            drawPath(Path().apply { addPath(curve); lineTo(w, y(0f)); lineTo(0f, y(0f)); close() }, p.accentSoft)
+            right?.let { drawPath(path(it), p.accent.copy(alpha = 0.5f), style = Stroke(1.5.dp.toPx(), join = StrokeJoin.Round)) }
+            drawPath(curve, p.accent, style = Stroke(2.2.dp.toPx(), join = StrokeJoin.Round))
+            handles.forEachIndexed { i, (f, db) ->
+                val c = Offset(x(f.coerceIn(20f, 24000f)), y(db.coerceIn(-15f, 15f)))
+                if (i == selected) {
+                    drawCircle(p.card, 8.dp.toPx(), c); drawCircle(p.accent, 8.dp.toPx(), c, style = Stroke(3.dp.toPx()))
+                } else drawCircle(p.text.copy(alpha = 0.75f), 4.5.dp.toPx(), c)
+            }
+            val top = measurer.measure("+15", edge); val bottom = measurer.measure("−15", edge)
+            drawText(top, topLeft = Offset(w - 2.dp.toPx() - top.size.width, 11.dp.toPx() - top.firstBaseline))
+            drawText(bottom, topLeft = Offset(w - 2.dp.toPx() - bottom.size.width, h - 3.dp.toPx() - bottom.firstBaseline))
+            // At large font sizes "10k" would run into "20k": a label that would touch the one before it is left out.
+            var shownEnd = Float.NEGATIVE_INFINITY
+            for ((f, label) in listOf(20f to "20", 100f to "100", 1000f to "1k", 10000f to "10k", 20000f to "20k")) {
+                val t = measurer.measure(label, axis)
+                val start = x(f).coerceIn(6.dp.toPx(), w - 8.dp.toPx()) - t.size.width / 2f
+                if (start < shownEnd + 4.dp.toPx()) continue
+                drawText(t, topLeft = Offset(start, h + 4.dp.toPx()))
+                shownEnd = start + t.size.width
+            }
+        }
+    }
+}
+
+/** One graphic band: its gain above, a 116 dp track from −15 to +15 dB filled from 0, and its frequency below. Drag up or down. */
+@Composable
+internal fun BandSlider(gain: Float, label: String, description: String, enabled: Boolean, onGain: (Float) -> Unit) {
+    val p = eqPalette()
+    val studio = !LocalLookStyle.current.look.apple
+    val latest by rememberUpdatedState(onGain)
+    val small = eqText(10.5.sp, 14.sp, FontWeight.Medium, tabular = true)
+        .let { if (studio) it.copy(fontFamily = FontFamily.Monospace) else it }
+    Column(Modifier.width(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.padding(horizontal = 1.dp)) { FitText(eqShort(gain), small, p.muted) }
+        Canvas(Modifier.padding(vertical = 6.dp).width(28.dp).height(116.dp)
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                fun at(y: Float) = snapGain(15f - (y / size.height).coerceIn(0f, 1f) * 30f)
+                detectVerticalDragGestures(onDragStart = { latest(at(it.y)) }) { change, _ -> change.consume(); latest(at(change.position.y)) }
+            }
+            .semantics {
+                contentDescription = description; stateDescription = "${eqSigned(gain)} dB"
+                progressBarRangeInfo = ProgressBarRangeInfo(gain.coerceIn(-15f, 15f), -15f..15f, steps = 59)
+                if (enabled) setProgress { target -> latest(snapGain(target)); true } else disabled()
+            }) {
+            val cx = size.width / 2; val track = 4.dp.toPx(); val h = size.height
+            val value = (15f - gain.coerceIn(-15f, 15f)) / 30f * h; val zero = h / 2
+            drawRoundRect(p.track, Offset(cx - track / 2, 0f), Size(track, h), CornerRadius(track / 2))
+            if (studio) for (step in 1 until 6) {
+                if (step == 3) continue
+                val y = h * step / 6f
+                drawLine(p.line, Offset(cx + 4.dp.toPx(), y), Offset(cx + 8.dp.toPx(), y), 1.dp.toPx())
+            }
+            drawLine(p.zero, Offset(cx - 8.dp.toPx(), zero), Offset(cx + 8.dp.toPx(), zero), 1.dp.toPx())
+            drawRoundRect(p.accent, Offset(cx - track / 2, min(value, zero)), Size(track, abs(value - zero)), CornerRadius(track / 2))
+            thumb(p, Offset(cx, value))
+        }
+        Box(Modifier.padding(horizontal = 1.dp)) { FitText(label, small, p.muted) }
+    }
+}
+
+/** One line in [style] that shrinks (down to 6 sp) only where large font sizes would cut it off, as in the 28 dp slider columns. */
+@Composable
+internal fun FitText(text: String, style: TextStyle, color: Color) {
+    // The line height shrinks with the text (em), so a short box such as a 24 dp band chip does not force the smallest size.
+    val line = if (style.lineHeight.isSp && style.fontSize.isSp) (style.lineHeight.value / style.fontSize.value).em else style.lineHeight
+    BasicText(text, style = style.copy(color = color, lineHeight = line), maxLines = 1, softWrap = false,
+        autoSize = TextAutoSize.StepBased(minFontSize = 6.sp, maxFontSize = style.fontSize, stepSize = 0.25.sp))
+}
+
+/**
+ * A 56 dp knob (Bass, Treble, Preamp): a 270° track with the value's arc and its number inside. Drag up to raise it.
+ * [fraction] places the arc; [text] is what the knob shows, which can differ from [value] (the preamp shows what plays).
+ */
+@Composable
+internal fun EqKnob(value: Float, range: ClosedFloatingPointRange<Float>, fraction: Float, text: String, label: String, description: String,
+    enabled: Boolean, onValue: (Float) -> Unit) {
+    val p = eqPalette()
+    val studio = !LocalLookStyle.current.look.apple
+    val latest by rememberUpdatedState(onValue)
+    val current by rememberUpdatedState(value)
+    val measurer = rememberTextMeasurer()
+    val inside = eqText(12.sp, 16.sp, FontWeight.SemiBold, tabular = true).copy(
+        color = p.text, fontFamily = if (studio) FontFamily.Monospace else FontFamily.SansSerif,
+    )
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Canvas(Modifier.size(56.dp)
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                var held = 0f
+                val perPx = (range.endInclusive - range.start) / 150.dp.toPx()
+                detectVerticalDragGestures(onDragStart = { held = current }) { change, dy ->
+                    change.consume(); held = (held - dy * perPx).coerceIn(range); latest(snapGain(held, range))
+                }
+            }
+            .semantics {
+                contentDescription = description; stateDescription = "$text dB"
+                progressBarRangeInfo = ProgressBarRangeInfo(value.coerceIn(range), range, steps = ((range.endInclusive - range.start) * 2).roundToInt() - 1)
+                if (enabled) setProgress { target -> latest(snapGain(target, range)); true } else disabled()
+            }) {
+            val stroke = 5.dp.toPx(); val inset = 5.dp.toPx(); val arc = Size(size.width - 2 * inset, size.height - 2 * inset)
+            drawArc(p.track, 135f, 270f, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Round))
+            if (fraction > 0.002f) drawArc(p.accent, 135f, 270f * fraction.coerceIn(0f, 1f), false, Offset(inset, inset), arc,
+                style = Stroke(stroke, cap = StrokeCap.Round))
+            val t = measurer.measure(text, inside)
+            drawText(t, topLeft = Offset((size.width - t.size.width) / 2f, (size.height - t.size.height) / 2f))
+        }
+        Text(label, style = eqText(12.sp, 16.sp), color = p.muted, maxLines = 1)
+    }
+}
+
+/**
+ * A band editor slider (Frequency, Gain, Q): the name and value above a 4 dp track. [position] runs 0..1 along the track;
+ * [centered] fills from the middle (gain). TalkBack hears [valueText].
+ */
+@Composable
+internal fun EqHSlider(name: String, valueText: String, position: Float, centered: Boolean, description: String, enabled: Boolean,
+    onPosition: (Float) -> Unit) {
+    val p = eqPalette()
+    Column(Modifier.fillMaxWidth().padding(top = 11.dp)) {
+        Row(Modifier.fillMaxWidth()) {
+            Text(name, style = eqText(13.sp, 18.sp), color = p.text, modifier = Modifier.weight(1f))
+            Text(valueText, style = eqText(13.sp, 18.sp, FontWeight.Medium, tabular = true), color = p.text)
+        }
+        // The track sits 9 dp under the row, as drawn; the slider's 48 dp touch area reaches over its neighbours.
+        Box(Modifier.fillMaxWidth().height(13.dp)) {
+            Slider(value = position.coerceIn(0f, 1f), onValueChange = onPosition, enabled = enabled,
+                thumb = {
+                    Box(Modifier.size(if (p.whiteThumbs) 20.dp else 16.dp).then(if (p.whiteThumbs) Modifier.shadow(2.dp, CircleShape) else Modifier)
+                        .background(if (p.whiteThumbs) Color.White else p.accent, CircleShape))
+                },
+                track = { state ->
+                    Canvas(Modifier.fillMaxWidth().height(4.dp)) {
+                        val f = state.value.coerceIn(0f, 1f); val r = CornerRadius(2.dp.toPx())
+                        drawRoundRect(p.track, cornerRadius = r)
+                        val from = if (centered) min(f, 0.5f) else 0f; val to = if (centered) max(f, 0.5f) else f
+                        drawRoundRect(p.accent, Offset(size.width * from, 0f), Size(size.width * (to - from), size.height), r)
+                        if (centered) drawLine(p.zero, Offset(size.width / 2, -4.dp.toPx()), Offset(size.width / 2, size.height + 4.dp.toPx()), 1.dp.toPx())
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().requiredHeight(48.dp).offset(y = 4.5.dp)
+                    .semantics { contentDescription = description; stateDescription = valueText })
+        }
+    }
+}
+
+/** The compact numbered band chip; the chosen band is filled with the accent. */
+@Composable
+internal fun BandChip(label: String, selected: Boolean, enabled: Boolean, description: String, onClick: () -> Unit) {
+    val p = eqPalette()
+    Box(Modifier.size(width = 22.dp, height = 24.dp).clip(CircleShape).background(if (selected) p.fill else p.chip)
+        .selectable(selected, enabled = enabled, role = Role.Tab, onClick = onClick).semantics { contentDescription = description },
+        contentAlignment = Alignment.Center) {
+        FitText(label, eqText(11.5.sp, 14.sp, FontWeight.SemiBold, tabular = true), if (selected) p.onFill else p.text)
+    }
+}
+
+/** The dashed "+" chip that adds a band. */
+@Composable
+internal fun AddBandChip(enabled: Boolean, onClick: () -> Unit) {
+    val p = eqPalette()
+    Box(Modifier.size(width = 22.dp, height = 24.dp).graphicsLayer { alpha = if (enabled) 1f else 0.4f }.clip(CircleShape)
+        .drawBehind {
+            drawCircle(p.muted, size.minDimension / 2 - 0.5.dp.toPx(),
+                style = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 2.dp.toPx()))))
+        }
+        .selectable(false, enabled = enabled, role = Role.Button, onClick = onClick).semantics { contentDescription = "Add band" },
+        contentAlignment = Alignment.Center) {
+        Text("+", style = eqText(11.5.sp, 14.sp, FontWeight.SemiBold), color = p.muted)
+    }
+}

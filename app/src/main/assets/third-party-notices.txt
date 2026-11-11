@@ -1,0 +1,86 @@
+Evanna
+
+Original Evanna application code is licensed under GNU GPL version 3 only.
+The complete licence is in licenses/Evanna-GPL-3.0.txt. Vendored components
+retain the licences and attribution listed below.
+
+This is an original Evanna application with USB diagnostics and a custom
+Media3 control service and original local-file decoder integration.
+
+TrueSample USB audio module
+Source: https://github.com/devang-altf4/truesample-player/tree/cf23a00030cd2d27c91f667737f0ca9aa30256a4/usbaudio
+License: Apache License 2.0 (licenses/Apache-2.0.txt)
+The module's existing namespace and native integration are retained.
+Modified by Evanna through 2026-11-04: PCM input validation, writer ownership,
+callback-safe shutdown, clock/transport/volume verification, bounded USB
+completion drain with SRC tail, separate PCM counters, two-transfer startup,
+explicit planned/observed processing flags, float clipping checks, and tests.
+Original license and attribution are retained.
+The GPL TrueSample application and its decoder are not included.
+
+libusb 1.0.29
+Source: https://github.com/libusb/libusb/tree/v1.0.29
+License: GNU Lesser General Public License 2.1 or later (licenses/LGPL-2.1.txt)
+Built as the separate libusb-1.0.so shared library.
+
+libsamplerate 0.2.2
+Source: https://github.com/libsndfile/libsamplerate/tree/0.2.2
+Copyright (c) 2012-2016, Erik de Castro Lopo <erikd@mega-nerd.com>
+License: BSD 2-Clause (licenses/libsamplerate-BSD-2-Clause.txt)
+Linked into the USB audio module.
+
+AndroidX Activity and Jetpack Compose
+Source: https://android.googlesource.com/platform/frameworks/support/
+License: Apache License 2.0 (licenses/Apache-2.0.txt)
+
+AndroidX Media3 common, datasource and session 1.9.4; AndroidX media
+Copyright The Android Open Source Project.
+Source: https://github.com/androidx/media/tree/1.9.4
+License: Apache License 2.0 (licenses/Apache-2.0.txt)
+Used for the custom-player/media-session control layer; no ExoPlayer included.
+
+Guava and its supporting annotations
+Source: https://github.com/google/guava
+License: Apache License 2.0 (licenses/Apache-2.0.txt)
+Transitive futures/collection support for AndroidX Media3.
+
+Kotlin standard library and kotlinx.coroutines
+Copyright JetBrains s.r.o. and Kotlin Programming Language contributors.
+Sources: https://github.com/JetBrains/kotlin and https://github.com/Kotlin/kotlinx.coroutines
+License: Apache License 2.0 (licenses/Apache-2.0.txt)
+
+The source tree includes corresponding Evanna/JNI code, retained LGPL sources,
+build configuration and library replacement instructions. Distribute the exact
+release source and build materials beside each APK. The modified-library,
+re-signing and decoder verification is recorded in
+docs/validation/native-library-replacement.md.
+
+FFmpeg 9.0.2
+Copyright the FFmpeg developers. See licenses/FFmpeg.txt and licenses/LGPL-2.1.txt.
+This software uses libraries from the FFmpeg project under LGPL 2.1 or later.
+Source: https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz
+Shared libavformat.so, libavcodec.so, libavutil.so and libswresample.so; no source patches.
+GPL, nonfree, version3, network protocols and automatic external libraries disabled.
+The matching source archive, signature and original build script are retained in
+third_party/ffmpeg and scripts/build-ffmpeg.sh in the Evanna source repository.
+Library replacement/re-signing instructions: docs/native-library-replacement.md.
+The bounded local check decodes WAV/AIFF/FLAC/ALAC/MP3/AAC/Vorbis/Opus without playback.
+libswresample is required internally by the native Opus decoder; Evanna's JNI
+bridge does not resample decoded audio to a DAC rate. Lossy/floating PCM is
+labelled as processed S32 with unknown original integer precision.
+
+No online provider SDK, telemetry SDK, or cloud crash SDK is included.
+
+libebur128 1.2.6
+Source: https://github.com/jiixyj/libebur128/tree/67b33abe1558160ed76ada1322329b0e9e058b02
+License: MIT, copyright Jan Kokemüller (licenses/libebur128-MIT.txt).
+Bundled sys/queue.h: BSD 3-Clause, copyright Regents of the University of California
+(licenses/libebur128-queue-BSD-3-Clause.txt).
+Unmodified library files are linked into offline loudness measurement only.
+
+Android NDK libc++ and libc++abi runtime
+Version: NDK 28.2.13676358, Clang 19.0.1 based on r530567e.
+Source: https://android.googlesource.com/toolchain/llvm-project/
+License: Apache-2.0 with LLVM exceptions and retained legacy notices
+(licenses/NDK-libcxx.txt, copied from the matching NDK NOTICE.toolchain).
+The Android build packages libc++_shared.so.
