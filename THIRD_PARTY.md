@@ -25,7 +25,7 @@ The JNI decoder integration and application/service code are original Evanna cod
 
 The bundled headphone correction database is omitted. AutoEq text files are selected by users and remain subject to their owners' rights. The importer is original Evanna code.
 
-The app's launcher is an original geometric vector. Interface icons come from the Apache-2.0 AndroidX icon dependency. Decoder fixtures use generated samples and tones. Artwork fixtures use original solid-colour shapes. The snapshot omits promotional artwork, screenshots, design mockups and four upstream documentation images. The upstream library code and required licence notices are retained. [Fixture provenance](docs/test-fixtures.md)
+The app's launcher is an original geometric vector. Interface icons come from the Apache-2.0 AndroidX icon dependency. Decoder fixtures use generated samples and tones. Artwork fixtures use original solid-colour shapes. The [README banner](docs/assets/evanna-banner.png) is supplied by the project owner. The snapshot omits screenshots, design mockups and four upstream documentation images. The upstream library code and required licence notices are retained. [Fixture provenance](docs/test-fixtures.md)
 
 ## Distribution materials
 
