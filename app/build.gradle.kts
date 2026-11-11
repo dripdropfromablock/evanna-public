@@ -4,6 +4,9 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val supportedAbis = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+val splitApks = providers.gradleProperty("evannaAbiSplits").map(String::toBoolean).getOrElse(false)
+
 android {
     namespace = "com.evanna.player"
     compileSdk = 36
@@ -14,10 +17,18 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0-dev"
+        versionName = "0.1.0"
         testInstrumentationRunner = "com.evanna.player.playback.UsbAdapterProbe"
-        ndk { abiFilters += "arm64-v8a" }
+        if (!splitApks) ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_shared" } }
+    }
+
+    splits {
+        abi {
+            isEnable = splitApks
+            reset()
+            include(*supportedAbis.toTypedArray())
+        }
     }
 
     buildFeatures { compose = true }

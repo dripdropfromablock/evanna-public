@@ -24,6 +24,16 @@ git archive --format=zip --prefix=evanna/ --output=evanna-source.zip <public-rel
 
 Include actual library patches when distributing modified versions. Preserve the applicable licence texts and modification notices. The complete source includes the app code and build materials needed to produce a modified executable. An upstream download link by itself does not provide the application's corresponding source. [GNU LGPL 2.1, section 6](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html) · [FFmpeg distribution checklist](https://ffmpeg.org/legal.html)
 
+## Build the four release APKs
+
+Run the pinned Gradle wrapper with ABI splits enabled.
+
+~~~powershell
+./gradlew.bat :app:assembleRelease -PevannaAbiSplits=true
+~~~
+
+The unsigned APKs are in app/build/outputs/apk/release/. Use Android SDK zipalign and apksigner with your own signing key. Keep the same key for updates to your installed builds. For a replacement targeting an ABI other than ARM64, pass that ABI to scripts/build-ffmpeg.sh, rebuild libusb with the corresponding ANDROID_ABI, and replace the libraries under lib/<abi>/ in the matching APK. The example below exercises ARM64.
+
 ## Rebuild compatible replacements
 
 Use the SDK/NDK versions in the README. Run these commands from the repository root. The test sources and outputs are under the ignored `.tools/lgpl-replacement/` directory.

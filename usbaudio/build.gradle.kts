@@ -17,7 +17,7 @@ android {
                 arguments += "-DANDROID_STL=c++_static"
             }
         }
-        ndk {
+        if (!providers.gradleProperty("evannaAbiSplits").map(String::toBoolean).getOrElse(false)) ndk {
             abiFilters += "arm64-v8a"
         }
     }

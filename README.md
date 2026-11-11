@@ -4,7 +4,7 @@
 
 Evanna is an offline high-resolution music player for Android. Browse music from your phone or SD card, tune it with graphic or parametric EQ, and listen through Android audio or a compatible USB DAC.
 
-**Android 9+ · ARM64 · Development build**
+**Android 9+** · ARM64, ARMv7, x86 and x86-64
 
 ## Features
 
@@ -61,6 +61,8 @@ Evanna is an offline high-resolution music player for Android. Browse music from
 
 ## Get started
 
+Download the APK for your device from [GitHub Releases](https://github.com/dripdropfromablock/evanna-public/releases). Choose arm64-v8a for most phones or x86_64 for most Android emulators.
+
 1. Install the debug APK on an ARM64 device running Android 9 or newer.
 2. Open **Library**, add a music folder, and grant access in Android’s folder picker. Repeat for any other folders you want in the library.
 3. Select a track and choose an audio output when prompted. For direct USB playback, connect a compatible DAC, grant USB access, and set a low starting volume.
@@ -115,7 +117,7 @@ Android instrumentation requires an explicitly selected test device. See [fixtur
 ### Notes
 
 - The repo is Kotlin-first for UI and logic, but the entire audio path (decode → loudness → SRC → EQ/crossfeed → USB UAC) is native C/C++ over vendored libraries.
-- FFmpeg is consumed as prebuilt arm64 binaries (`third_party/ffmpeg/android/arm64-v8a/lib/`), rebuilt with `scripts/build-ffmpeg.sh` from the bundled `ffmpeg-9.0.2.tar.xz`; it is not compiled in-tree by Gradle.
+- FFmpeg is consumed as prebuilt libraries per ABI under `third_party/ffmpeg/android/`, rebuilt with `scripts/build-ffmpeg.sh` from the bundled `ffmpeg-9.0.2.tar.xz`; it is not compiled in-tree by Gradle.
 
 ## License
 
