@@ -6,6 +6,87 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LibraryScannerTest {
+    @Test fun startupSkipsNomediaTreesAndPrunesTheirPreviouslyIndexedSongs() = runBlocking {
+        val index = Index()
+        var hidden = false
+        val source = object : LibraryScanSource by Source(emptyList()) {
+            override suspend fun children(id: String): List<LibraryDocument> = when (id) {
+                "root" -> listOf(doc("album", DIRECTORY_MIME), doc("visible"))
+                "album" -> if (hidden) listOf(doc("secret"), doc("deep", DIRECTORY_MIME),
+                    doc("marker", "application/octet-stream").copy(name = ".nomedia")) else listOf(doc("secret"))
+                else -> error("The ignored subtree was traversed")
+            }
+        }
+        scanLibrary("root", index, source)
+        hidden = true
+        assertTrue(scanLibrary("root", index, source, silent = true).changed)
+        assertEquals(setOf("visible"), index.rows.keys)
+        assertFalse(scanLibrary("root", index, source, silent = true).changed)
+    }
+
+    @Test fun foregroundScanCancelsStartupBeforeAcquiringTheIndex() = runBlocking {
+        val queue = LibraryScanQueue()
+        val entered = CompletableDeferred<Unit>()
+        val events = mutableListOf<String>()
+        val index = Index()
+        val source = Source(listOf(doc("song")))
+        scanLibrary("root", index, source)
+        val waitingSource = object : LibraryScanSource by source {
+            override suspend fun children(id: String): List<LibraryDocument> {
+                try { entered.complete(Unit); awaitCancellation() }
+                finally { events += "startup cancelled" }
+            }
+        }
+        val startup = queue.startup(this) {
+            scanLibrary("root", index, waitingSource, silent = true)
+        }
+        entered.await()
+        withTimeout(1000) { queue.userAction { events += "foreground scan" } }
+        startup.join()
+        assertTrue(startup.isCancelled)
+        assertEquals(listOf("startup cancelled", "foreground scan"), events)
+        assertEquals(LibraryRootState.READY, index.state)
+        assertEquals(setOf("song"), index.rows.keys)
+    }
+
+    @Test fun silentSyncAcrossRootsReportsOnlyCommittedChanges() = runBlocking {
+        val index = Index()
+        val phone = Source(listOf(doc("keep"), doc("delete")))
+        val card = Source(listOf(doc("old")))
+        val roots = listOf("phone", "card")
+        fun source(root: String) = if (root == "phone") phone else card
+        scanLibraryBatch(roots, index, ::source, silent = true)
+        assertFalse(scanLibraryBatch(roots, index, ::source, silent = true))
+        assertEquals(2, phone.inspections)
+        assertEquals(1, card.inspections)
+
+        phone.files = listOf(doc("keep"), doc("new"))
+        card.files = listOf(doc("old", modified = 42))
+        var committed = false
+        assertTrue(scanLibraryBatch(roots, index, ::source, silent = true, onChanged = { committed = true }))
+        assertTrue(committed)
+        assertEquals(setOf("keep", "new"), index.files("phone").keys)
+        assertEquals(setOf("old"), index.files("card").keys)
+        assertEquals(3, phone.inspections)
+        assertEquals(2, card.inspections)
+        assertFalse(scanLibraryBatch(roots, index, ::source, silent = true))
+
+        card.failDirectory = "root"
+        assertTrue(scanLibraryBatch(roots, index, ::source, silent = true))
+        assertEquals(LibraryRootState.UNAVAILABLE, index.state)
+        assertEquals(setOf("old"), index.files("card").keys)
+        assertFalse(scanLibraryBatch(roots, index, ::source, silent = true))
+    }
+
+    @Test fun folderOverlapUsesWholePathSegmentsAndIncludesBothDirections() {
+        val music = "/storage/emulated/0/Music"
+        assertTrue(folderPathsOverlap(music, "$music/"))
+        assertTrue(folderPathsOverlap(music, "$music/Albums"))
+        assertTrue(folderPathsOverlap("$music/Albums", music))
+        assertFalse(folderPathsOverlap(music, "${music}Backup"))
+        assertFalse(folderPathsOverlap(music, "/storage/1A2B-3C4D/Music"))
+    }
+
     @Test fun excludedDirectoryIsNeitherEnumeratedNorDecodedAndSiblingStillIndexes() = runBlocking {
         val index=Index();val visits=mutableListOf<String>()
         val source=object:LibraryScanSource {
@@ -18,7 +99,7 @@ class LibraryScannerTest {
             }
             override suspend fun inspect(document:LibraryDocument)=audio
         }
-        assertEquals(1,scanLibrary("tree",index,source))
+        assertEquals(1,scanLibrary("tree",index,source).checked)
         assertEquals(listOf("root","keep"),visits)
         assertEquals(setOf("song"),index.rows.keys)
         assertEquals(LibraryRootState.READY,index.state)
@@ -29,23 +110,49 @@ class LibraryScannerTest {
     private class Index : LibraryScanIndex {
         data class Row(val document: LibraryDocument, val audio: LibraryAudio?, val token: String, var present: Boolean = true,
             val tagsVersion: Int = LIBRARY_TAGS_VERSION, val readable: Boolean = audio != null)
-        val rows = linkedMapOf<String, Row>()
+        private val filesByRoot = mutableMapOf<String, MutableMap<String, Row>>()
+        private val states = mutableMapOf<String, LibraryRootState>()
+        private var activeRoot = "root"
+        fun files(root: String) = filesByRoot.getOrPut(root) { linkedMapOf() }
+        val rows get() = files(activeRoot)
         var token = ""
-        var state = LibraryRootState.PAUSED
-        override fun begin(root: String, token: String) { this.token = token; state = LibraryRootState.SCANNING }
+        val state get() = states[activeRoot] ?: LibraryRootState.PAUSED
+        var writes = 0
+        val batchSizes = mutableListOf<Int>()
+        override fun begin(root: String, token: String) {
+            beginSilent(root, token)
+            states[root] = LibraryRootState.SCANNING
+        }
+        override fun beginSilent(root: String, token: String) { activeRoot = root; this.token = token }
         override fun cached(root: String, key: String) = rows[key]?.let { LibraryCached(it.document, it.audio.takeIf { _ -> it.readable }, it.tagsVersion) }
         override fun record(root: String, token: String, document: LibraryDocument, audio: LibraryAudio?) {
             if (this.token == token) {
+                writes++
                 val old = rows[document.key]
                 rows[document.key] = Row(document, audio ?: old?.audio, token,
                     tagsVersion = if (audio != null) LIBRARY_TAGS_VERSION else old?.tagsVersion ?: 1, readable = audio != null)
             }
         }
-        override fun exclude(root: String, token: String, key: String) { if (this.token == token) rows.remove(key) }
-        override fun finish(root: String, token: String) {
-            if (this.token == token) { rows.values.filter { it.token != token }.forEach { it.present = false }; state = LibraryRootState.READY }
+        override fun recordBatch(root: String, token: String, rows: List<Pair<LibraryDocument, LibraryAudio?>>) {
+            batchSizes += rows.size
+            super.recordBatch(root, token, rows)
         }
-        override fun interrupt(root: String, token: String, state: LibraryRootState) { if (this.token == token) this.state = state }
+        override fun markSeen(root: String, token: String, keys: List<String>, reveal: List<String>): Boolean {
+            if (this.token != token) return false
+            for (key in keys) rows[key] = rows.getValue(key).copy(token = token)
+            return false
+        }
+        override fun finish(root: String, token: String, checkActive: () -> Unit): Boolean {
+            checkActive()
+            if (this.token != token) return false
+            val pruned = rows.values.removeAll { it.token != token }
+            return interrupt(root, token, LibraryRootState.READY) || pruned
+        }
+        override fun interrupt(root: String, token: String, state: LibraryRootState): Boolean {
+            if (this.token != token || this.state == state) return false
+            states[root] = state
+            return true
+        }
     }
     private inner class Source(var files: List<LibraryDocument>) : LibraryScanSource {
         var inspections = 0
@@ -75,8 +182,9 @@ class LibraryScannerTest {
         fun file(name: String, mime: String) = LibraryDocument(name, name, "content:/$name", name, mime, 10, 20)
         val base = Index(); val covered = mutableListOf<Pair<String, List<Long?>>>(); var decoded = 0
         val index = object : LibraryScanIndex by base {
-            override fun recordCue(root: String, token: String, file: LibraryDocument, audio: LibraryAudio, sheet: CueSheet, ranges: List<CueRange>) {
+            override fun recordCue(root: String, token: String, file: LibraryDocument, audio: LibraryAudio, sheet: CueSheet, ranges: List<CueRange>): Boolean {
                 covered += file.key to ranges.flatMap { listOf(it.startFrame, it.endFrame) }
+                return true
             }
         }
         val sheets = mapOf("album.cue" to "TITLE \"Live\"\nFILE \"album.flac\" WAVE\nTRACK 01 AUDIO\nINDEX 01 00:00:00\nTRACK 02 AUDIO\nINDEX 01 00:00:30",
@@ -123,26 +231,39 @@ class LibraryScannerTest {
         job.join()
         assertEquals(listOf("a"), visits)
     }
-    @Test fun successfulRescanMarksMissingWithoutDeletingAndReturnRestoresIt() = runBlocking {
+    @Test fun successfulRescanPrunesMissingAndOnlyWritesNewOrChangedFiles() = runBlocking {
         val index = Index(); val source = Source(listOf(doc("a"), doc("b")))
         scanLibrary("root", index, source)
-        source.files = listOf(doc("b")); scanLibrary("root", index, source)
-        assertFalse(index.rows.getValue("a").present); assertTrue(index.rows.getValue("b").present)
+        assertFalse(scanLibrary("root", index, source, silent = true) { error("Silent scan emitted progress") }.changed)
+        source.files = listOf(doc("b"), doc("c")); scanLibrary("root", index, source)
+        assertEquals(setOf("b", "c"), index.rows.keys)
+        assertEquals(3, source.inspections)
+        assertEquals(3, index.writes)
+        source.files = listOf(doc("b").copy(uri = "content:/moved/b"), doc("c", size = 12))
+        scanLibrary("root", index, source)
+        assertEquals(5, source.inspections)
+        assertEquals(5, index.writes)
         assertEquals(2, index.rows.size)
-        source.files = listOf(doc("a"), doc("b")); scanLibrary("root", index, source)
-        assertTrue(index.rows.getValue("a").present)
         assertEquals(LibraryRootState.READY, index.state)
+    }
+    @Test fun largeDirectoriesWriteAndReportProgressInChunks() = runBlocking {
+        val index = Index()
+        val source = Source(List(SCAN_BATCH_SIZE * 2 + 1) { doc("song-$it") })
+        val progress = mutableListOf<Int>()
+        scanLibrary("root", index, source) { progress += it }
+        assertEquals(listOf(SCAN_BATCH_SIZE, SCAN_BATCH_SIZE, 1), index.batchSizes)
+        assertEquals(listOf(SCAN_BATCH_SIZE, SCAN_BATCH_SIZE * 2, SCAN_BATCH_SIZE * 2 + 1), progress)
     }
     @Test fun failedOrCancelledEnumerationKeepsPreviouslySavedFiles() = runBlocking {
         val index = Index(); val source = Source(listOf(doc("a"), doc("b")))
         scanLibrary("root", index, source)
         source.files = listOf(doc("sub", DIRECTORY_MIME)); source.failDirectory = "sub"
         scanLibrary("root", index, source)
-        assertTrue(index.rows.values.all { it.present }); assertEquals(LibraryRootState.UNAVAILABLE, index.state)
+        assertEquals(setOf("a", "b"), index.rows.keys); assertEquals(LibraryRootState.UNAVAILABLE, index.state)
         source.failDirectory = null; source.files = listOf(doc("a", modified = 30))
         val job = launch { scanLibrary("root", index, source) { throw CancellationException() } }
         job.join()
-        assertTrue(index.rows.values.all { it.present }); assertEquals(LibraryRootState.PAUSED, index.state)
+        assertEquals(setOf("a", "b"), index.rows.keys); assertEquals(LibraryRootState.PAUSED, index.state)
     }
     @Test fun changedOrUnknownStampsAndUnreadableFilesRetryButKnownUnchangedMetadataIsCached() = runBlocking {
         val index = Index(); val source = Source(listOf(doc("a")))
@@ -205,7 +326,6 @@ class LibraryScannerTest {
         index.record("root", "old", doc("missing"), audio)
         index.finish("root", "old")
         scanLibrary("root", index, Source(listOf(playlist, doc("song"))))
-        assertEquals(setOf("song", "missing"), index.rows.keys)
-        assertFalse(index.rows.getValue("missing").present)
+        assertEquals(setOf("song"), index.rows.keys)
     }
 }

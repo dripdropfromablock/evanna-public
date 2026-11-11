@@ -4,7 +4,7 @@ import android.database.sqlite.SQLiteDatabase
 import java.io.File
 import com.evanna.player.storage.backupSqliteSnapshot
 
-internal const val LIBRARY_DB_VERSION=6
+internal const val LIBRARY_DB_VERSION=7
 
 private val v1Schema = listOf(
     "CREATE TABLE roots(uri TEXT PRIMARY KEY, name TEXT NOT NULL, state TEXT NOT NULL, token TEXT, owned INTEGER NOT NULL)",
@@ -32,8 +32,9 @@ internal fun librarySchema(version:Int):List<String> = v1Schema+
     (if(version>=5)listOf("CREATE TABLE excluded_folders(root TEXT NOT NULL REFERENCES roots(uri),id TEXT NOT NULL,name TEXT NOT NULL,PRIMARY KEY(root,id))",
         "CREATE TABLE pending_grant_releases(uri TEXT PRIMARY KEY)")else emptyList())+
     // CUE tracks are ordinary rows with an exact frame range of their file; a covered whole file is hidden.
-    if(version>=6)listOf("ALTER TABLE tracks ADD COLUMN start_frame INTEGER","ALTER TABLE tracks ADD COLUMN end_frame INTEGER",
-        "ALTER TABLE tracks ADD COLUMN cue_hidden INTEGER NOT NULL DEFAULT 0")else emptyList()
+    (if(version>=6)listOf("ALTER TABLE tracks ADD COLUMN start_frame INTEGER","ALTER TABLE tracks ADD COLUMN end_frame INTEGER",
+        "ALTER TABLE tracks ADD COLUMN cue_hidden INTEGER NOT NULL DEFAULT 0")else emptyList())+
+    if(version>=7)listOf("CREATE INDEX files_by_root_token ON files(root,token)")else emptyList()
 
 internal fun upgradeLibraryV1(db: SQLiteDatabase, backup: File) {
     backupLibraryV1(db, backup)

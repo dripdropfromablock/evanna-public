@@ -18,7 +18,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
@@ -132,7 +131,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
     val artwork = remember { LocalLibrary.artwork(context) }
     var removeFolder by remember {mutableStateOf<LibraryRoot?>(null)}
     var manageFolder by remember {mutableStateOf<LibraryRoot?>(null)}
-    LaunchedEffect(Unit){LocalLibrary.cleanupRemovedFolders(context)}
+    var showMusicFolders by rememberSaveable { mutableStateOf(false) }
     var view by rememberSaveable { mutableStateOf(if (searchMode) LibraryView.TRACKS else LibraryView.ALBUMS) }
     var search by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableStateOf<LibraryGroupKind?>(null) }
@@ -163,7 +162,6 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
     // Scans run in LocalLibrary, so leaving this tab never stops one; each finished scan reloads lists and covers.
     val revision = LocalLibrary.scansFinished
     val busy = LocalLibrary.scanning || LocalLibrary.managingFolders
-    LaunchedEffect(busy) { if (!busy) LocalLibrary.refreshTagsIfNeeded(context) }
     var selectionFailed by remember { mutableStateOf(false) }
     val rootFilter = LibraryFilter(search = search, sort = selectedSort ?: LibrarySort.TITLE)
     val filter = rootFilter.copy(kind = kind, value = value, albumArtist = albumArtist)
@@ -191,6 +189,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
     } == true
     val shown = listing.takeIf { selectedSort != null && (loaded?.copy(offset = offset) == request || changingSearchLetter) }
     val libraryHome = !searchMode && kind == null
+    val folderVolumes = if (view == LibraryView.FOLDERS && kind == null) rememberFolderVolumeNames() else emptyMap()
     val albumHome = libraryHome && view == LibraryView.ALBUMS
     val searchHome = searchMode && kind == null && view == LibraryView.TRACKS && search.isBlank()
     val songsView = kind != null || view in listOf(LibraryView.TRACKS,LibraryView.ADDED)
@@ -231,11 +230,10 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
         else {kind=null;value=null;groupName=""}
         albumArtist=null;artistParent=false
     }
-    fun scan(uri: Uri, add: Boolean) = LocalLibrary.scan(context, uri, add)
+    val addFolder = rememberAddMusicFolder()
     fun open(groupKind: LibraryGroupKind, groupValue: String?, name: String, taggedArtist: String? = null) {
         kind = groupKind; value = groupValue; groupName = name; albumArtist = taggedArtist;artistParent=false
     }
-    val addFolder = rememberAddMusicFolder()
     fun selectView(next: LibraryView) {
         view = next
         kind = null
@@ -249,10 +247,8 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
         if (kind != null) back() else selectView(LibraryView.TRACKS)
     }
     manageFolder?.let {root -> FolderExclusionsDialog(root){manageFolder=null}}
-    removeFolder?.let {root -> AlertDialog(onDismissRequest={removeFolder=null},title={Text("Remove ${root.name}?")},
-        text={Text("Remove this folder from Evanna and release access Evanna owns. Music files stay on storage. Saved playlists keep missing entries if no other music folder includes them.")},
-        confirmButton={TextButton(onClick={removeFolder=null;LocalLibrary.removeFolder(context,root)},enabled=!busy,modifier=Modifier.heightIn(min=48.dp)){Text("Remove folder")}},
-        dismissButton={TextButton(onClick={removeFolder=null},modifier=Modifier.heightIn(min=48.dp)){Text("Cancel")}})}
+    removeFolder?.let { root -> RemoveMusicFolderDialog(root, busy) { removeFolder = null } }
+    if (showMusicFolders) MusicFoldersDialog { showMusicFolders = false }
     if (selectionFailed) AlertDialog(onDismissRequest = { selectionFailed = false },
         title = { Text("Couldn’t open song") },
         text = { Text("Check folder access and reconnect playback controls, then try selecting the song again.") },
@@ -426,7 +422,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                     Icon(Icons.Filled.ArrowDropDown, null, tint = muted)
                 }
                 DropdownMenu(expanded = collectionsOpen, onDismissRequest = { collectionsOpen = false }) {
-                    val collections = if (libraryHome) listOf(LibraryView.ALBUMS, LibraryView.ARTISTS, LibraryView.TRACKS)
+                    val collections = if (libraryHome) listOf(LibraryView.ALBUMS, LibraryView.ARTISTS, LibraryView.TRACKS, LibraryView.FOLDERS)
                         else LibraryView.entries
                     DropdownChoices(collections, view, collectionsOpen, onSelect = { collection ->
                         collectionsOpen = false
@@ -435,6 +431,10 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                     if (libraryHome) DropdownMenuItem(text = { Text("Playlists") }, onClick = {
                         collectionsOpen = false
                         onPlaylists()
+                    })
+                    if (libraryHome) DropdownMenuItem(text = { Text("Manage music folders") }, onClick = {
+                        collectionsOpen = false
+                        showMusicFolders = true
                     })
                 }
             }
@@ -499,6 +499,14 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
         if (searchHome && shown?.roots?.isEmpty() == true) line {
             Text("No music folders yet. Add one in Library Settings to start.", color = muted)
         }
+        if (view == LibraryView.FOLDERS && kind == null) line {
+            Column {
+                TextButton(onClick = addFolder, enabled = !busy) { Text("Add folder") }
+                if (shown?.roots?.isNotEmpty() == true) {
+                    TextButton(onClick = { LocalLibrary.scan(context) }, enabled = !busy) { Text("Rescan all folders") }
+                }
+            }
+        }
         if (shown != null && !searchHome) {
             if (view == LibraryView.FOLDERS && kind == null) {
                 if (search.isNotBlank()) line { Text("Open a folder to see its matching songs.") }
@@ -508,26 +516,9 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                             .clickable(enabled = !busy) { open(LibraryGroupKind.FOLDER, root.uri, root.name) }
                             .padding(horizontal = 8.dp, vertical = 8.dp), verticalArrangement = Arrangement.Center) {
                             Text(root.name, style = EvannaDesign.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text("${root.songCount} saved songs",style=EvannaDesign.typography.bodySmall,color=muted)
-                            Text(when (root.state) {
-                                LibraryRootState.READY -> "Indexed"
-                                LibraryRootState.SCANNING -> "Scan not finished; rescan to refresh"
-                                LibraryRootState.PAUSED -> "Scan paused; saved entries retained"
-                                LibraryRootState.UNAVAILABLE -> "Unavailable or scan incomplete; reconnect and rescan"
-                            }, style = EvannaDesign.typography.bodySmall, color = muted)
+                            FolderSourceDetails(root, folderVolumes)
                         }
-                        IconButton(onClick = { scan(Uri.parse(root.uri), false) }, enabled = !busy && !loading,
-                            modifier = Modifier.size(48.dp).semantics { contentDescription = "Rescan ${root.name}" }) {
-                            Icon(Icons.Filled.Refresh, contentDescription = null)
-                        }
-                        var folderMenu by remember(root.uri){mutableStateOf(false)}
-                        Box {
-                            IconButton(onClick={folderMenu=true},enabled=!busy && !loading,modifier=Modifier.size(48.dp)){Icon(Icons.Filled.MoreVert,"Manage ${root.name}")}
-                            DropdownMenu(expanded=folderMenu,onDismissRequest={folderMenu=false}) {
-                                DropdownMenuItem(text={Text("Manage subfolders")},onClick={folderMenu=false;manageFolder=root})
-                                DropdownMenuItem(text={Text("Remove folder")},onClick={folderMenu=false;removeFolder=root})
-                            }
-                        }
+                        FolderSourceActions(root, enabled = !busy && !loading, onSubfolders = { manageFolder = root }, onRemove = { removeFolder = root })
                     }
                 }
             } else if (songsView) {
@@ -647,11 +638,11 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                     if (noMatches) TextButton(onClick = { search = "" }) { Text("Clear query") }
                 }
             }
-            if (shown.total == 0 && !loading && shown.roots.isEmpty() && !searchMode && kind == null) line { Box {
-                FilledTonalButton(onClick = { addFolder() }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
+            if (shown.total == 0 && !loading && shown.roots.isEmpty() && !searchMode && kind == null && view != LibraryView.FOLDERS) line { Box {
+                FilledTonalButton(onClick = { showMusicFolders = true }, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Add music folder")
+                    Text("Manage music folders")
                 }
             } }
         }

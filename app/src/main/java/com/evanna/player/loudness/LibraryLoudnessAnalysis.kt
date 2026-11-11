@@ -76,7 +76,7 @@ private class LibraryAnalysisSource(private val context:Context,private val targ
     private val database=LocalLibrary.database(context)
     private val personal=UserData.database(context)
     private val revision=LocalLibrary.scansFinished
-    override fun waiting()=LocalLibrary.scanning || PlaybackRuntime.isUsbPreparing()
+    override fun waiting()=LocalLibrary.indexing || PlaybackRuntime.isUsbPreparing()
     private fun unchangedLibrary() {if(LocalLibrary.scansFinished!=revision)throw AnalysisLibraryChanged()}
     override suspend fun page(offset:Int):LoudnessAnalysisPage {
         unchangedLibrary()

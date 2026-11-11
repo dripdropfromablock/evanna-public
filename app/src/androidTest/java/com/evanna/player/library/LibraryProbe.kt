@@ -39,15 +39,14 @@ internal object LibraryProbe {
                 db.record("a", "old", document("stale"), audio); db.finish("a", "old"); db.interrupt("a", "old", LibraryRootState.UNAVAILABLE)
                 check(db.page().total == 2 && db.page().roots.single { it.uri == "a" }.state == LibraryRootState.SCANNING)
                 db.record("a", "new", document("one"), audio); db.finish("a", "new")
-                check(db.page().total == 2 && !db.page().songs.single { it.id == "two" }.available)
-                check(db.page(1).songs.size == 1 && db.page(1).total == 2)
-                check(db.page(1, 1).songs.single().id != db.page(1).songs.single().id)
-                check(db.page(1, 100001).songs.isEmpty() && db.page(1, 100001).total == 2)
+                check(db.page().total == 1 && db.page().songs.none { it.id == "two" })
+                check(db.page(1).songs.size == 1 && db.page(1).total == 1)
+                check(db.page(1, 1).songs.isEmpty())
+                check(db.page(1, 100001).songs.isEmpty() && db.page(1, 100001).total == 1)
                 db.begin("b", "interrupted")
             }
             LibraryDatabase(context, name).use { db ->
-                check(db.page().total == 2 && db.page().roots.single { it.uri == "b" }.state == LibraryRootState.PAUSED)
-                db.finish("b", "interrupted")
+                check(db.page().total == 1 && db.page().roots.single { it.uri == "b" }.state == LibraryRootState.PAUSED)
                 check(db.page().songs.single { it.id == "one" }.available)
                 val playlist = document("playlist", "lists").copy(name = "mix.M3U", mime = "audio/flac")
                 val mimePlaylist = document("mime-playlist", "lists").copy(mime = "audio/x-scpls")
@@ -72,9 +71,15 @@ internal object LibraryProbe {
                 check(inspected == 1 && db.cached("lists", playlist.key) == null)
                 check(db.cached("lists-overlap", playlist.key) != null)
                 check(db.page().songs.none { it.id == mimePlaylist.key })
-                check(!db.page().songs.single { it.id == missing.key }.available)
+                check(db.page().songs.none { it.id == missing.key })
+                val unchanged = runBlocking { scanLibrary("lists", db, object : LibraryScanSource {
+                    override suspend fun root() = document("directory").copy(mime = DIRECTORY_MIME)
+                    override suspend fun children(id: String) = listOf(song)
+                    override suspend fun inspect(document: LibraryDocument): LibraryAudio = error("Unchanged song was decoded")
+                }, silent = true) }
+                check(!unchanged.changed && db.page().songs.any { it.id == song.key && it.available })
                 db.begin("lists-overlap", "exclude"); db.exclude("lists-overlap", "exclude", playlist.key)
-                check(db.page().total == 4 && db.page().songs.none { it.id == playlist.key })
+                check(db.page().total == 2 && db.page().songs.none { it.id == playlist.key })
                 check(db.readableDatabase.rawQuery("SELECT COUNT(*) FROM tracks WHERE id=?", arrayOf(playlist.key)).use { it.moveToFirst(); it.getInt(0) } == 0)
             }
             val file = File(context.cacheDir, "library-tag-check.flac")

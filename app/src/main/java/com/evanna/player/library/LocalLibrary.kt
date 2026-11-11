@@ -5,12 +5,15 @@ import android.content.Intent
 import android.net.Uri
 import android.os.CancellationSignal
 import android.os.Build
+import android.os.Environment
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.evanna.player.decoder.*
+import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import kotlin.coroutines.resume
@@ -33,10 +36,15 @@ internal object LocalLibrary {
 
     // Folder scans belong to the app, not to the Library screen, so switching tabs never stops one.
     private val scans = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scanQueue = LibraryScanQueue()
     private var scanJob: Job? = null
-    private var tagsRefreshAttempted = false
+    private var startupSyncStarted = false
+    private var startupSyncing by mutableStateOf(false)
     var scanning by mutableStateOf(false)
         private set
+    var activeScanRoot by mutableStateOf<String?>(null)
+        private set
+    val indexing get() = scanning || startupSyncing
     var managingFolders by mutableStateOf(false)
         private set
     /** The Library screen's status line: scan progress and results, or the last queue add. */
@@ -47,58 +55,90 @@ internal object LocalLibrary {
     var scansFinished by mutableIntStateOf(0)
         private set
 
-    /** Main thread only. Adds the folder first when [add]; a request while a scan runs is ignored. */
-    fun scan(context: Context, uri: Uri, add: Boolean) {
-        startScans(context, { listOf(uri) }, add)
-    }
-
-    /** One attempt per process; a cancelled/unavailable folder remains a manual rescan. */
-    fun refreshTagsIfNeeded(context: Context) {
-        if (scanning || managingFolders || tagsRefreshAttempted) return
-        tagsRefreshAttempted = true
+    /** Runs once per process launch without changing foreground scan controls or status. */
+    fun syncOnLaunch(context: Context) {
+        if (startupSyncStarted) return
+        startupSyncStarted = true
         val app = context.applicationContext
-        startScans(app, { database(app).rootsNeedingTagRefresh().map { Uri.parse(it.uri) } }, false)
+        scanQueue.startup(scans) {
+            startupSyncing = true
+            var changed = false
+            try {
+                withContext(Dispatchers.IO) {
+                    val store = database(app)
+                    releaseRemovedGrants(app, store)
+                    val roots = store.rootUris().filter { isLocalTree(app, Uri.parse(it)) }
+                    scanLibraryBatch(roots, store, { source(app, store, it) }, silent = true, onChanged = { changed = true })
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                android.util.Log.w("LocalLibrary", "Startup library sync did not finish", failure)
+            } finally {
+                if (changed) scansFinished++
+                startupSyncing = false
+            }
+        }
     }
 
-    private fun startScans(context: Context, roots: suspend () -> List<Uri>, add: Boolean) {
+    private fun source(app: Context, store: LibraryDatabase, root: String) =
+        SafLibrarySource(app, Uri.parse(root), store.excludedFolders(root).map { it.id }.toSet())
+
+    /** Main thread only. Adds or reconnects the folder before scanning it when [add] is true. */
+    fun scan(context: Context, uri: Uri? = null, add: Boolean = false) {
         if (scanning || managingFolders) return
         val app = context.applicationContext
         scanning = true
-        status = "Scanning folder…"
+        status = if (uri == null) "Scanning music folders…" else "Scanning folder…"
         scanJob = scans.launch {
             try {
-                val ready = withContext(Dispatchers.IO) {
-                    releaseRemovedGrants(app,database(app))
-                    val selected = roots()
-                    if (add) add(app, selected.single())
-                    scanLibraryBatch(selected.map { it.toString() }, database(app), { SafLibrarySource(app, Uri.parse(it),database(app).excludedFolders(it).map {folder->folder.id}.toSet()) }) { count ->
-                        if (count % 10 == 0) withContext(Dispatchers.Main) { status = "Scanning… $count audio files checked." }
+                val ready = scanQueue.userAction {
+                    withContext(Dispatchers.IO) {
+                        val store = database(app)
+                        releaseRemovedGrants(app, store)
+                        val selected = when {
+                            add -> listOf(add(app, requireNotNull(uri), store).toString())
+                            uri != null -> listOf(uri.toString())
+                            else -> store.rootUris()
+                        }
+                        var nextUpdate = 0L
+                        scanLibraryBatch(selected, store, { source(app, store, it) }, onRoot = { root ->
+                            withContext(Dispatchers.Main) { activeScanRoot = root }
+                        }) { count ->
+                            val now = SystemClock.elapsedRealtime()
+                            if (now >= nextUpdate) {
+                                nextUpdate = now + 250
+                                withContext(Dispatchers.Main) { status = "Scanning… $count audio files checked." }
+                            }
+                        }
+                        val readyRoots = store.roots().filter { it.state == LibraryRootState.READY }.map { it.uri }.toSet()
+                        selected.all { it in readyRoots }
                     }
-                    val readyRoots = database(app).roots().filter { it.state == LibraryRootState.READY }.map { it.uri }.toSet()
-                    selected.all { it.toString() in readyRoots }
                 }
                 status = if (ready) READY_STATUS
                     else "Scan incomplete. Saved songs were kept. Reconnect the folder and rescan."
             } catch (cancelled: CancellationException) {
                 status = "Scan cancelled. Saved songs were kept."
                 throw cancelled
+            } catch (overlap: FolderOverlap) {
+                status = overlap.message.orEmpty()
             } catch (_: Exception) {
                 status = "The folder could not be indexed. Use a local phone or SD-card folder, or select it again to renew access. Saved songs were kept."
-            } finally { scanning = false; scansFinished++ }
+            } finally { activeScanRoot = null; scanning = false; scansFinished++ }
         }
     }
 
-    fun cancelScan() { if(!managingFolders){tagsRefreshAttempted = true; scanJob?.cancel()} }
+    fun cancelScan() { if (!managingFolders) scanJob?.cancel() }
 
     fun cleanupRemovedFolders(context:Context) = folderAction(context,catalogChange=false) {app,store ->
         val pending=store.pendingGrantReleases().size
         if(pending==0)null else if(releaseRemovedGrants(app,store))"Removed folder access released."
-        else "A removed folder's access could not be released yet. Evanna will retry when Library opens."
+        else "A removed folder's access could not be released yet. Evanna will retry on the next scan or launch."
     }
     fun removeFolder(context:Context,root:LibraryRoot) = folderAction(context,"Removing music folder…") {app,store ->
         store.removeRoot(root.uri)
         if(releaseRemovedGrants(app,store))"Folder removed from Evanna. Music files and personal lists were kept."
-        else "Folder removed; music files kept. Access cleanup is saved and will retry when Library opens."
+        else "Folder removed; music files kept. Evanna will retry releasing access on the next scan or launch."
     }
     fun includeFolder(context:Context,root:String,id:String) = folderAction(context,"Including subfolder…") {_,store ->
         store.includeFolder(root,id);"Folder included again. Rescan its music folder to restore the songs."
@@ -129,16 +169,19 @@ internal object LocalLibrary {
         message?.let {status=it}
         // Folder edits belong to the app scope and finish their transaction even if the dialog closes.
         return scans.launch {
-            try {withContext(Dispatchers.IO){action(app,database(app))}?.let {status=it}}
+            try {scanQueue.userAction { withContext(Dispatchers.IO){action(app,database(app))} }?.let {status=it}}
             catch(cancelled:CancellationException){throw cancelled}
             catch(_:Exception){status="The folder change could not finish. Reconnect access or check free storage, then try again. No music files were deleted."}
             finally {managingFolders=false;if(catalogChange){scanning=false;scansFinished++}}
         }
     }
     private fun releaseRemovedGrants(context:Context,store:LibraryDatabase):Boolean {
+        val pending = store.pendingGrantReleases()
+        if (pending.isEmpty()) return true
+        val roots = store.rootUris().toSet()
         var complete=true
-        for(root in store.pendingGrantReleases()) {
-            if(store.roots().any {it.uri==root}){store.acknowledgeGrantRelease(root);continue}
+        for(root in pending) {
+            if(root in roots){store.acknowledgeGrantRelease(root);continue}
             val uri=Uri.parse(root)
             if(!isLocalTree(context,uri)){complete=false;continue}
             try {
@@ -149,20 +192,89 @@ internal object LocalLibrary {
         return complete
     }
 
-    suspend fun add(context: Context, uri: Uri) {
+    private suspend fun add(context: Context, uri: Uri, store: LibraryDatabase): Uri {
         if (!isLocalTree(context, uri)) throw IOException("LOCAL_FOLDER_REQUIRED")
-        val resolver = context.applicationContext.contentResolver
-        val existing = hasTreeReadGrant(context, uri)
+        val resolver = context.contentResolver
+        val selectedId = DocumentsContract.getTreeDocumentId(uri)
+        val roots = store.roots().filter { isLocalTree(context, Uri.parse(it.uri)) }
+        val same = roots.firstOrNull { root ->
+            val tree = Uri.parse(root.uri)
+            tree.authority == uri.authority && DocumentsContract.getTreeDocumentId(tree) == selectedId
+        }
+        val tree = same?.let { Uri.parse(it.uri) } ?: uri
+        val existing = hasTreeReadGrant(context, tree)
+        if (same != null && existing && same.state != LibraryRootState.UNAVAILABLE) {
+            throw FolderOverlap("${same.name} is already in your music folders.")
+        }
         try {
-            if (!existing) resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            val root = SafLibrarySource(context, uri).root()
+            if (!existing) resolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val root = SafLibrarySource(context, tree).root()
             if (root.mime != DIRECTORY_MIME) throw IOException("FOLDER_REQUIRED")
-            database(context).addRoot(uri.toString(), root.name, !existing)
+            if (same == null) {
+                val overlapping = roots.firstOrNull { foldersOverlap(context, tree, Uri.parse(it.uri)) }
+                if (overlapping != null) throw FolderOverlap("This folder overlaps ${overlapping.name}. Choose a separate folder.")
+            }
+            store.addRoot(tree.toString(), root.name, !existing)
+            return tree
         } catch (failure: Throwable) {
-            if (!existing) runCatching { resolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            if (!existing) runCatching { resolver.releasePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             throw failure
         }
     }
+}
+
+private class FolderOverlap(message: String) : IOException(message)
+
+internal fun folderLocation(tree: Uri, volumeNames: Map<String, String>): String {
+    if (!DocumentsContract.isTreeUri(tree)) return tree.toString()
+    val id = DocumentsContract.getTreeDocumentId(tree)
+    if (tree.authority == "com.android.externalstorage.documents") {
+        val volume = id.substringBefore(':')
+        val storage = if (volume == "primary") "Internal storage" else volumeNames[volume.uppercase()] ?: "Storage $volume"
+        return "$storage / ${id.substringAfter(':', "")}".trimEnd()
+    }
+    return id.removePrefix("raw:").let { if (it == "downloads") "Downloads" else it }
+}
+
+private fun foldersOverlap(context: Context, first: Uri, second: Uri): Boolean {
+    val a = folderStoragePath(first)
+    val b = folderStoragePath(second)
+    if (a != null && b != null) return folderPathsOverlap(a, b)
+    if (first.authority != second.authority) return false
+    return treeContains(context, first, second) || treeContains(context, second, first)
+}
+
+private fun treeContains(context: Context, parent: Uri, child: Uri): Boolean {
+    val parentDoc = DocumentsContract.buildDocumentUriUsingTree(parent, DocumentsContract.getTreeDocumentId(parent))
+    val childId = DocumentsContract.getTreeDocumentId(child)
+    if (Build.VERSION.SDK_INT >= 29) {
+        return isDescendant(context, parentDoc, DocumentsContract.buildDocumentUriUsingTree(child, childId))
+    }
+    // API 28 only returns the portion of the path inside the tree in the supplied URI.
+    return try {
+        isDescendant(context, parentDoc, DocumentsContract.buildDocumentUriUsingTree(parent, childId))
+    } catch (_: SecurityException) {
+        false
+    }
+}
+
+private fun folderStoragePath(tree: Uri): String? {
+    val id = DocumentsContract.getTreeDocumentId(tree)
+    val primary = Environment.getExternalStorageDirectory()
+    val file = when (tree.authority) {
+        "com.android.externalstorage.documents" -> {
+            val volume = id.substringBefore(':', "")
+            if (volume.isEmpty()) return null
+            File(if (volume == "primary") primary else File("/storage", volume), id.substringAfter(':'))
+        }
+        "com.android.providers.downloads.documents" -> when {
+            id == "downloads" -> File(primary, Environment.DIRECTORY_DOWNLOADS)
+            id.startsWith("raw:/") -> File(id.removePrefix("raw:"))
+            else -> return null
+        }
+        else -> return null
+    }
+    return try { file.canonicalPath } catch (_: IOException) { file.absolutePath }
 }
 
 internal fun isLocalTree(context: Context, uri: Uri): Boolean =
@@ -176,6 +288,7 @@ internal class SafLibrarySource(context: Context, private val tree: Uri,override
     private val app = context.applicationContext
     private val resolver = app.contentResolver
     private val rootId = DocumentsContract.getTreeDocumentId(tree)
+    private val keyPrefix = "${tree.authority}\u0000".encodeToByteArray()
     private val columns = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
         DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED)
 
@@ -188,17 +301,18 @@ internal class SafLibrarySource(context: Context, private val tree: Uri,override
     private suspend fun query(uri: Uri): List<LibraryDocument> = providerCall { signal ->
         resolver.query(uri, columns, null, null, null, signal)?.use { cursor ->
             if (cursor.extras.getBoolean(DocumentsContract.EXTRA_LOADING, false)) throw IOException("INCOMPLETE_FOLDER")
+            val digest = MessageDigest.getInstance("SHA-256")
             buildList {
                 while (cursor.moveToNext()) {
                     signal.throwIfCanceled()
                     if (size >= 100000) throw IOException("FOLDER_LIMIT_EXCEEDED")
                     val id = cursor.getString(0) ?: throw IOException("INVALID_DOCUMENT")
                     if (id.length > 8192) throw IOException("INVALID_DOCUMENT")
-                    val documentUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-                    if (documentUri.toString().length > 8192) throw IOException("INVALID_DOCUMENT")
-                    val key = MessageDigest.getInstance("SHA-256").digest((tree.authority + "\u0000" + id).toByteArray())
-                        .joinToString("") { "%02x".format(it.toInt() and 255) }
-                    add(LibraryDocument(id, key, documentUri.toString(), cursor.getString(1)?.take(512) ?: "Audio file",
+                    val documentUri = DocumentsContract.buildDocumentUriUsingTree(tree, id).toString()
+                    if (documentUri.length > 8192) throw IOException("INVALID_DOCUMENT")
+                    digest.update(keyPrefix)
+                    val key = digest.digest(id.encodeToByteArray()).toHexString()
+                    add(LibraryDocument(id, key, documentUri, cursor.getString(1)?.take(512) ?: "Audio file",
                         cursor.getString(2) ?: "", if (cursor.isNull(3)) null else cursor.getLong(3), if (cursor.isNull(4)) null else cursor.getLong(4)))
                 }
             }
@@ -206,11 +320,10 @@ internal class SafLibrarySource(context: Context, private val tree: Uri,override
     }
     override suspend fun inspect(document: LibraryDocument): LibraryAudio = providerCall { signal ->
         resolver.openFileDescriptor(Uri.parse(document.uri), "r", signal)?.use { descriptor ->
-            NativeDecoder.open(descriptor.fd).use { decoder ->
-                signal.throwIfCanceled()
-                val info = decoder.info
-                LibraryAudio(info.title, info.artist, info.album, info.durationUs, com.evanna.player.decoder.sourceCodec(info.codec, info.sampleRate), info.sampleRate, info.significantBits, info.channels, info.musicTags,info.sortTags)
-            }
+            val info = NativeDecoder.inspect(descriptor.fd, signal)
+            signal.throwIfCanceled()
+            LibraryAudio(info.title, info.artist, info.album, info.durationUs, sourceCodec(info.codec, info.sampleRate),
+                info.sampleRate, info.significantBits, info.channels, info.musicTags, info.sortTags)
         } ?: throw IOException("DOCUMENT_UNAVAILABLE")
     }
     override suspend fun readSheet(document: LibraryDocument): ByteArray = providerCall { signal ->
