@@ -36,6 +36,9 @@ struct Decoder {
     int fd = -1;
     int64_t size = 0, position = 0, bytesLeft = 0;
     std::shared_ptr<std::atomic<bool>> cancelled = std::make_shared<std::atomic<bool>>(false);
+    JNIEnv* scanEnv = nullptr;
+    jobject scanSignal = nullptr;
+    jmethodID scanIsCancelled = nullptr;
     Clock::time_point deadline;
     AVFormatContext* format = nullptr;
     AVIOContext* io = nullptr;
@@ -59,9 +62,12 @@ struct Decoder {
         if (fd >= 0) ::close(fd);
     }
     void beginOperation() { bytesLeft = 8 * 1024 * 1024; deadline = Clock::now() + std::chrono::seconds(5); }
-    bool interrupted() const { return cancelled->load() || Clock::now() > deadline; }
+    bool cancellationRequested() const {
+        return cancelled->load() || (scanSignal && scanEnv->CallBooleanMethod(scanSignal, scanIsCancelled));
+    }
+    bool interrupted() const { return cancellationRequested() || Clock::now() > deadline; }
     void check() const {
-        require(!cancelled->load(), "DECODER_CANCELLED");
+        require(!cancellationRequested(), "DECODER_CANCELLED");
         require(Clock::now() <= deadline && bytesLeft >= 0, "DECODER_LIMIT_EXCEEDED");
     }
     static int interrupt(void* opaque) { return static_cast<Decoder*>(opaque)->interrupted(); }
@@ -120,7 +126,39 @@ struct Decoder {
         }
     }
 
-    void open(int borrowedFd) {
+    bool readHeaderMetadata() {
+        const auto* audio = format->streams[stream];
+        const auto* parameters = audio->codecpar;
+        const auto id = parameters->codec_id;
+        const auto* implementation = avcodec_find_decoder(id);
+        if (!implementation || !av_match_list(implementation->name, codecs, ',')) return false;
+        const auto* description = avcodec_descriptor_get(id);
+        const bool pcm = description && !strncmp(description->name, "pcm_", 4);
+        // Other decoders can change rate, layout or precision after opening, including hybrid WavPack and DSD.
+        if (!pcm && id != AV_CODEC_ID_FLAC && id != AV_CODEC_ID_ALAC) return false;
+        const int headerRate = parameters->sample_rate;
+        const auto& layout = parameters->ch_layout;
+        if (headerRate < 8000 || headerRate > 384000 || layout.nb_channels < 1 || layout.nb_channels > 2 ||
+            layout.order == AV_CHANNEL_ORDER_CUSTOM || (layout.order == AV_CHANNEL_ORDER_NATIVE &&
+            layout.u.mask != (layout.nb_channels == 1 ? AV_CH_LAYOUT_MONO : AV_CH_LAYOUT_STEREO)) ||
+            audio->duration <= 0 || audio->time_base.num <= 0 || audio->time_base.den <= 0) return false;
+        const bool headerLossless = description && (description->props & AV_CODEC_PROP_LOSSLESS);
+        const bool floating = id == AV_CODEC_ID_PCM_F32LE || id == AV_CODEC_ID_PCM_F32BE ||
+            id == AV_CODEC_ID_PCM_F64LE || id == AV_CODEC_ID_PCM_F64BE;
+        const bool headerQuantized = !headerLossless || floating;
+        int headerBits = parameters->bits_per_raw_sample;
+        if (headerBits == 0) headerBits = av_get_bits_per_sample(id);
+        if (!headerQuantized && headerBits != 16 && headerBits != 24 && headerBits != 32) return false;
+        rate = headerRate;
+        channels = layout.nb_channels;
+        bits = headerQuantized ? 0 : headerBits;
+        lossless = headerLossless;
+        quantized = headerQuantized;
+        durationUs = av_rescale_q(audio->duration, audio->time_base, AV_TIME_BASE_Q);
+        return true;
+    }
+
+    void open(int borrowedFd, bool metadataOnly = false) {
         fd = fcntl(borrowedFd, F_DUPFD_CLOEXEC, 0);
         require(fd >= 0, "DECODER_DESCRIPTOR_ERROR");
         struct stat status{};
@@ -150,11 +188,16 @@ struct Decoder {
         int result = avformat_open_input(&format, nullptr, nullptr, nullptr);
         check();
         require(result >= 0, "DECODER_CORRUPT_OR_UNSUPPORTED");
+        if (metadataOnly) {
+            stream = av_find_best_stream(format, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
+            if (stream >= 0 && readHeaderMetadata()) return;
+        }
         result = avformat_find_stream_info(format, nullptr);
         check();
         require(result >= 0, "DECODER_CORRUPT_OR_UNSUPPORTED");
         stream = av_find_best_stream(format, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
         require(stream >= 0, "DECODER_NO_SUPPORTED_AUDIO");
+        if (metadataOnly && readHeaderMetadata()) return;
         const auto* parameters = format->streams[stream]->codecpar;
         const auto* implementation = avcodec_find_decoder(parameters->codec_id);
         require(implementation != nullptr, "DECODER_NO_SUPPORTED_AUDIO");
@@ -200,9 +243,10 @@ struct Decoder {
                 require(expectedFrames >= 0 && expectedFrames < INT64_MAX, "DECODER_INVALID_DURATION");
             }
         }
+        if (metadataOnly && codec->codec_id != AV_CODEC_ID_WAVPACK) return;
         packet = av_packet_alloc();
-        frame = av_frame_alloc();
-        require(packet && frame, "DECODER_ALLOCATION_FAILED");
+        if (!metadataOnly) frame = av_frame_alloc();
+        require(packet && (metadataOnly || frame), "DECODER_ALLOCATION_FAILED");
         if (timed && codec->codec_id == AV_CODEC_ID_AAC && strstr(demuxer, "mov") != nullptr) {
             // Keep the first audio packet queued: only explicit priming plus a timed end is eligible.
             for (int step = 0; step < 4096; ++step) {
@@ -414,11 +458,22 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM*, void*) {
     av_max_alloc(16 * 1024 * 1024);
     return JNI_VERSION_1_6;
 }
-extern "C" JNIEXPORT jlongArray JNICALL
-Java_com_evanna_player_decoder_NativeDecoder_nativeOpen(JNIEnv* env, jclass, jint fd) {
+static jlongArray openDecoder(JNIEnv* env, jint fd, jobject signal) {
     return guarded(env, [&]() -> jlongArray {
         auto decoder = std::make_shared<Decoder>();
-        decoder->open(fd);
+        if (signal) {
+            auto type = env->GetObjectClass(signal);
+            if (!type) return nullptr;
+            decoder->scanIsCancelled = env->GetMethodID(type, "isCanceled", "()Z");
+            env->DeleteLocalRef(type);
+            if (!decoder->scanIsCancelled) return nullptr;
+            decoder->scanEnv = env;
+            decoder->scanSignal = signal;
+        }
+        decoder->open(fd, signal != nullptr);
+        if (signal) decoder->check();
+        decoder->scanSignal = nullptr;
+        decoder->scanEnv = nullptr;
         auto array = env->NewLongArray(8);
         if (!array) return nullptr;
         std::lock_guard<std::mutex> lock(handlesMutex);
@@ -431,9 +486,20 @@ Java_com_evanna_player_decoder_NativeDecoder_nativeOpen(JNIEnv* env, jclass, jin
         return array;
     });
 }
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_evanna_player_decoder_NativeDecoder_nativeOpen(JNIEnv* env, jclass, jint fd) {
+    return openDecoder(env, fd, nullptr);
+}
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_evanna_player_decoder_NativeDecoder_nativeInspect(JNIEnv* env, jclass, jint fd, jobject signal) {
+    return openDecoder(env, fd, signal);
+}
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_evanna_player_decoder_NativeDecoder_nativeCodec(JNIEnv* env, jclass, jlong id) {
-    return guarded(env, [&] { return env->NewStringUTF(avcodec_get_name(lookup(id)->codec->codec_id)); });
+    return guarded(env, [&] {
+        const auto decoder = lookup(id);
+        return env->NewStringUTF(avcodec_get_name(decoder->format->streams[decoder->stream]->codecpar->codec_id));
+    });
 }
 extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_evanna_player_decoder_NativeDecoder_nativeTags(JNIEnv* env, jclass, jlong id) {

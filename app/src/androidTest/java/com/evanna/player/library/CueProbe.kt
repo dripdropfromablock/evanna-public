@@ -3,6 +3,7 @@ package com.evanna.player.library
 import android.app.Instrumentation
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
 import com.evanna.player.decoder.*
 import com.evanna.player.playback.RangePcmTrack
@@ -22,6 +23,14 @@ internal object CueProbe {
         try {
             val audio = File(directory, "album.flac")
             instrumentation.context.assets.open("cue/album.flac").use { input -> audio.outputStream().use(input::copyTo) }
+            ParcelFileDescriptor.open(audio, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+                val metadata = NativeDecoder.inspect(descriptor.fd, CancellationSignal())
+                NativeDecoder.open(descriptor.fd).use { decoder ->
+                    check(metadata == decoder.info.copy(gaplessEligible = false, loudnessTags = com.evanna.player.loudness.LoudnessTags()))
+                }
+                val cancelled = CancellationSignal().apply { cancel() }
+                check(runCatching { NativeDecoder.inspect(descriptor.fd, cancelled) }.exceptionOrNull() is java.io.IOException)
+            }
             val sheet = parseCueSheet(instrumentation.context.assets.open("cue/album.cue").use { it.readBytes() })
             val file = DecodedAudioTrack.prepare({ ParcelFileDescriptor.open(audio, ParcelFileDescriptor.MODE_READ_ONLY).use { NativeDecoder.open(it.fd) } })
             val rate = file.format.sampleRate
@@ -85,8 +94,7 @@ internal object CueProbe {
                 check(db.song(listed[1].id)?.endFrame == 95_844L && db.song(key)?.startFrame == null)
                 scan(false)
                 val after = db.page().songs
-                check(after.single { it.available }.title == "Whole file") { "Removing the sheet must show the whole file again" }
-                check(after.count { !it.available } == 3)
+                check(after.single().title == "Whole file") { "Removing the sheet must show the whole file again" }
 
                 val gapped = parseCueSheet(("TITLE \"Gapped album\"\nFILE \"album.flac\" WAVE\n" +
                     "TRACK 07 AUDIO\nTITLE Seven\nINDEX 01 00:00:00\n" +

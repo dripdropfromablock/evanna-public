@@ -52,17 +52,17 @@ internal object LibraryBrowseProbe {
                 check(db.groups(LibraryGroupKind.ARTIST).groups.all { it.artist == null })
                 check(db.groups(LibraryGroupKind.ARTIST, search = "night").groups.sumOf { it.count } == 3)
 
-                // A completed scan may mark a song missing, but browsing must keep it recoverable.
+                // A completed scan removes missing files while other memberships remain available.
                 db.begin("a", "missing")
                 for (number in listOf(1, 2, 3, 5)) {
                     val cached = checkNotNull(db.cached("a", id(number)))
                     db.record("a", "missing", cached.document, cached.audio)
                 }
                 db.finish("a", "missing")
-                check(!db.page(filter = LibraryFilter(search = "Absent")).songs.single().available)
+                check(db.page(filter = LibraryFilter(search = "Absent")).songs.isEmpty())
                 db.interrupt("a", "missing", LibraryRootState.UNAVAILABLE)
                 check(db.page(filter = LibraryFilter(search = "Silver")).songs.single().uri == "content://test/b/1")
-                check(db.groups(LibraryGroupKind.ARTIST).groups.sumOf { it.count } == 5)
+                check(db.groups(LibraryGroupKind.ARTIST).groups.sumOf { it.count } == 4)
 
                 db.begin("b", "paged")
                 db.record("b", "paged", document(1, "b"), audio)

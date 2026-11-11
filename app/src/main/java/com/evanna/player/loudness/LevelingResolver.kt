@@ -10,7 +10,7 @@ import kotlinx.coroutines.*
 internal suspend fun resolveLeveling(context:Context,mode:LevelingMode,id:String?,track:PcmTrack):LevelingDecision = withContext(Dispatchers.IO) {
     val tagged=levelingDecision(mode,track.loudnessTags)
     if(mode==LevelingMode.OFF || (if(mode==LevelingMode.TRACK)track.loudnessTags.trackDb else track.loudnessTags.albumDb)!=null)return@withContext tagged
-    if(id==null || !validLoudnessKey(id) || LocalLibrary.scanning)return@withContext tagged
+    if(id==null || !validLoudnessKey(id) || LocalLibrary.indexing)return@withContext tagged
     try {
         val database=LocalLibrary.database(context);val personal=UserData.database(context)
         val revision=LocalLibrary.scansFinished
@@ -37,7 +37,7 @@ internal suspend fun resolveLeveling(context:Context,mode:LevelingMode,id:String
             }
             levelingDecision(mode,track.loudnessTags,album=values)
         }
-        if(LocalLibrary.scanning || LocalLibrary.scansFinished!=revision)tagged else result
+        if(LocalLibrary.indexing || LocalLibrary.scansFinished!=revision)tagged else result
     }catch(cancelled:CancellationException){throw cancelled}
     catch(_:Exception){LevelingDecision(mode,0f,"Loudness data unavailable; no offset")}
 }

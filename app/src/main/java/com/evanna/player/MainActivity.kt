@@ -95,7 +95,7 @@ import com.evanna.player.diagnostics.CrashReportsScreen
 import com.evanna.player.diagnostics.DiagnosticEvent
 import com.evanna.player.decoder.LocalDecodeScreen
 import com.evanna.player.library.LibraryScreen
-import com.evanna.player.library.rememberAddMusicFolder
+import com.evanna.player.library.MusicFoldersDialog
 import com.evanna.player.library.ArtworkSize
 import com.evanna.player.library.LocalLibrary
 import com.evanna.player.library.Lyrics
@@ -274,6 +274,7 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalLayoutApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        LocalLibrary.syncOnLaunch(this)
         chooseStartupRoute = savedInstanceState?.getBoolean("chooseStartupRoute", true) ?: true
         startupOfferId = savedInstanceState?.getInt("startupOfferId", -1)?.takeIf { it >= 0 }
         startupPermissionId = savedInstanceState?.getInt("startupPermissionId", -1)?.takeIf { it >= 0 }
@@ -1221,6 +1222,7 @@ class MainActivity : ComponentActivity() {
         val colors = EvannaDesign.colorScheme
         val muted = colors.onSurfaceVariant
         var settingsQuery by rememberSaveable { mutableStateOf("") }
+        var showMusicFolders by rememberSaveable { mutableStateOf(false) }
         val profile=dacProfileKey
         val title = when (page) {
             PlayerScreen.AUDIO_OUTPUT -> "Audio output and USB"
@@ -1421,9 +1423,7 @@ class MainActivity : ComponentActivity() {
                 }}
             }
             if (page == PlayerScreen.LIBRARY_SETTINGS) item { SettingsCard("Local music") {
-                val addFolder = rememberAddMusicFolder()
-                OutlinedButton(onClick = addFolder, enabled = !LocalLibrary.scanning && !LocalLibrary.managingFolders,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Add music folder") }
+                SettingsLink("Manage music folders") { showMusicFolders = true }
                 SettingsLink("Open music library") { selectTab(PlayerScreen.LIBRARY) }
                 OutlinedButton(onClick = { filePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE); type = "audio/*"; putExtra(Intent.EXTRA_LOCAL_ONLY, true)
@@ -1465,6 +1465,7 @@ class MainActivity : ComponentActivity() {
                 } }
             }
         }
+        if (page == PlayerScreen.LIBRARY_SETTINGS && showMusicFolders) MusicFoldersDialog { showMusicFolders = false }
     }
 
     @Composable

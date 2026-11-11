@@ -1,5 +1,6 @@
 package com.evanna.player.decoder
 
+import android.os.CancellationSignal
 import java.io.Closeable
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -91,21 +92,34 @@ internal class NativeDecoder private constructor(private var handle: Long, val i
         fun open(fd: Int): NativeDecoder {
             val values = nativeOpen(fd)
             try {
-                val rawTags = nativeTags(values[0])
-                require(rawTags.size==20){"DECODER_TAGS_MISMATCH"}
-                val tags = rawTags.map(::metadataText)
-                val musicTags = musicTagsFromBytes(rawTags.copyOfRange(0,16))
-                return NativeDecoder(values[0], DecoderInfo(nativeCodec(values[0]), values[1].toInt(),
-                    values[2].toInt().takeIf { it > 0 }, values[3].toInt(), values[4].takeIf { it >= 0 }, true,
-                    values[5] != 0L, values[6] != 0L, tags[0], tags[1], tags[2],values[7]!=0L, musicTags,sortTagsFromBytes(rawTags.copyOfRange(16,20)),
-                    com.evanna.player.loudness.loudnessTagsFromText(nativeGainTags(values[0]).map {it.toString(Charsets.UTF_8)})))
+                return NativeDecoder(values[0], readInfo(values, playback = true))
             } catch (failure: Throwable) {
                 nativeClose(values[0])
                 throw failure
             }
         }
 
+        /** Reads bounded container metadata and tags without preparing PCM output. */
+        @Throws(IOException::class)
+        fun inspect(fd: Int, signal: CancellationSignal): DecoderInfo {
+            val values = nativeInspect(fd, signal)
+            return try { readInfo(values, playback = false) }
+            finally { nativeClose(values[0]) }
+        }
+
+        private fun readInfo(values: LongArray, playback: Boolean): DecoderInfo {
+            val rawTags = nativeTags(values[0])
+            require(rawTags.size == 20) { "DECODER_TAGS_MISMATCH" }
+            val loudness = if (playback) com.evanna.player.loudness.loudnessTagsFromText(
+                nativeGainTags(values[0]).map { it.toString(Charsets.UTF_8) }) else com.evanna.player.loudness.LoudnessTags()
+            return DecoderInfo(nativeCodec(values[0]), values[1].toInt(), values[2].toInt().takeIf { it > 0 },
+                values[3].toInt(), values[4].takeIf { it >= 0 }, true, values[5] != 0L, values[6] != 0L,
+                metadataText(rawTags[0]), metadataText(rawTags[1]), metadataText(rawTags[2]), playback && values[7] != 0L,
+                musicTagsFromBytes(rawTags.copyOfRange(0,16)), sortTagsFromBytes(rawTags.copyOfRange(16,20)), loudness)
+        }
+
         @JvmStatic private external fun nativeOpen(fd: Int): LongArray
+        @JvmStatic private external fun nativeInspect(fd: Int, signal: CancellationSignal): LongArray
         @JvmStatic private external fun nativeCodec(handle: Long): String
         @JvmStatic private external fun nativeTags(handle: Long): Array<ByteArray>
         @JvmStatic private external fun nativeGainTags(handle:Long):Array<ByteArray>

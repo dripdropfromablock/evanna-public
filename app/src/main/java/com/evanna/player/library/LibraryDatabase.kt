@@ -67,8 +67,11 @@ internal class LibraryDatabase(context: Context, name: String = "library.db",pri
         }
     }
     fun roots(): List<LibraryRoot> = readableDatabase.rawQuery(
-        "SELECT uri,name,state,(SELECT COUNT(*) FROM files f WHERE f.root=roots.uri) FROM roots ORDER BY name COLLATE NOCASE,uri", null).use { c ->
+        "SELECT uri,name,state,(SELECT COUNT(*) FROM files f JOIN tracks t ON t.id=f.id WHERE f.root=roots.uri AND f.present=1 AND t.cue_hidden=0) FROM roots ORDER BY name COLLATE NOCASE,uri", null).use { c ->
         buildList { while (c.moveToNext()) add(LibraryRoot(c.getString(0), c.getString(1), LibraryRootState.valueOf(c.getString(2)),c.getInt(3))) }
+    }
+    fun rootUris(): List<String> = readableDatabase.rawQuery("SELECT uri FROM roots ORDER BY name COLLATE NOCASE,uri", null).use { cursor ->
+        buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
     }
     fun removeRoot(root:String) {
         transaction {db ->
@@ -300,51 +303,87 @@ internal class LibraryDatabase(context: Context, name: String = "library.db",pri
     override fun begin(root: String, token: String) {
         writableDatabase.execSQL("UPDATE roots SET state='SCANNING',token=? WHERE uri=?", arrayOf(token, root))
     }
-    override fun cached(root: String, key: String): LibraryCached? = readableDatabase.rawQuery(
-        "SELECT f.document_id,f.uri,f.name,f.size,f.modified,f.readable,t.title,t.artist,t.album,t.duration,t.codec,t.rate,t.bits,t.channels,$musicTagColumns,t.tags_version,t.sort_title,t.sort_artist,t.sort_album,t.sort_album_artist FROM files f JOIN tracks t ON t.id=f.id WHERE f.root=? AND f.id=?", arrayOf(root, key)).use { c ->
-        if (!c.moveToFirst()) null else LibraryCached(LibraryDocument(c.getString(0), key, c.getString(1), c.getString(2), "audio/", c.longOrNull(3), c.longOrNull(4)),
-            if (c.getInt(5) == 0) null else LibraryAudio(c.getString(6), c.stringOrNull(7), c.stringOrNull(8), c.longOrNull(9), c.getString(10), c.getInt(11), c.longOrNull(12)?.toInt(), c.getInt(13), c.musicTags(14),
-                com.evanna.player.decoder.SortTags(c.stringOrNull(24),c.stringOrNull(25),c.stringOrNull(26),c.stringOrNull(27))), c.getInt(23))
+    override fun beginSilent(root: String, token: String) {
+        writableDatabase.execSQL("UPDATE roots SET token=? WHERE uri=?", arrayOf(token, root))
     }
-    override fun record(root: String, token: String, document: LibraryDocument, audio: LibraryAudio?) {
-        transaction { db ->
-            if (!current(db, root, token)) return@transaction
-            val details = ContentValues().apply {
-                put("id", document.key); put("title", audio?.title ?: document.name)
-                if (audio != null) { put("artist", audio.artist); put("album", audio.album); put("duration", audio.durationUs); put("codec", audio.codec); put("rate", audio.rate); put("bits", audio.bits); put("channels", audio.channels) }
-                if (audio != null) {
-                    val tags = audio.musicTags
-                    put("album_artist", tags.albumArtist); put("track_no", tags.trackNumber); put("track_total", tags.totalTracks)
-                    put("disc_no", tags.discNumber); put("disc_total", tags.totalDiscs); put("year", tags.year)
-                    put("genre", tags.genre); put("composer", tags.composer); put("compilation", if (tags.compilation) 1 else 0)
-                    put("tags_version", LIBRARY_TAGS_VERSION)
-                    val sort=audio.sortTags
-                    put("sort_title",sort.title);put("sort_artist",sort.artist);put("sort_album",sort.album);put("sort_album_artist",sort.albumArtist)
+    override fun cached(root: String, key: String): LibraryCached? = cachedBatch(root, listOf(key))[key]
+
+    override fun cachedBatch(root: String, keys: List<String>): Map<String, LibraryCached> {
+        require(keys.size in 1..SCAN_BATCH_SIZE)
+        return readableDatabase.rawQuery(
+            "SELECT f.document_id,f.uri,f.name,f.size,f.modified,f.readable,t.title,t.artist,t.album,t.duration,t.codec,t.rate,t.bits,t.channels,$musicTagColumns,t.tags_version,t.sort_title,t.sort_artist,t.sort_album,t.sort_album_artist,f.id,f.present,t.cue_hidden FROM files f JOIN tracks t ON t.id=f.id WHERE f.root=? AND f.id IN (${placeholders(keys.size)})",
+            (listOf(root) + keys).toTypedArray()).use { c ->
+            buildMap {
+                while (c.moveToNext()) {
+                    val key = c.getString(28)
+                    val document = LibraryDocument(c.getString(0), key, c.getString(1), c.getString(2), "audio/", c.longOrNull(3), c.longOrNull(4))
+                    val audio = if (c.getInt(5) == 0) null else LibraryAudio(c.getString(6), c.stringOrNull(7), c.stringOrNull(8), c.longOrNull(9), c.getString(10), c.getInt(11), c.longOrNull(12)?.toInt(), c.getInt(13), c.musicTags(14),
+                        com.evanna.player.decoder.SortTags(c.stringOrNull(24), c.stringOrNull(25), c.stringOrNull(26), c.stringOrNull(27)))
+                    put(key, LibraryCached(document, audio, c.getInt(23), c.getInt(29) != 0, c.getInt(30) != 0))
                 }
             }
-            if (audio == null) {
-                details.put("added_at",nowMs().coerceAtLeast(0));db.insertWithOnConflict("tracks", null, details, SQLiteDatabase.CONFLICT_IGNORE)
-            }else if (db.update("tracks", details, "id=?", arrayOf(document.key)) == 0) {
-                details.put("added_at",nowMs().coerceAtLeast(0));db.insertOrThrow("tracks", null, details)
-            }
-            val file = ContentValues().apply {
-                put("root", root); put("id", document.key); put("document_id", document.id); put("uri", document.uri); put("name", document.name)
-                put("size", document.size); put("modified", document.modified); put("token", token); put("present", 1); put("readable", if (audio == null) 0 else 1)
-            }
-            db.insertWithOnConflict("files", null, file, SQLiteDatabase.CONFLICT_REPLACE).also { check(it >= 0) }
-            // Shown again unless this scan's sheet pass still covers it.
-            db.execSQL("UPDATE tracks SET cue_hidden=0 WHERE id=?", arrayOf(document.key))
         }
     }
-    override fun recordCue(root: String, token: String, file: LibraryDocument, audio: LibraryAudio, sheet: CueSheet, ranges: List<CueRange>) {
+
+    override fun fingerprints(root: String, keys: List<String>): Map<String, LibraryFingerprint> {
+        require(keys.size in 1..SCAN_BATCH_SIZE)
+        return readableDatabase.rawQuery(
+            "SELECT f.id,f.uri,f.name,f.size,f.modified,f.present,f.readable,t.tags_version,t.cue_hidden FROM files f JOIN tracks t ON t.id=f.id WHERE f.root=? AND f.id IN (${placeholders(keys.size)})",
+            (listOf(root) + keys).toTypedArray()).use { cursor ->
+            buildMap {
+                while (cursor.moveToNext()) put(cursor.getString(0), LibraryFingerprint(cursor.getString(1), cursor.getString(2),
+                    cursor.longOrNull(3), cursor.longOrNull(4), cursor.getInt(5) != 0, cursor.getInt(6) != 0,
+                    cursor.getInt(7), cursor.getInt(8) != 0))
+            }
+        }
+    }
+    override fun record(root: String, token: String, document: LibraryDocument, audio: LibraryAudio?) =
+        recordBatch(root, token, listOf(document to audio))
+
+    override fun recordBatch(root: String, token: String, rows: List<Pair<LibraryDocument, LibraryAudio?>>) {
         transaction { db ->
             if (!current(db, root, token)) return@transaction
-            db.execSQL("UPDATE tracks SET cue_hidden=1 WHERE id=?", arrayOf(file.key))
+            for ((document, audio) in rows) record(db, root, token, document, audio)
+        }
+    }
+    private fun record(db: SQLiteDatabase, root: String, token: String, document: LibraryDocument, audio: LibraryAudio?) {
+        val details = ContentValues().apply {
+            put("id", document.key); put("title", audio?.title ?: document.name)
+            if (audio != null) { put("artist", audio.artist); put("album", audio.album); put("duration", audio.durationUs); put("codec", audio.codec); put("rate", audio.rate); put("bits", audio.bits); put("channels", audio.channels) }
+            if (audio != null) {
+                val tags = audio.musicTags
+                put("album_artist", tags.albumArtist); put("track_no", tags.trackNumber); put("track_total", tags.totalTracks)
+                put("disc_no", tags.discNumber); put("disc_total", tags.totalDiscs); put("year", tags.year)
+                put("genre", tags.genre); put("composer", tags.composer); put("compilation", if (tags.compilation) 1 else 0)
+                put("tags_version", LIBRARY_TAGS_VERSION)
+                val sort=audio.sortTags
+                put("sort_title",sort.title);put("sort_artist",sort.artist);put("sort_album",sort.album);put("sort_album_artist",sort.albumArtist)
+            }
+        }
+        if (audio == null) {
+            details.put("added_at",nowMs().coerceAtLeast(0));db.insertWithOnConflict("tracks", null, details, SQLiteDatabase.CONFLICT_IGNORE)
+        }else if (db.update("tracks", details, "id=?", arrayOf(document.key)) == 0) {
+            details.put("added_at",nowMs().coerceAtLeast(0));db.insertOrThrow("tracks", null, details)
+        }
+        val file = ContentValues().apply {
+            put("root", root); put("id", document.key); put("document_id", document.id); put("uri", document.uri); put("name", document.name)
+            put("size", document.size); put("modified", document.modified); put("token", token); put("present", 1); put("readable", if (audio == null) 0 else 1)
+        }
+        db.insertWithOnConflict("files", null, file, SQLiteDatabase.CONFLICT_REPLACE).also { check(it >= 0) }
+        // Shown again unless this scan's sheet pass still covers it.
+        db.execSQL("UPDATE tracks SET cue_hidden=0 WHERE id=?", arrayOf(document.key))
+    }
+    override fun recordCue(root: String, token: String, file: LibraryDocument, audio: LibraryAudio, sheet: CueSheet, ranges: List<CueRange>): Boolean {
+        var changed = false
+        transaction { db ->
+            if (!current(db, root, token)) return@transaction
+            changed = db.update("tracks", ContentValues().apply { put("cue_hidden", 1) },
+                "id=? AND cue_hidden=0", arrayOf(file.key)) != 0
             val tags = audio.musicTags
             val totalTracks = sheet.totalTracks
+            val digest = MessageDigest.getInstance("SHA-256")
             for (range in ranges) {
-                val id = MessageDigest.getInstance("SHA-256").digest((file.key + "\u0000cue\u0000" + range.track.number).toByteArray())
-                    .joinToString("") { "%02x".format(it.toInt() and 255) }
+                val id = digest.digest((file.key + "\u0000cue\u0000" + range.track.number).toByteArray()).toHexString()
                 val frames = range.endFrame?.minus(range.startFrame) ?: audio.durationUs?.let { ((it * audio.rate + 500_000) / 1_000_000 - range.startFrame).coerceAtLeast(0) }
                 val details = ContentValues().apply {
                     put("id", id); put("title", range.track.title ?: "Track ${range.track.number}")
@@ -356,32 +395,83 @@ internal class LibraryDatabase(context: Context, name: String = "library.db",pri
                     put("year", tags.year); put("genre", tags.genre); put("composer", tags.composer); put("compilation", if (tags.compilation) 1 else 0)
                     put("tags_version", LIBRARY_TAGS_VERSION); put("start_frame", range.startFrame); put("end_frame", range.endFrame)
                 }
-                if (db.update("tracks", details, "id=?", arrayOf(id)) == 0) { details.put("added_at", nowMs().coerceAtLeast(0)); db.insertOrThrow("tracks", null, details) }
+                if (!db.hasValues("tracks", "id=?", arrayOf(id), details)) {
+                    if (db.update("tracks", details, "id=?", arrayOf(id)) == 0) {
+                        details.put("added_at", nowMs().coerceAtLeast(0)); db.insertOrThrow("tracks", null, details)
+                    }
+                    changed = true
+                }
                 val entry = ContentValues().apply {
                     put("root", root); put("id", id); put("document_id", file.id); put("uri", file.uri); put("name", file.name)
-                    put("size", file.size); put("modified", file.modified); put("token", token); put("present", 1); put("readable", 1)
+                    put("size", file.size); put("modified", file.modified); put("present", 1); put("readable", 1)
                 }
-                db.insertWithOnConflict("files", null, entry, SQLiteDatabase.CONFLICT_REPLACE).also { check(it >= 0) }
+                if (db.hasValues("files", "root=? AND id=?", arrayOf(root, id), entry)) {
+                    db.execSQL("UPDATE files SET token=? WHERE root=? AND id=?", arrayOf(token, root, id))
+                } else {
+                    entry.put("token", token)
+                    db.insertWithOnConflict("files", null, entry, SQLiteDatabase.CONFLICT_REPLACE).also { check(it >= 0) }
+                    changed = true
+                }
             }
         }
+        return changed
     }
-    override fun exclude(root: String, token: String, key: String) {
+    fun exclude(root: String, token: String, key: String) {
         transaction { db ->
             if (!current(db, root, token)) return@transaction
             db.delete("files", "root=? AND id=?", arrayOf(root, key))
             db.delete("tracks", "id=? AND NOT EXISTS(SELECT 1 FROM files WHERE files.id=tracks.id)", arrayOf(key))
         }
     }
-    override fun finish(root: String, token: String) {
+    override fun markSeen(root: String, token: String, keys: List<String>, reveal: List<String>): Boolean {
+        var changed = false
         transaction { db ->
             if (!current(db, root, token)) return@transaction
-            db.execSQL("UPDATE files SET present=0 WHERE root=? AND token!=?", arrayOf(root, token))
-            db.execSQL("UPDATE roots SET state='READY' WHERE uri=? AND token=?", arrayOf(root, token))
+            if (keys.isNotEmpty()) {
+                val filter = "root=? AND id IN (${placeholders(keys.size)})"
+                val args = (listOf(root) + keys).toTypedArray()
+                db.execSQL("UPDATE files SET token=? WHERE $filter", arrayOf(token, *args))
+                changed = db.update("files", ContentValues().apply { put("present", 1) }, "$filter AND present=0", args) != 0
+            }
+            if (reveal.isNotEmpty()) {
+                val count = db.update("tracks", ContentValues().apply { put("cue_hidden", 0) },
+                    "cue_hidden=1 AND id IN (${placeholders(reveal.size)})", reveal.toTypedArray())
+                changed = changed || count != 0
+            }
         }
+        return changed
     }
-    override fun interrupt(root: String, token: String, state: LibraryRootState) {
-        writableDatabase.execSQL("UPDATE roots SET state=? WHERE uri=? AND token=?", arrayOf(state.name, root, token))
+    override fun finish(root: String, token: String, checkActive: () -> Unit): Boolean {
+        var changed = false
+        transaction { db ->
+            if (!current(db, root, token)) return@transaction
+            // Two indexed ranges visit only rows left behind by this generation.
+            val missing = db.rawQuery("SELECT id FROM files INDEXED BY files_by_root_token WHERE root=? AND token<? " +
+                "UNION ALL SELECT id FROM files INDEXED BY files_by_root_token WHERE root=? AND token>?",
+                arrayOf(root, token, root, token)).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) {
+                        if (size % SCAN_BATCH_SIZE == 0) checkActive()
+                        add(cursor.getString(0))
+                    }
+                }
+            }
+            for (chunk in missing.chunked(SCAN_BATCH_SIZE)) {
+                checkActive()
+                db.delete("files", "root=? AND id IN (${placeholders(chunk.size)})", (listOf(root) + chunk).toTypedArray())
+                db.delete("tracks", "id IN (${placeholders(chunk.size)}) AND NOT EXISTS(SELECT 1 FROM files WHERE files.id=tracks.id)", chunk.toTypedArray())
+            }
+            checkActive()
+            val stateChanged = updateRootState(db, root, token, LibraryRootState.READY)
+            changed = missing.isNotEmpty() || stateChanged
+        }
+        return changed
     }
+    override fun interrupt(root: String, token: String, state: LibraryRootState): Boolean = updateRootState(writableDatabase, root, token, state)
+
+    private fun updateRootState(db: SQLiteDatabase, root: String, token: String, state: LibraryRootState) =
+        db.update("roots", ContentValues().apply { put("state", state.name) }, "uri=? AND token=? AND state!=?",
+            arrayOf(root, token, state.name)) != 0
     private fun current(db: SQLiteDatabase, root: String, token: String) = db.rawQuery("SELECT 1 FROM roots WHERE uri=? AND token=?", arrayOf(root, token)).use { it.moveToFirst() }
     private fun transaction(action: (SQLiteDatabase) -> Unit) {
         val db = writableDatabase
@@ -389,6 +479,13 @@ internal class LibraryDatabase(context: Context, name: String = "library.db",pri
         try { action(db); db.setTransactionSuccessful() } finally { db.endTransaction() }
     }
 }
+private fun SQLiteDatabase.hasValues(table: String, where: String, args: Array<String>, values: ContentValues): Boolean {
+    val columns = values.keySet().toTypedArray()
+    return query(table, columns, where, args, null, null, null).use { cursor ->
+        cursor.moveToFirst() && columns.indices.all { cursor.stringOrNull(it) == values.getAsString(columns[it]) }
+    }
+}
+private fun placeholders(count: Int) = List(count) { "?" }.joinToString(",")
 private fun Cursor.stringOrNull(column: Int): String? = if (isNull(column)) null else getString(column)
 private fun Cursor.longOrNull(column: Int): Long? = if (isNull(column)) null else getLong(column)
 private fun tagColumn(kind:LibraryGroupKind):String=when(kind) {
