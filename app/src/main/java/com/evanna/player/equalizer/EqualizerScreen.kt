@@ -279,7 +279,7 @@ internal fun EqualizerScreen(profileKey: String?, onBack: () -> Unit, onChange: 
                         EqHSlider("Preamp", "${eqSigned(preamp)} dB", (preamp + 20f) / 20f, false, "EQ preamp in decibels", editable) {
                             parametricDraft = parametricDraft.copy(preampDb = snapGain(it * 20f - 20f, -20f..0f))
                         }
-                        Text("The preamp can only lower the level. Auto headroom lowers it further when the bands boost.", style = eqText(12.5.sp, 17.sp),
+                Text("Preamp lowers the overall level. Auto headroom makes extra room for boosts.", style = eqText(12.5.sp, 17.sp),
                             color = p.muted, modifier = Modifier.padding(top = 8.dp))
                     }
                 }
@@ -299,7 +299,7 @@ internal fun EqualizerScreen(profileKey: String?, onBack: () -> Unit, onChange: 
                     OutlinedButton(onClick = { importer.launch(arrayOf("text/plain", "application/octet-stream", "*/*")) }, enabled = editable,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Import ParametricEQ.txt") }
                     for (warning in warnings) Text(warning, color = EvannaDesign.colorScheme.error, style = eqText(12.5.sp, 17.sp))
-                    if (profile == null) Text("Open a USB DAC in Settings to save and apply an EQ. You can try the controls here first.",
+        if (profile == null) Text("Select a USB DAC in Settings to save and apply EQ.",
                         style = eqText(12.5.sp, 17.sp), color = p.muted, modifier = Modifier.padding(top = 4.dp))
                 }
             }
@@ -410,7 +410,7 @@ private fun BandEditor(index: Int, band: EqBand, total: Int, editable: Boolean, 
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             for ((type, label) in TYPES) EqChip(label, band.type == type, editable) { onBand(band.copy(type = type)) }
         }
-        Text("Pass types boost or cut a range: below (low pass), above (high pass) or around (band pass) the frequency. They do not cut off.",
+            Text("Pass filters adjust a range. Low pass affects below the frequency, high pass above it, and band pass around it.",
             style = eqText(12.5.sp, 17.sp), color = p.muted, modifier = Modifier.padding(top = 8.dp))
         EqHSlider("Frequency", String.format(Locale.ROOT, "%,d Hz", band.frequencyHz.roundToInt()), frequencyPosition(band.frequencyHz), false,
             "Band ${index + 1} frequency", editable) { onBand(band.copy(frequencyHz = frequencyAt(it))) }

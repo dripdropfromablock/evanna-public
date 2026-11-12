@@ -2,11 +2,15 @@ package com.evanna.player
 
 /** The queue is a page inside Now Playing (`PlayerPage.QUEUE`), not a screen of its own. */
 internal enum class PlayerScreen {
-    LIBRARY, SEARCH, NOW_PLAYING, PLAYLISTS, FAVORITES, RECENT, MOST,
+    LIBRARY, CAROUSEL, SEARCH, NOW_PLAYING, PLAYLISTS, FAVORITES, RECENT, MOST,
     OUTPUT, AUDIO_OUTPUT, EQUALIZER, LIBRARY_SETTINGS, APPEARANCE, SETTINGS_TOOLS, DIAGNOSTICS, DECODE, NOTICES
 }
 /** Bottom-bar destinations. OUTPUT is labelled Settings. */
-internal val playerTabs = listOf(PlayerScreen.LIBRARY, PlayerScreen.SEARCH, PlayerScreen.OUTPUT)
+internal val playerTabs = listOf(PlayerScreen.CAROUSEL, PlayerScreen.LIBRARY, PlayerScreen.SEARCH, PlayerScreen.OUTPUT)
+internal val startPages = listOf(PlayerScreen.LIBRARY, PlayerScreen.CAROUSEL)
+internal const val START_PAGE_PREFERENCE = "start-page"
+internal fun storedStartPage(value: Any?): PlayerScreen =
+    startPages.firstOrNull { it.name == value } ?: PlayerScreen.LIBRARY
 internal data class PlayerQueueItem(val id: String, val title: String, val artist: String? = null)
 internal data class PlayerPresentation(
     val id: String? = null, val title: String = "", val artist: String? = null, val album: String? = null,
@@ -32,10 +36,11 @@ internal fun playerDestination(stack: List<PlayerScreen>, target: PlayerScreen):
 internal fun playerSheetDismissed(stack: List<PlayerScreen>): List<PlayerScreen> =
     if (stack.lastOrNull() == PlayerScreen.NOW_PLAYING) stack.dropLast(1) else stack
 
-/** A tab replaces everything above Library, so Back from Search or Settings returns to Library. */
-internal fun playerTab(tab: PlayerScreen): List<PlayerScreen> {
+/** Back from another tab returns to the start page for this session. */
+internal fun playerTab(tab: PlayerScreen, home: PlayerScreen = PlayerScreen.LIBRARY): List<PlayerScreen> {
     require(tab in playerTabs)
-    return if (tab == PlayerScreen.LIBRARY) listOf(PlayerScreen.LIBRARY) else listOf(PlayerScreen.LIBRARY, tab)
+    require(home in startPages)
+    return if (tab == home) listOf(home) else listOf(home, tab)
 }
 
 internal fun selectedTab(stack: List<PlayerScreen>): PlayerScreen = stack.lastOrNull { it in playerTabs } ?: PlayerScreen.LIBRARY
@@ -43,8 +48,9 @@ internal fun selectedTab(stack: List<PlayerScreen>): PlayerScreen = stack.lastOr
 /** Tab roots use the bottom bar and system Back; pushed screens also show a Back arrow. */
 internal fun isTabRoot(stack: List<PlayerScreen>): Boolean = stack.size == 1 || (stack.size == 2 && stack.last() in playerTabs)
 
-/** The tab whose screen stays alive under everything pushed above it: Search or Settings when one was chosen first, otherwise Library. */
-internal fun baseTab(stack: List<PlayerScreen>): PlayerScreen = stack.getOrNull(1)?.takeIf { it in playerTabs } ?: PlayerScreen.LIBRARY
+/** The tab under the pushed screens. */
+internal fun baseTab(stack: List<PlayerScreen>): PlayerScreen =
+    stack.getOrNull(1)?.takeIf { it in playerTabs } ?: stack.firstOrNull() ?: PlayerScreen.LIBRARY
 
 /** The pushed screen drawn over the tabs (Playlists, Favorites, ...); null on a tab root, and for Now Playing, which is a sheet of its own.
  *  A screen pushed from Now Playing (or over another pushed screen) stays mounted underneath the sheet: opening Now Playing over
@@ -53,8 +59,7 @@ internal fun baseTab(stack: List<PlayerScreen>): PlayerScreen = stack.getOrNull(
 internal fun pushedScreen(stack: List<PlayerScreen>): PlayerScreen? {
     val underSheet = if (stack.lastOrNull() == PlayerScreen.NOW_PLAYING) stack.dropLast(1) else stack
     val shown = underSheet.lastOrNull() ?: return null
-    val isTabArrangement = shown in playerTabs &&
-        (stack == playerTab(shown) || stack == playerTab(shown) + PlayerScreen.NOW_PLAYING)
+    val isTabArrangement = shown in playerTabs && underSheet == playerTab(shown, underSheet.first())
     return shown.takeIf { !isTabArrangement }
 }
 

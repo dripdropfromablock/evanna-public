@@ -65,6 +65,21 @@ class PlayerPresentationTest {
         assertEquals(PlayerScreen.OUTPUT, pushedScreen(listOf(home, PlayerScreen.NOW_PLAYING, PlayerScreen.OUTPUT)))
         assertEquals(PlayerScreen.EQUALIZER, pushedScreen(listOf(home, PlayerScreen.OUTPUT, PlayerScreen.EQUALIZER)))
     }
+    @Test fun carouselCanBeTheHomeTabUnderLibraryAndPushedScreens() {
+        val carousel = PlayerScreen.CAROUSEL
+        val library = PlayerScreen.LIBRARY
+        assertEquals(library, storedStartPage("invalid"))
+        assertEquals(library, storedStartPage("OUTPUT"))
+        assertEquals(carousel, storedStartPage(carousel.name))
+        assertEquals(listOf(library, carousel), playerTab(carousel, library))
+        assertEquals(listOf(carousel), playerTab(carousel, carousel))
+        val stack = playerTab(library, carousel)
+        assertEquals(listOf(carousel, library), stack)
+        assertEquals(library, baseTab(stack))
+        assertEquals(carousel, baseTab(listOf(carousel, PlayerScreen.NOW_PLAYING)))
+        assertNull(pushedScreen(stack + PlayerScreen.NOW_PLAYING))
+        assertEquals(PlayerScreen.OUTPUT, pushedScreen(listOf(carousel, PlayerScreen.NOW_PLAYING, PlayerScreen.OUTPUT)))
+    }
     @Test fun pushedScreensStayMountedWhenNowPlayingOpensOverThem() {
         val home = PlayerScreen.LIBRARY
         // The sheet must not unmount the pushed screen it opens over (scroll/list state survives).

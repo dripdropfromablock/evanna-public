@@ -156,7 +156,6 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
         MoreButton(buildList<Pair<String, () -> Unit>> {
             add("Sleep timer" to { showSleep = true })
             if (onConvert != null) add("Play converted once" to onConvert)
-            if (state.sourceQuality.isNotBlank()) add("Audio quality" to { showSignal = true })
             if (page == PlayerPage.QUEUE && state.connected && state.queue.isNotEmpty()) add("Save queue as playlist" to onSavePlaylist)
         })
     }
@@ -221,11 +220,16 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
 /** The pull-down grabber. Its row names the page for screen readers; the capsule closes the sheet. */
 @Composable
 private fun Grabber(title: String, onClose: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Box(Modifier.fillMaxWidth().height(48.dp)) {
         Box(Modifier.matchParentSize().semantics { heading(); text = AnnotatedString(title) })
         Box(Modifier.align(Alignment.TopCenter).size(120.dp, 48.dp)
-            .clickable(role = Role.Button, onClick = onClose).semantics { contentDescription = "Minimize player" }) {
-            Box(Modifier.align(Alignment.TopCenter).padding(top = 8.dp).size(36.dp, 5.dp).clip(RoundedCornerShape(2.5.dp)).background(Pv3))
+            .controlFocus(interaction, RoundedCornerShape(12.dp))
+            .clickable(interaction, indication = null, role = Role.Button, onClick = onClose)
+            .semantics { contentDescription = "Minimize player" }) {
+            Box(Modifier.align(Alignment.TopCenter).padding(top = 8.dp).size(36.dp, 5.dp)
+                .clip(RoundedCornerShape(2.5.dp)).background(if (pressed) Pv2 else Pv3))
         }
     }
 }
@@ -245,15 +249,24 @@ private fun NoSong(state: PlayerPresentation, onLibrary: () -> Unit, modifier: M
 private fun MoreButton(items: List<Pair<String, () -> Unit>>) {
     var open by remember { mutableStateOf(false) }
     Box {
-        Box(Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button) { open = true }.semantics { contentDescription = "More options" },
-            contentAlignment = Alignment.Center) {
-            Box(Modifier.size(28.dp).clip(CircleShape).background(Pv4), contentAlignment = Alignment.Center) {
-                Icon(PlayerIcons.More, contentDescription = null, modifier = Modifier.size(18.dp), tint = Pv1)
-            }
-        }
+        PlayerHeaderButton(PlayerIcons.More, "More options", 18.dp, showCircle = true) { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             for ((label, action) in items) DropdownMenuItem(text = { Text(label) }, onClick = { open = false; action() })
         }
+    }
+}
+
+@Composable
+private fun PlayerHeaderButton(icon: ImageVector, description: String, size: Dp,
+    enabled: Boolean = true, showCircle: Boolean = false, onClick: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    Box(Modifier.size(48.dp).controlFocus(interaction, CircleShape)
+        .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+        .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
+        if (showCircle) Box(Modifier.size(28.dp).background(Pv4, CircleShape))
+        Icon(icon, contentDescription = null, tint = if (enabled) Pv1 else Pv3,
+            modifier = Modifier.size(size).pressScale(interaction))
     }
 }
 
@@ -290,17 +303,16 @@ private fun SongPage(state: PlayerPresentation, cover: Bitmap?, onFavorite: (Str
                 Text(state.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", style = SongTitle, color = Pv2, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Row(Modifier.offset(x = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { state.id?.let { onFavorite(it, state.favorite != true) } },
+                PlayerHeaderButton(if (state.favorite == true) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                    description = when (state.favorite) {
+                        true -> "Remove from favorites"
+                        false -> "Add to favorites"
+                        null -> "Favorites unavailable"
+                    },
+                    size = 24.dp,
                     enabled = state.connected && state.favorite != null,
-                    modifier = Modifier.semantics {
-                        contentDescription = when (state.favorite) {
-                            true -> "Remove from favorites"
-                            false -> "Add to favorites"
-                            null -> "Favorites unavailable"
-                        }
-                    }) {
-                    Icon(if (state.favorite == true) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                        contentDescription = null, modifier = Modifier.size(24.dp))
+                ) {
+                    state.id?.let { onFavorite(it, state.favorite != true) }
                 }
                 more()
             }
@@ -310,10 +322,12 @@ private fun SongPage(state: PlayerPresentation, cover: Bitmap?, onFavorite: (Str
 
 @Composable
 private fun CompactHeader(state: PlayerPresentation, cover: Bitmap?, more: @Composable () -> Unit, artwork: Modifier, onShowSong: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
     Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         ArtworkImage(cover, Modifier.size(54.dp).then(artwork).shadow(4.dp, SmallCoverShape)
-            .clickable(role = Role.Button, onClick = onShowSong)
-            .semantics { contentDescription = "Return to Now Playing" }, SmallCoverShape)
+            .controlFocus(interaction, SmallCoverShape)
+            .clickable(interaction, indication = null, role = Role.Button, onClick = onShowSong)
+            .semantics { contentDescription = "Return to Now Playing" }.pressScale(interaction), SmallCoverShape)
         Column(Modifier.weight(1f).padding(start = 14.dp)) {
             Text(state.title.ifBlank { "Local audio file" }, style = HeaderTitle, color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(state.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", style = HeaderArtist, color = Pv2, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -391,9 +405,12 @@ private fun LyricsPreview(load: LyricsLoad, positionMs: Long, onClick: () -> Uni
     }
     val action = "Show lyrics"
     val available = lyrics != null
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Row(
         Modifier.fillMaxWidth().heightIn(min = 48.dp).zIndex(1f)
-            .then(if (available) Modifier.clickable(role = Role.Button, onClickLabel = action, onClick = onClick)
+            .then(if (available) Modifier.controlFocus(interaction, RoundedCornerShape(8.dp))
+                .clickable(interaction, indication = null, role = Role.Button, onClickLabel = action, onClick = onClick)
                 .clearAndSetSemantics {
                     contentDescription = action
                     text = AnnotatedString(label)
@@ -402,7 +419,7 @@ private fun LyricsPreview(load: LyricsLoad, positionMs: Long, onClick: () -> Uni
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.Bottom,
     ) {
-        Text(label, style = Route, color = if (available) Pv1 else Pv2,
+        Text(label, style = Route, color = if (pressed) EvannaDesign.colorScheme.primary else if (available) Pv1 else Pv2,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
         if (available) Text(" ›", style = Route, color = Pv2)
     }
@@ -462,10 +479,16 @@ private fun SeekBar(state: PlayerPresentation, onSeek: (String?, Long) -> Unit, 
             Text(playbackTime(position), style = Times, color = Pv2, maxLines = 1, modifier = Modifier.align(Alignment.CenterStart))
             Text(duration?.let { "−${playbackTime((it - position).coerceAtLeast(0))}" } ?: "--:--", style = Times, color = Pv2,
                 maxLines = 1, modifier = Modifier.align(Alignment.CenterEnd))
-            if (state.sourceQuality.isNotBlank()) Text(remember(state.sourceQuality) { shortSourceQuality(state.sourceQuality) }, style = Badge, color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp).clip(RoundedCornerShape(5.dp)).background(Pv4)
-                    .clickable(role = Role.Button, onClick = onSignal).semantics { contentDescription = "Audio quality details" }
-                    .padding(horizontal = 7.dp, vertical = 3.5.dp))
+            if (state.sourceQuality.isNotBlank()) {
+                val badgePress = remember { MutableInteractionSource() }
+                Text(remember(state.sourceQuality) { shortSourceQuality(state.sourceQuality) }, style = Badge, color = Pv1,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp).clip(RoundedCornerShape(5.dp)).background(Pv4)
+                        .controlFocus(badgePress, RoundedCornerShape(5.dp))
+                        .clickable(badgePress, indication = null, role = Role.Button, onClick = onSignal)
+                        .semantics { contentDescription = "Audio quality details" }
+                        .padding(horizontal = 7.dp, vertical = 3.5.dp).pressScale(badgePress))
+            }
         }
     }
 }
@@ -474,11 +497,10 @@ private fun SeekBar(state: PlayerPresentation, onSeek: (String?, Long) -> Unit, 
 @Composable
 private fun TransportButton(icon: ImageVector, size: Dp, description: String, enabled: Boolean, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.86f else 1f, EvannaMotion.press, label = "press")
-    Box(Modifier.size(size + 12.dp).clip(CircleShape).clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+    Box(Modifier.size(size + 12.dp).controlFocus(interaction, CircleShape)
+        .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = null, tint = if (enabled) Pv1 else Pv3, modifier = Modifier.size(size).graphicsLayer { scaleX = scale; scaleY = scale })
+        Icon(icon, contentDescription = null, tint = if (enabled) Pv1 else Pv3, modifier = Modifier.size(size).pressScale(interaction))
     }
 }
 
@@ -487,12 +509,14 @@ private fun TransportButton(icon: ImageVector, size: Dp, description: String, en
 private fun StripButton(icon: ImageVector, on: Boolean, description: String, enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
+    val interaction = remember { MutableInteractionSource() }
     val apple = LocalLookStyle.current.look.apple
     val platter = if (apple) Color.White.copy(alpha = 0.22f) else EvannaDesign.colorScheme.primary.copy(alpha = 0.30f)
-    Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+    Box(Modifier.size(48.dp).controlFocus(interaction, RoundedCornerShape(12.dp))
+        .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description; if (enabled) stateDescription = if (on) "On" else "Off" }, contentAlignment = Alignment.Center) {
         Box(Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(if (on) platter else Color.Transparent), contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = if (enabled) Pv1 else Pv3)
+            Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp).pressScale(interaction), tint = if (enabled) Pv1 else Pv3)
         }
     }
 }
@@ -540,9 +564,11 @@ internal fun UsbVolume(state: PlayerPresentation, onAdjust: (Int) -> Unit, onSet
 /** A 20 dp speaker key. Compose widens its touch area to 48 dp (minimum touch target); a touch right on the pill stays the pill's. */
 @Composable
 private fun VolumeStep(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
-    Box(Modifier.size(20.dp).clip(CircleShape).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+    val interaction = remember { MutableInteractionSource() }
+    Box(Modifier.size(20.dp).controlFocus(interaction, CircleShape)
+        .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = if (enabled) Pv2 else Pv3)
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp).pressScale(interaction), tint = if (enabled) Pv2 else Pv3)
     }
 }
 
@@ -674,20 +700,22 @@ private fun LyricsPage(load: LyricsLoad, state: PlayerPresentation, onSeek: (Str
 private fun LyricRow(line: LyricLine, timed: Boolean, current: Boolean, browsing: Boolean,
     position: State<Long>, next: Long?, seekable: Boolean, reducedMotion: Boolean, onSeek: () -> Unit,
 ) {
+    val interaction = remember { MutableInteractionSource() }
     val active = !timed || current || browsing
     val blur by animateFloatAsState(if (!active && Build.VERSION.SDK_INT >= 31) 3f else 0f,
         EvannaMotion.enter, label = "lyric focus blur")
     val scale by animateFloatAsState(if (active) 1f else 0.98f, EvannaMotion.enter, label = "line scale")
     val opacity by animateFloatAsState(if (active) 1f else INACTIVE_LYRIC_OPACITY, EvannaMotion.enter, label = "line opacity")
     Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(16.dp))
-        .then(if (seekable) Modifier.clickable(onClickLabel = "Play from this line", onClick = onSeek) else Modifier)
+        .then(if (seekable) Modifier.controlFocus(interaction, RoundedCornerShape(16.dp))
+            .clickable(interaction, indication = null, onClickLabel = "Play from this line", onClick = onSeek) else Modifier)
         .then(if (timed && current) Modifier.semantics { stateDescription = "Current lyric" } else Modifier)
         .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 10.dp)
         .graphicsLayer {
             scaleX = scale; scaleY = scale; alpha = opacity; transformOrigin = TransformOrigin(0f, 0.5f)
             val radius = blur.dp.toPx()
             renderEffect = if (radius > 0f) BlurEffect(radius, radius, TileMode.Decal) else null
-        }) {
+        }.pressScale(interaction)) {
         when {
             !timed -> Text(line.text.ifEmpty { " " }, style = PlainLyrics, color = Pv1)
             line.words.isNotEmpty() && !reducedMotion -> FlowRow(Modifier.clearAndSetSemantics {
@@ -812,13 +840,15 @@ private fun QueuePill(label: String, icon: ImageVector, on: Boolean, description
     val colors = EvannaDesign.colorScheme
     val fill = if (on) colors.primary else Pv4
     val ink = if (on) colors.onPrimary else Pv1
-    Row(modifier.heightIn(min = 48.dp).clip(CircleShape).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+    val interaction = remember { MutableInteractionSource() }
+    Row(modifier.heightIn(min = 48.dp).controlFocus(interaction, CircleShape)
+        .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics(mergeDescendants = true) { contentDescription = description }, verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center) {
         // The fade layer always stays (an alpha layer that comes and goes can lose the fill drawn before it); large fonts may grow the pill.
         Row(Modifier.fillMaxWidth().heightIn(min = 36.dp).clip(CircleShape).background(fill).graphicsLayer { alpha = if (enabled) 1f else 0.5f },
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = ink)
+            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp).pressScale(interaction), tint = ink)
             Spacer(Modifier.width(8.dp))
             Text(label, style = PillLabel, color = ink, maxLines = 1)
         }
@@ -829,10 +859,13 @@ private fun QueuePill(label: String, icon: ImageVector, on: Boolean, description
 @Composable
 private fun QueueRow(item: PlayerQueueItem, played: Boolean, state: PlayerPresentation, loadArtwork: suspend (String) -> Bitmap?,
     onSelect: (String) -> Unit, up: (() -> Unit)?, down: (() -> Unit)?, remove: (() -> Unit)?) {
+    val interaction = remember { MutableInteractionSource() }
     Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).alpha(if (played) 0.55f else 1f).clip(RoundedCornerShape(10.dp))
-        .clickable(enabled = state.connected, onClickLabel = "Play this song") { onSelect(item.id) }, verticalAlignment = Alignment.CenterVertically) {
+        .controlFocus(interaction, RoundedCornerShape(10.dp))
+        .clickable(interaction, indication = null, enabled = state.connected, onClickLabel = "Play this song") { onSelect(item.id) },
+        verticalAlignment = Alignment.CenterVertically) {
         LibraryArtwork(item.id, 0, Modifier.size(48.dp), SmallCoverShape) { loadArtwork(item.id) }
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+        Column(Modifier.weight(1f).padding(start = 12.dp).pressScale(interaction)) {
             Text(item.title, style = HeaderTitle, color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(item.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", style = RowArtist, color = Pv2, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
@@ -846,8 +879,10 @@ private fun QueueRow(item: PlayerQueueItem, played: Boolean, state: PlayerPresen
 
 @Composable
 private fun RowButton(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
-    Box(Modifier.size(width = 40.dp, height = 48.dp).clip(CircleShape).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+    val interaction = remember { MutableInteractionSource() }
+    Box(Modifier.size(width = 40.dp, height = 48.dp).controlFocus(interaction, CircleShape)
+        .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = if (enabled) Pv2 else Pv3)
+        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp).pressScale(interaction), tint = if (enabled) Pv2 else Pv3)
     }
 }
