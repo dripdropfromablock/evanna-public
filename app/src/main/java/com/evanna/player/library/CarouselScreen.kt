@@ -449,7 +449,7 @@ private fun CarouselBrowser(
                                 { ((page - pager.currentPage) - pager.currentPageOffsetFraction).coerceIn(-3f, 3f) }
                             }
                             CarouselAlbumCard(group, group?.identity()?.let(covers::get)?.bitmap, cardWidth, captionHeight,
-                                focused = page == pager.settledPage, pageOffset = pageOffset, modifier = Modifier.graphicsLayer {
+                                pageOffset = pageOffset, modifier = Modifier.graphicsLayer {
                                 if (progress > 0f && page == pager.settledPage) alpha = 0f
                                 if (!reducedMotion) {
                                     val offset = pageOffset()
@@ -594,7 +594,7 @@ private fun ExpandingCarouselAlbum(
 @Composable
 private fun CarouselAlbumCard(
     group: LibraryGroup?, shown: Bitmap?, width: Dp, captionHeight: Dp,
-    focused: Boolean, pageOffset: () -> Float, modifier: Modifier, onClick: () -> Unit, onDoubleClick: (() -> Unit)?,
+    pageOffset: () -> Float, modifier: Modifier, onClick: () -> Unit, onDoubleClick: (() -> Unit)?,
 ) {
     val colors = EvannaDesign.colorScheme
     Surface(modifier.width(width).combinedClickable(interactionSource = null, indication = null,
@@ -604,13 +604,7 @@ private fun CarouselAlbumCard(
         Column(Modifier.padding(CarouselCoverInset)) {
             val cover = Modifier.fillMaxWidth().aspectRatio(1f)
 
-            if (focused && shown != null) {
-                BoxWithConstraints(cover, contentAlignment = Alignment.Center) {
-                    val artworkSize = maxWidth * 0.84f
-                    AlbumDisc(shown, Modifier.align(Alignment.CenterEnd).size(artworkSize))
-                    ArtworkImage(shown, Modifier.align(Alignment.CenterStart).size(artworkSize), CarouselCoverShape)
-                }
-            } else if (Build.VERSION.SDK_INT >= 31) {
+            if (Build.VERSION.SDK_INT >= 31) {
                 val density = LocalDensity.current
                 val blurSteps = remember(density) {
                     List(8) { step ->
@@ -637,10 +631,6 @@ private fun CarouselAlbumCard(
             }
             Column(Modifier.fillMaxWidth().height(captionHeight).padding(start = 6.dp, end = 6.dp, top = 6.dp),
                 verticalArrangement = Arrangement.Center) {
-                if (focused && group != null) {
-                    Box(Modifier.width(26.dp).height(2.dp).background(colors.primary))
-                    Spacer(Modifier.height(4.dp))
-                }
                 CarouselAlbumLabel(group)
             }
         }

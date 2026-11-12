@@ -1482,7 +1482,6 @@ private val licenseFiles = listOf(
     LicenseFile("libebur128 queue · BSD 3-Clause", "licenses/libebur128-queue-BSD-3-Clause.txt"),
     LicenseFile("C++ runtime · LLVM notices", "licenses/NDK-libcxx.txt", "https://developer.android.com/ndk/downloads"),
     LicenseFile("Components and attribution", "third-party-notices.txt"),
-    LicenseFile("Georgia-ReBORN disc artwork (MIT)", "licenses/Georgia-ReBORN-MIT.txt", "https://github.com/TT-ReBORN/Georgia-ReBORN"),
     LicenseFile("Apache License 2.0", "licenses/Apache-2.0.txt", "https://github.com/devang-altf4/truesample-player/tree/cf23a00030cd2d27c91f667737f0ca9aa30256a4/usbaudio"),
     LicenseFile("libusb · LGPL 2.1", "licenses/LGPL-2.1.txt", "https://github.com/libusb/libusb/tree/v1.0.29"),
     LicenseFile("libsamplerate · BSD 2-Clause", "licenses/libsamplerate-BSD-2-Clause.txt", "https://github.com/libsndfile/libsamplerate/tree/0.2.2"),
