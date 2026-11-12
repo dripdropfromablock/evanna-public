@@ -85,19 +85,20 @@ private data class LibraryRequest(val view: LibraryView, val filter: LibraryFilt
 
 /** Room the list rows leave at the end for the A–Z bar. */
 private val LocalBarRoom = compositionLocalOf { 0.dp }
+private val LocalLineInset = compositionLocalOf { 0.dp }
 /** Content type of the list rows the A–Z bar sits beside. */
 private const val LIST_ROW = "list row"
 
 /** A grid item that spans the whole row. Lazy grid items overlap their children, so content needs one root.
  *  Page lines also cover the rows' A–Z bar room, so the bar never narrows them. */
-private fun LazyGridScope.line(key: Any? = null, content: @Composable LazyGridItemScope.() -> Unit) =
+private fun LazyGridScope.line(key: Any? = null, edgeToEdge: Boolean = false, content: @Composable LazyGridItemScope.() -> Unit) =
     item(key = key, span = { GridItemSpan(maxLineSpan) }) {
         val room = LocalBarRoom.current
         Box(Modifier.layout { measurable, constraints ->
             val wide = constraints.maxWidth + room.roundToPx()
             val placeable = measurable.measure(constraints.copy(minWidth = wide, maxWidth = wide))
             layout(constraints.maxWidth, placeable.height) { placeable.placeRelative(0, 0) }
-        }, propagateMinConstraints = true) { content() }
+        }.padding(horizontal = if (edgeToEdge) 0.dp else LocalLineInset.current), propagateMinConstraints = true) { content() }
     }
 
 @Composable
@@ -320,7 +321,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
     val stackAlbumActions = LocalConfiguration.current.screenWidthDp < 360 || LocalDensity.current.fontScale > 1.2f
     val libraryInsets = if (albumDetail) Modifier else Modifier.statusBarsPadding().padding(horizontal = 16.dp)
     Box(Modifier.fillMaxSize().then(libraryInsets)) {
-    CompositionLocalProvider(LocalBarRoom provides barRoom) {
+    CompositionLocalProvider(LocalBarRoom provides barRoom, LocalLineInset provides if (albumDetail) 16.dp else 0.dp) {
     LazyVerticalGrid(cells, Modifier.fillMaxSize(), state = scroll,
         verticalArrangement = Arrangement.spacedBy(if (studio && libraryHome) 12.dp else 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(top = if (albumDetail) 0.dp else if (libraryHome) 6.dp else 8.dp, bottom = 24.dp + bottomInset, end = barRoom)) {
@@ -333,7 +334,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                 Text("Back to ${parentKind?.name?.lowercase() ?: view.label.lowercase()}")
             }
         } }
-        if (kind == LibraryGroupKind.ALBUM) line {
+        if (albumDetail) line(edgeToEdge = true) {
             val colors = EvannaDesign.colorScheme
             val ink = ButtonDefaults.textButtonColors(colors.onSurface)
             val dark = LocalLookStyle.current.look.dark
