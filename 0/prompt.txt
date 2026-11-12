@@ -1,0 +1,15 @@
+<user_action>
+  <context>User initiated a review task. Here's the full review output from reviewer model. User may select one or more comments to resolve.</context>
+  <action>review</action>
+  <results>
+  All 428 unit tests pass, but the updater can interrupt existing library dialogs and start overlapping network requests during foreground transitions.
+
+Full review comments:
+
+- [P2] Defer update prompts while library dialogs are open — C:\Users\hehe\Documents\evanna2\.tools\evanna-few-fixes\app\src\main\java\com\evanna\player\MainActivity.kt:526-528
+  If an update check finishes while Track info or Music folders is open, this condition still permits the update dialog: neither dialog sets `modalOpen`, `pushed`, or `LocalLibrary.managingFolders`. The update prompt consequently appears over an existing modal and interrupts its interaction. Include library dialogs and menus in the modal gate before showing the prompt.
+
+- [P2] Cancel pending HTTPS requests before restarting update checks — C:\Users\hehe\Documents\evanna2\.tools\evanna-few-fixes\app\src\main\java\com\evanna\player\AppUpdates.kt:121-128
+  On a slow connection, backgrounding and quickly reopening the app cancels this effect but does not stop `readHttps`: blocking `HttpsURLConnection` operations are not made cancellable by `withContext(Dispatchers.IO)`. The restarted effect sees no completed check or retry deadline and launches another request while the previous one continues. Make the connection cancellation-aware or retain a shared in-flight check so foreground transitions cannot create overlapping requests.
+  </results>
+  </user_action>
