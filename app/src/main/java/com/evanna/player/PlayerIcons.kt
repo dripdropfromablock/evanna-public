@@ -97,6 +97,34 @@ internal object PlayerIcons {
         }
     }
 
+    val AlbumCarousel = icon("Album carousel") {
+        path(stroke = ink, strokeLineWidth = 1.55f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round) {
+            moveTo(8.5f, 4.5f); horizontalLineTo(15.5f); quadTo(17f, 4.5f, 17f, 6f)
+            verticalLineTo(18f); quadTo(17f, 19.5f, 15.5f, 19.5f); horizontalLineTo(8.5f)
+            quadTo(7f, 19.5f, 7f, 18f); verticalLineTo(6f); quadTo(7f, 4.5f, 8.5f, 4.5f); close()
+            moveTo(4.5f, 7f); lineTo(2.5f, 8.2f); verticalLineTo(15.8f); lineTo(4.5f, 17f)
+            moveTo(19.5f, 7f); lineTo(21.5f, 8.2f); verticalLineTo(15.8f); lineTo(19.5f, 17f)
+            moveTo(9.5f, 12f); arcToRelative(2.5f, 2.5f, 0f, false, true, 5f, 0f)
+            arcToRelative(2.5f, 2.5f, 0f, false, true, -5f, 0f); close()
+        }
+    }
+
+    val Dice = icon("Dice") {
+        line {
+            moveTo(6f, 3f); horizontalLineTo(18f); quadTo(21f, 3f, 21f, 6f); verticalLineTo(18f)
+            quadTo(21f, 21f, 18f, 21f); horizontalLineTo(6f); quadTo(3f, 21f, 3f, 18f)
+            verticalLineTo(6f); quadTo(3f, 3f, 6f, 3f); close()
+        }
+        path(fill = ink) {
+            for (center in listOf(8f, 12f, 16f)) {
+                moveTo(center - 1.15f, center)
+                arcToRelative(1.15f, 1.15f, 0f, false, true, 2.3f, 0f)
+                arcToRelative(1.15f, 1.15f, 0f, false, true, -2.3f, 0f)
+                close()
+            }
+        }
+    }
+
     /** An up arrow beside a down arrow: the list's sort order. */
     val Sort = icon("Sort") {
         line { moveTo(8f, 19f); verticalLineTo(5f) }

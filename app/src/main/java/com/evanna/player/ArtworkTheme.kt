@@ -50,11 +50,12 @@ internal fun artworkAccent(pixels: IntArray): Color? {
     return Color(reds[best] / weight, greens[best] / weight, blues[best] / weight)
 }
 
-internal fun EvannaPalette.withArtwork(seed: Color?, dark: Boolean, filledChips: Boolean): EvannaPalette {
+internal fun EvannaPalette.withArtwork(
+    seed: Color?, dark: Boolean, filledChips: Boolean,
+    surfaceTint: Float = if (dark) 0.035f else 0.025f,
+): EvannaPalette {
     if (seed == null) return this
     val tint = if (dark) 0.12f else 0.055f
-    // Keep artwork more visible in controls than in the large surfaces behind them.
-    val surfaceTint = if (dark) 0.035f else 0.025f
     val highest = lerp(surfaceContainerHighest, seed, surfaceTint)
     val primary = readableAccent(seed, highest, dark)
     val onPrimary = if (dark) Color.Black else Color.White

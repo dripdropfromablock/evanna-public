@@ -16,7 +16,7 @@ internal fun LoudnessAnalysisControls() {
     val active=progress.state in listOf(LoudnessAnalysisState.RUNNING,LoudnessAnalysisState.WAITING)
     Text("Measure songs offline",style=EvannaDesign.typography.titleSmall)
     Text(progress.message ?: when(progress.state) {
-        LoudnessAnalysisState.IDLE -> "Saved measurements let the DAC level songs without changing their audio samples."
+        LoudnessAnalysisState.IDLE -> "Measures songs so the DAC can even out their volume."
         LoudnessAnalysisState.RUNNING -> "Measuring one song at a time…"
         LoudnessAnalysisState.WAITING -> "Waiting for USB startup or the music-folder scan…"
         LoudnessAnalysisState.DONE -> "Analysis finished. Measurements apply from the next playback start."
@@ -30,7 +30,7 @@ internal fun LoudnessAnalysisControls() {
         TextButton(onClick=LibraryLoudnessAnalysis::cancel,modifier=Modifier.heightIn(min=48.dp)){Text("Cancel analysis")}
     }else OutlinedButton(onClick={confirm=true},modifier=Modifier.heightIn(min=48.dp)){Text("Measure or resume library")}
     if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Measure library loudness?")},
-        text={Text("This reads every song that needs a current measurement. It may take a long time and use battery. Nothing plays, music files stay unchanged, and you can cancel and resume later.")},
+        text={Text("Scans songs that need a measurement. This can take time and use battery. Your files stay unchanged, and you can resume later.")},
         confirmButton={TextButton(onClick={confirm=false;LibraryLoudnessAnalysis.start(context)},modifier=Modifier.heightIn(min=48.dp)){Text("Measure library")}},
         dismissButton={TextButton(onClick={confirm=false},modifier=Modifier.heightIn(min=48.dp)){Text("Cancel")}})
 }

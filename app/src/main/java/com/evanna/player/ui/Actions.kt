@@ -6,6 +6,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -21,6 +23,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -86,14 +89,24 @@ internal fun TextButton(onClick: () -> Unit, modifier: Modifier = Modifier, enab
 ) = Action(onClick, modifier, enabled, colors, content = content)
 
 @Composable
+internal fun Modifier.pressScale(interaction: MutableInteractionSource): Modifier {
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.86f else 1f, EvannaMotion.press, label = "control press")
+    return graphicsLayer { scaleX = scale; scaleY = scale }
+}
+
+@Composable
 internal fun IconButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
     colors: ActionColors = IconButtonDefaults.iconButtonColors(LocalContentColor.current), content: @Composable () -> Unit,
 ) {
+    val interaction = remember { MutableInteractionSource() }
     Box(modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).clip(CircleShape)
         .background(if (enabled) colors.container else Color.Transparent)
-        .clickable(enabled = enabled, role = Role.Button, onClick = onClick), contentAlignment = Alignment.Center) {
+        .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick), contentAlignment = Alignment.Center) {
         val ink = if (enabled) colors.content else EvannaDesign.colorScheme.onSurface.copy(alpha = 0.38f)
-        CompositionLocalProvider(LocalContentColor provides ink, content = content)
+        CompositionLocalProvider(LocalContentColor provides ink) {
+            Box(Modifier.pressScale(interaction)) { content() }
+        }
     }
 }
 

@@ -72,8 +72,33 @@ class LookTest {
                 assertTrue("$look $seed muted menu text over artwork",
                     contrastRatio(colors.onSurfaceVariant.toArgb(), menu.toArgb()) >= 4.5)
                 val player = playerColorScheme(look, seed)
+                val backdrop = Color(0xFF4B4B4B)
+                val playerMenu = player.surfaceContainerHigh.copy(alpha = MENU_SURFACE_ALPHA).compositeOver(backdrop)
+                val outputSheet = player.surfaceContainer.copy(alpha = 0.74f).compositeOver(backdrop)
+                val selectedOutput = player.surfaceContainerHighest.copy(alpha = 0.72f).compositeOver(outputSheet)
+                for (surface in listOf(playerMenu, selectedOutput, player.surfaceContainerHigh)) {
+                    assertTrue("$look $seed overlay text over $surface",
+                        contrastRatio(player.onSurfaceVariant.toArgb(), surface.toArgb()) >= 4.5)
+                }
                 assertTrue("$look $seed on artwork backdrop",
-                    contrastRatio(player.primary.toArgb(), 0xFF4B4B4B.toInt()) >= 4.5)
+                    contrastRatio(player.primary.toArgb(), backdrop.toArgb()) >= 4.5)
+            }
+        }
+    }
+
+    @Test fun playerOverlaysShowMoreArtworkColorThanTheRestOfTheApp() {
+        val seed = Color(0xFF18AA50)
+        for (look in EvannaLook.entries) {
+            val player = playerColorScheme(look, seed)
+            val neutral = playerColorScheme(look, null)
+            val regular = neutral.withArtwork(seed, dark = true, filledChips = look.apple)
+            for ((surface, regularSurface) in listOf(
+                player.surfaceContainer to regular.surfaceContainer,
+                player.surfaceContainerHigh to regular.surfaceContainerHigh,
+                player.surfaceContainerHighest to regular.surfaceContainerHighest,
+            )) {
+                assertTrue("$look overlay should visibly pick up the artwork hue",
+                    (surface.green - surface.red) - (regularSurface.green - regularSurface.red) >= 0.045f)
             }
         }
     }
