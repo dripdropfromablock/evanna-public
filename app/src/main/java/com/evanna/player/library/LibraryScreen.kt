@@ -36,6 +36,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.layout.layout
@@ -311,13 +315,17 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
         albumHome -> GridCells.Adaptive(143.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))
         else -> GridCells.Adaptive(143.dp)
     }
-    Box(Modifier.fillMaxSize()) {
+    val albumDetail = kind == LibraryGroupKind.ALBUM
+    val windowHeight = LocalConfiguration.current.screenHeightDp.dp
+    val stackAlbumActions = LocalConfiguration.current.screenWidthDp < 360 || LocalDensity.current.fontScale > 1.2f
+    val libraryInsets = if (albumDetail) Modifier else Modifier.statusBarsPadding().padding(horizontal = 16.dp)
+    Box(Modifier.fillMaxSize().then(libraryInsets)) {
     CompositionLocalProvider(LocalBarRoom provides barRoom) {
     LazyVerticalGrid(cells, Modifier.fillMaxSize(), state = scroll,
         verticalArrangement = Arrangement.spacedBy(if (studio && libraryHome) 12.dp else 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(top = if (libraryHome) 6.dp else 8.dp, bottom = 24.dp + bottomInset, end = barRoom)) {
+        contentPadding = PaddingValues(top = if (albumDetail) 0.dp else if (libraryHome) 6.dp else 8.dp, bottom = 24.dp + bottomInset, end = barRoom)) {
         // Grid items get a fixed full width; the Box lets the button keep its own width at the start.
-        if (kind != null) line { Box {
+        if (kind != null && !albumDetail) line { Box {
             TextButton(onClick = { back() }, modifier = Modifier.heightIn(min = 48.dp),
                 colors = ButtonDefaults.textButtonColors(EvannaDesign.colorScheme.onSurface)) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -328,34 +336,60 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
         if (kind == LibraryGroupKind.ALBUM) line {
             val colors = EvannaDesign.colorScheme
             val ink = ButtonDefaults.textButtonColors(colors.onSurface)
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = if (studio) Alignment.Start else Alignment.CenterHorizontally) {
-                LibraryArtwork(selectedAlbum.key, revision,
-                    Modifier.size(if (studio) 176.dp else 200.dp).shadow(12.dp, EvannaDesign.shapes.large),
-                    EvannaDesign.shapes.large) { artwork.album(selectedAlbum, ArtworkSize.MEDIUM) }
-                Spacer(Modifier.height(16.dp))
-                Text(groupName, style = EvannaDesign.typography.headlineSmall, fontWeight = FontWeight.Bold,
-                    textAlign = if (studio) TextAlign.Start else TextAlign.Center,
-                    modifier = Modifier.semantics { heading() })
-                shown?.albumSummary?.displayArtist?.let { Text(it, style = EvannaDesign.typography.titleMedium, color = muted, textAlign = TextAlign.Center) }
-                shown?.let { album ->
-                    val count = if (album.total == 1) "1 song" else "${album.total} songs"
-                    Text(listOfNotNull(album.albumSummary?.year?.toString(), count).joinToString(" · "),
-                        style = if (studio) EvannaType.technical else EvannaDesign.typography.bodyMedium,
-                        color = muted, modifier = Modifier.padding(bottom = 8.dp))
-                }
-                Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { onSelect(LibraryContextRequest(filter,null,LibraryContextAction.PLAY_FIRST)) { selectionFailed=!it } },
-                        colors = ActionColors(colors.surfaceContainerHighest.copy(alpha = 0.74f), colors.onSurface),
-                        enabled = !busy && !loading && (shown?.total ?: 0)>0, modifier = Modifier.weight(1f).heightIn(min=48.dp)) {
-                        Icon(Icons.Filled.PlayArrow,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Play album")
+            val dark = LocalLookStyle.current.look.dark
+            val barScrim = if (dark) Color.Black else Color.White
+            val backInk = if (dark) Color.White else Color.Black
+            Column(Modifier.fillMaxWidth()) {
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val heroHeight = minOf(maxWidth, windowHeight * 0.68f).coerceAtLeast(140.dp)
+                    LibraryArtwork(selectedAlbum.key, revision, Modifier.fillMaxWidth().height(heroHeight), RectangleShape) {
+                        artwork.album(selectedAlbum, ArtworkSize.LARGE)
                     }
-                    OutlinedButton(onClick = { onSelect(LibraryContextRequest(filter,null,LibraryContextAction.SHUFFLE)) { selectionFailed=!it } },
-                        colors = ink, enabled = !busy && !loading && (shown?.total ?: 0)>0, modifier = Modifier.weight(1f).heightIn(min=48.dp)) {
-                        Icon(PlayerIcons.Shuffle,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Shuffle album")
+                    Box(Modifier.matchParentSize().background(Brush.verticalGradient(
+                        0f to barScrim.copy(alpha = 0.85f), 0.25f to barScrim.copy(alpha = 0.65f),
+                        0.62f to Color.Transparent, 1f to colors.background,
+                    )))
+                    TextButton(onClick = { back() }, modifier = Modifier.statusBarsPadding().padding(start = 12.dp),
+                        colors = ButtonDefaults.textButtonColors(backInk)) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Back to ${parentKind?.name?.lowercase() ?: view.label.lowercase()}")
                     }
                 }
-                TextButton(onClick = { onPlaylistAlbum(filter) }, enabled = !busy && !loading && (shown?.total ?: 0) > 0,
-                    modifier = Modifier.heightIn(min = 48.dp), colors = ink) { Text("Add album to playlist") }
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    Text(groupName, style = EvannaDesign.typography.headlineSmall, fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.semantics { heading() })
+                    shown?.albumSummary?.displayArtist?.let { Text(it, style = EvannaDesign.typography.titleMedium, color = muted, textAlign = TextAlign.Center) }
+                    shown?.let { album ->
+                        val count = if (album.total == 1) "1 song" else "${album.total} songs"
+                        Text(listOfNotNull(album.albumSummary?.year?.toString(), count).joinToString(" · "),
+                            style = if (studio) EvannaType.technical else EvannaDesign.typography.bodyMedium,
+                            color = muted, modifier = Modifier.padding(bottom = 8.dp))
+                    }
+                    val play: @Composable (Modifier) -> Unit = { actionModifier ->
+                        Button(onClick = { onSelect(LibraryContextRequest(filter,null,LibraryContextAction.PLAY_FIRST)) { selectionFailed=!it } },
+                            colors = ActionColors(colors.surfaceContainerHighest.copy(alpha = 0.74f), colors.onSurface),
+                            enabled = !busy && !loading && (shown?.total ?: 0)>0, modifier = actionModifier.heightIn(min=48.dp)) {
+                            Icon(Icons.Filled.PlayArrow,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Play album")
+                        }
+                    }
+                    val shuffle: @Composable (Modifier) -> Unit = { actionModifier ->
+                        OutlinedButton(onClick = { onSelect(LibraryContextRequest(filter,null,LibraryContextAction.SHUFFLE)) { selectionFailed=!it } },
+                            colors = ink, enabled = !busy && !loading && (shown?.total ?: 0)>0, modifier = actionModifier.heightIn(min=48.dp)) {
+                            Icon(PlayerIcons.Shuffle,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Shuffle album")
+                        }
+                    }
+                    if (stackAlbumActions) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        play(Modifier.fillMaxWidth())
+                        shuffle(Modifier.fillMaxWidth())
+                    } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        play(Modifier.weight(1f))
+                        shuffle(Modifier.weight(1f))
+                    }
+                    TextButton(onClick = { onPlaylistAlbum(filter) }, enabled = !busy && !loading && (shown?.total ?: 0) > 0,
+                        modifier = Modifier.heightIn(min = 48.dp), colors = ink) { Text("Add album to playlist") }
+                }
             }
         } else line {
             val title = if (kind != null) groupName else if (searchMode) "Search" else "Library"
@@ -537,7 +571,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
             } else if (songsView) {
                 itemsIndexed(shown.songs, key = { _, song -> "song:${song.id}" }, span = { _, _ -> GridItemSpan(maxLineSpan) },
                     contentType = { _, _ -> LIST_ROW }) { index, song ->
-                    Column(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = if (albumDetail) 16.dp else 0.dp)) {
                         if (kind == LibraryGroupKind.ALBUM) albumDiscHeading(shown.songs, index, shown.albumSummary)?.let { label ->
                             Text(label, style = EvannaDesign.typography.titleSmall,
                                 modifier = Modifier.padding(vertical = 8.dp).semantics { heading() })
@@ -642,6 +676,11 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
             } }
         }
     }
+    }
+    if (albumDetail) {
+        val colors = EvannaDesign.colorScheme
+        Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars)
+            .alpha(if (scroll.canScrollBackward) 1f else 0f).background(colors.background))
     }
     // As in the mockup the bar sits 2 dp from the screen edge, 14 dp into the page margin, with the letters 16 dp in.
     if(alphabetic && shown?.total!=0)AlphabeticIndex({rowsTop.intValue},

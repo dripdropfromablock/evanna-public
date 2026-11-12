@@ -226,9 +226,13 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
     suspend fun openAndroid(bitPerfect: Boolean = false, onlyIfUnselected: Boolean = false): Boolean =
         command(interruptSelection = !onlyIfUnselected, save = !onlyIfUnselected) {
         if (onlyIfUnselected && snapshot.value.route != null) return@command false
+        openAndroidLocked(bitPerfect)
+    }
+
+    private suspend fun openAndroidLocked(bitPerfect: Boolean = false): Boolean {
         record(DiagnosticEvent.OPEN)
         focusDenied = false
-        try { controller.openAndroid(bitPerfect) } finally { focus.abandon() }
+        return try { controller.openAndroid(bitPerfect) } finally { focus.abandon() }
     }
 
     suspend fun adjustUsbVolume(direction:Int,generation:Long):Boolean = volumeChange { controller.adjustUsbVolume(direction,generation) }
@@ -304,11 +308,12 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
 
     private suspend fun playLocked(allowConversion: Boolean = false): Boolean {
         record(DiagnosticEvent.PLAY)
-        if(selectedTrack==null && queueIndex in entries.indices && snapshot.value.route!=null) {
+        if (selectedTrack == null && queueIndex in entries.indices) {
             if(!selectQueueLocked(queueIndex,false,pendingPositionUs)) return false
         }
-        if (snapshot.value.route == null || sourceSelectionFailed || (fileMode && selectedTrack == null) ||
-            (snapshot.value.route == PlaybackRoute.ANDROID && selectedTrack == null)) return false
+        if (sourceSelectionFailed || (fileMode && selectedTrack == null)) return false
+        if (snapshot.value.route == null && (selectedTrack == null || !openAndroidLocked())) return false
+        if (snapshot.value.route == PlaybackRoute.ANDROID && selectedTrack == null) return false
         if (snapshot.value.state in listOf(UsbPlaybackState.PLAYING, UsbPlaybackState.DRAINING)) {
             if (focus.held) return true
             if (!controller.pause()) return false

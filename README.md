@@ -51,7 +51,7 @@ Evanna is an offline high-resolution music player for Android. Browse music from
 
 - Audio quality window showing the source format, any processing and what Evanna observed at the output, with minimal and advanced signal-path views.
 - On-device crash and ANR reports: review, share a copy, or delete; nothing is uploaded.
-- Fully offline: the app ships without the internet permission.
+- Playback and library browsing work offline. Release builds check GitHub for available app updates.
 
 ### Comfort and accessibility
 
@@ -126,3 +126,20 @@ The [public Evanna source](https://github.com/dripdropfromablock/evanna-public) 
 Distribute the matching complete source and build materials alongside APK releases, including the retained FFmpeg archive, native sources, headers, configuration, and build scripts.
 
 [GPL-3.0 license](https://github.com/dripdropfromablock/evanna-public/blob/main/LICENSE) · [Attribution](https://github.com/dripdropfromablock/evanna-public/blob/main/NOTICE) · [Third-party inventory](THIRD_PARTY.md) · [Native library replacement and source delivery](https://github.com/dripdropfromablock/evanna-public/blob/main/docs/native-library-replacement.md)
+
+## Publishing a release that Evanna can discover
+
+Bump Android's version code and version name, build the supported APKs, and sign them using the same release signing key as the previous build. Run `aapt dump badging` on the final APKs to confirm the package is `com.evanna.player` and record each APK's exact version code, version name, and native ABI. Verify that a previous release installation upgrades in place.
+
+Attach the APKs and `evanna-update.json` to the same stable release on [Evanna's public GitHub repository](https://github.com/dripdropfromablock/evanna-public/releases). Use a tag such as `v0.2.0`. The updater matches the asset names exactly and picks the first matching entry in the phone's supported ABI order. For example, with a single ARM64 APK:
+
+```json
+{
+  "versionName": "0.2.0",
+  "apks": {
+    "arm64-v8a": { "assetName": "Evanna-0.2.0-arm64-v8a.apk", "versionCode": 2 }
+  }
+}
+```
+
+Use the values reported by your actual signed APKs. Once the release is ready, mark it as the latest stable release.

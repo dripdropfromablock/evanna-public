@@ -2,6 +2,7 @@ package com.evanna.player
 
 import android.app.PendingIntent
 import android.content.ActivityNotFoundException
+import android.content.pm.ApplicationInfo
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -136,6 +137,7 @@ class MainActivity : ComponentActivity() {
     private var autoConnectEnabled by mutableStateOf(true)
     /** The saved layout and brightness. The selected song supplies the accent. */
     private var look by mutableStateOf(EvannaLook.EVANNA)
+    private var foreground by mutableStateOf(false)
     private var startPage by mutableStateOf(PlayerScreen.LIBRARY)
     private val motionScale = AppMotionScale()
     /** A just-plugged-in DAC waiting for the playback controls; [connectPluggedDac] then connects it. Cleared when the screen stops. */
@@ -144,9 +146,6 @@ class MainActivity : ComponentActivity() {
     /** Until this time (elapsedRealtime), start playing as soon as the opened output allows it; 0 when nothing is waiting. */
     private var playAfterOpenUntil=0L
     private var pending by mutableStateOf<UsbPermissionSession.Request?>(null)
-    private var chooseStartupRoute = true
-    private var startupOfferId by mutableStateOf<Int?>(null)
-    private var startupPermissionId: Int? = null
     private var message by mutableStateOf("Connect a USB DAC to check access.")
     private var mediaController by mutableStateOf<MediaController?>(null)
     private var controllerFuture: ListenableFuture<MediaController>? = null
@@ -190,7 +189,6 @@ class MainActivity : ComponentActivity() {
         val previousKeys=usbKeyContext()
         val extras = player.playlistMetadata.extras
         outputRoute = extras?.getString(EvannaPlayer.OUTPUT_ROUTE) ?: "NONE"
-        if (outputRoute != "NONE") startupOfferId = null
         activeDacId=extras?.getInt(EvannaPlayer.USB_DEVICE_ID,-1)?.takeIf {it>=0}
         usbPolicy = UsbPlaybackPolicy.fromStored(extras?.getString(EvannaPlayer.USB_POLICY))
         followSongRate = extras?.getBoolean(EvannaPlayer.FOLLOW_SONG_RATE, true) ?: true
@@ -210,11 +208,11 @@ class MainActivity : ComponentActivity() {
         playbackMessage = player.playerError?.message ?: when {
             fileSelected && player.playbackState == Player.STATE_ENDED -> "The selected file completed after output drain."
             fileSelected && playing -> "Local file playback is active."
-            fileSelected -> "Local file selected. Choose an output, then press Play to start or resume."
+            fileSelected -> "Local file selected. Press Play to start or resume."
             outputRoute == "ANDROID" -> "Android audio selected. Choose a local file; selecting an output does not start audio."
             playing -> "USB check running"
             player.currentMediaItem != null -> "USB output opened. Select music and press Play; hardware volume is checked before audio."
-            else -> "Select local music and a USB output. Opening an output never starts audio."
+            else -> "Select music to listen through Android audio or a connected USB DAC."
         }
         if (playAfterOpenUntil != 0L) {
             if (SystemClock.elapsedRealtime() > playAfterOpenUntil) playAfterOpenUntil = 0
@@ -246,10 +244,7 @@ class MainActivity : ComponentActivity() {
                         UsbPermissionSession.Result.DENIED -> "USB access was denied. You can try again."
                         UsbPermissionSession.Result.DISCONNECTED -> "The DAC was disconnected. Connect it and try again."
                     }
-                    if (startupPermissionId == id) {
-                        startupPermissionId = null
-                        finishStartupPermission(id, result == UsbPermissionSession.Result.GRANTED)
-                    }
+
                 }
             }
             refreshDevices()
@@ -262,11 +257,7 @@ class MainActivity : ComponentActivity() {
                 if(device!=null && UsbAudioOutput.isUsbAudioOutput(device)) {
                     if(activeDacId==device.deviceId)activeDacId=null
                     message="${device.dacIdentity().displayName} unplugged. Your queue and position are kept."
-                    if (startupOfferId == device.deviceId) offerStartupOutput(selectedId)
-                    if (startupPermissionId == device.deviceId) {
-                        startupPermissionId = null
-                        selectAndroidOutput(false, onlyIfUnselected = true)
-                    }
+
                 }
             }
         }
@@ -276,9 +267,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LocalLibrary.syncOnLaunch(this)
-        chooseStartupRoute = savedInstanceState?.getBoolean("chooseStartupRoute", true) ?: true
-        startupOfferId = savedInstanceState?.getInt("startupOfferId", -1)?.takeIf { it >= 0 }
-        startupPermissionId = savedInstanceState?.getInt("startupPermissionId", -1)?.takeIf { it >= 0 }
         playlistAddIds=savedInstanceState?.getStringArrayList("playlistAddIds")?.filter {it.matches(Regex("[0-9a-f]{64}"))}?.take(1000).orEmpty()
         playlistSaveQueue=savedInstanceState?.getBoolean("playlistSaveQueue")==true
         playlistAddFilter=savedInstanceState?.getBundle("playlistAddFilter")?.let {bundle ->
@@ -290,7 +278,11 @@ class MainActivity : ComponentActivity() {
         // A recreated screen or a launch restored from Recents must not act on the old plug-in again.
         if(shouldHandleAttachIntent(savedInstanceState!=null,intent.flags))handleAttachIntent(intent)
         volumeControlStream = AudioManager.STREAM_MUSIC
-        val uiPreferences = getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).all
+        val uiSettings = getSharedPreferences(UI_SETTINGS, MODE_PRIVATE)
+        val uiPreferences = uiSettings.all
+        @Suppress("DEPRECATION")
+        val installedVersion = packageManager.getPackageInfo(packageName, 0).longVersionCode
+        val updatesEnabled = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) == 0
         startPage = storedStartPage(uiPreferences[START_PAGE_PREFERENCE])
         navigation = savedInstanceState?.getStringArrayList("playerScreens")?.mapNotNull { value -> PlayerScreen.entries.firstOrNull { it.name == value } }
             ?.takeIf { it.firstOrNull() in startPages && it.size == it.distinct().size } ?: listOf(startPage)
@@ -332,17 +324,6 @@ class MainActivity : ComponentActivity() {
             val accent = artwork?.second
             val playerColors = remember(look, accent) { playerColorScheme(look, accent) }
             EvannaTheme(look, accent) {
-                val startupDevice = devices.firstOrNull { it.device.deviceId == startupOfferId }?.device
-                if (startupDevice != null && controller != null && outputRoute == "NONE") {
-                    AlertDialog(
-                        onDismissRequest = { acceptStartupOutput(useDac = false) },
-                        title = { Text("Choose audio output") },
-                        text = { Text("Use ${startupDevice.dacIdentity().displayName} with Direct USB, or use Android audio.") },
-                        confirmButton = { TextButton(onClick = { acceptStartupOutput(useDac = true) }) { Text("Use DAC") } },
-                        dismissButton = { TextButton(onClick = { acceptStartupOutput(useDac = false) }) { Text("Android audio") } },
-                        containerColor = EvannaDesign.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
-                    )
-                }
                 var licenseIndex by rememberSaveable { mutableStateOf<Int?>(null) }
                 var showOutput by rememberSaveable { mutableStateOf(false) }
                 var outputOrigin by remember { mutableStateOf<Offset?>(null) }
@@ -424,6 +405,7 @@ class MainActivity : ComponentActivity() {
                 val settledOpen by remember(motion) { derivedStateOf { !motion.dragging && motion.progress == 1f } }
                 val flying by remember(motion) { derivedStateOf { motion.isFlying(track) } }
                 val playerVisible = wantedOpen || movingOrOpen
+                val modalOpen = showOutput || pending != null
                 val focus = LocalFocusManager.current
                 val softwareKeyboard = LocalSoftwareKeyboardController.current
                 LaunchedEffect(wantedOpen, motion.dragging) { if (!motion.dragging) motion.settle(wantedOpen, track) }
@@ -464,7 +446,7 @@ class MainActivity : ComponentActivity() {
                     // While the sheet is open its contents are hidden from screen readers.
                     Box(Modifier.fillMaxSize().playerFocusScope(blocked = playerVisible)) {
                         Box(Modifier.fillMaxSize()
-                            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+                            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                             .imePadding()) {
                             val covered = playerVisible || pushed != null
                             CompositionLocalProvider(LocalCovered provides covered) {
@@ -474,9 +456,9 @@ class MainActivity : ComponentActivity() {
                                     else if (dockTab == PlayerScreen.LIBRARY && playerUi.hasSong) Modifier.nestedScroll(dockScroll) else Modifier)) {
                                     // The Carousel tab owns its horizontal drags.
                                     TabPager(baseTab(navigation), ::selectTab) { tab ->
-                                        val horizontalPadding = if (tab == PlayerScreen.CAROUSEL) 0.dp else 16.dp
-                                        Box(Modifier.fillMaxSize().background(screenBackground(tab))
-                                            .padding(horizontal = horizontalPadding)) { tabContent(tab) }
+                                        val insets = if (tab == PlayerScreen.OUTPUT)
+                                            Modifier.statusBarsPadding().padding(horizontal = 16.dp) else Modifier
+                                        Box(Modifier.fillMaxSize().background(screenBackground(tab)).then(insets)) { tabContent(tab) }
                                     }
                                 }
                             }
@@ -499,7 +481,7 @@ class MainActivity : ComponentActivity() {
                                             color = screenBackground(shown)) {
                                             // EQ and Settings reserve their own scroll space below the dock.
                                             val bottom = if (shown in settingsPages || shown == PlayerScreen.EQUALIZER) 0.dp else dockInset
-                                            Box(Modifier.fillMaxSize().padding(horizontal = 16.dp).padding(bottom = bottom)) {
+                                            Box(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp).padding(bottom = bottom)) {
                                                 savedScreens.SaveableStateProvider(shown.name) { pushedContent(shown) }
                                             }
                                         }
@@ -516,29 +498,34 @@ class MainActivity : ComponentActivity() {
                                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
                                 .padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
                             MiniPlayer(playerUi, cover, { setPlayerOpen(true) }, ::togglePlayback,
-                                { mediaController?.seekToNextMediaItem() }, { openOutput(null) }, motion, flying, setPlayerOpen)
+                                onPrevious = { mediaController?.seekToPreviousMediaItem() },
+                                onNext = { mediaController?.seekToNextMediaItem() },
+                                onOutput = { openOutput(null) }, motion = motion, flying = flying, onOpenChange = setPlayerOpen)
                         }
                     }
                     if (playerVisible) {
                         PlayerSheet(motion, cover, flying, wantedOpen && settledOpen, track, setPlayerOpen) {
-                                savedScreens.SaveableStateProvider(PlayerScreen.NOW_PLAYING.name) { ProvideEvannaColors(playerColors) {
-                                    NowPlayingScreen(playerUi, cover, actionError, { motion.endPull(); setPlayerOpen(false) },
-                                        { selectTab(PlayerScreen.LIBRARY) }, openOutput,
-                                        ::togglePlayback, { mediaController?.seekToPreviousMediaItem() }, { mediaController?.seekToNextMediaItem() }, ::seekFromUi,
-                                        { mediaController?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } },
-                                        { mediaController?.let { it.repeatMode = (it.repeatMode + 1) % 3 } }, ::adjustUsbVolume, ::currentLyrics,
-                                        ::setUsbVolume, ::chooseSleepTimer, ::chooseFavorite,
-                                        onSelect = { editQueue(PlaybackService.SELECT_QUEUE, it) },
-                                        onMove = { id, target -> editQueue(PlaybackService.MOVE_QUEUE, id, target) },
-                                        onRemove = { editQueue(PlaybackService.REMOVE_QUEUE, it) },
-                                        onSavePlaylist = { openPlaylists(saveQueue = true) }, loadArtwork = ::queueArtwork,
-                                        motion = motion, flying = flying, wantedOpen = wantedOpen,
-                                        outputSheetOpen = showOutput,
-                                        onConvert = if (outputRoute == "DIRECT_USB" && usbPolicy == UsbPlaybackPolicy.STRICT &&
-                                            playerUi.canPlayPause && !playing) ::playConvertedOnce else null)
-                                } }
+                            savedScreens.SaveableStateProvider(PlayerScreen.NOW_PLAYING.name) { ProvideEvannaColors(playerColors) {
+                                NowPlayingScreen(playerUi, cover, actionError, { motion.endPull(); setPlayerOpen(false) },
+                                    { selectTab(PlayerScreen.LIBRARY) }, openOutput,
+                                    ::togglePlayback, { mediaController?.seekToPreviousMediaItem() }, { mediaController?.seekToNextMediaItem() }, ::seekFromUi,
+                                    { mediaController?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } },
+                                    { mediaController?.let { it.repeatMode = (it.repeatMode + 1) % 3 } }, ::adjustUsbVolume, ::currentLyrics,
+                                    ::setUsbVolume, ::chooseSleepTimer, ::chooseFavorite,
+                                    onSelect = { editQueue(PlaybackService.SELECT_QUEUE, it) },
+                                    onMove = { id, target -> editQueue(PlaybackService.MOVE_QUEUE, id, target) },
+                                    onRemove = { editQueue(PlaybackService.REMOVE_QUEUE, it) },
+                                    onSavePlaylist = { openPlaylists(saveQueue = true) }, loadArtwork = ::queueArtwork,
+                                    motion = motion, flying = flying, wantedOpen = wantedOpen,
+                                    outputSheetOpen = showOutput,
+                                    onConvert = if (outputRoute == "DIRECT_USB" && usbPolicy == UsbPlaybackPolicy.STRICT &&
+                                        playerUi.canPlayPause && !playing) ::playConvertedOnce else null)
+                            } }
                         }
                     }
+                    if (updatesEnabled) AppUpdatePrompt(uiSettings, installedVersion, foreground,
+                        !modalOpen && !keyboard && !motion.dragging && !playerVisible &&
+                            pushed == null && !LocalLibrary.managingFolders, ::openSourceLink)
                     UsbVolumeIndicator(usbKeyIndicator)
                     if (showOutput) ProvideEvannaColors(playerColors) {
                         AudioOutputSheet(
@@ -604,7 +591,6 @@ class MainActivity : ComponentActivity() {
         val id = autoConnectId ?: return
         if (mediaController == null) return
         autoConnectId = null
-        if (startupOfferId != null || startupPermissionId != null) return
         val state = devices.firstOrNull { it.device.deviceId == id } ?: return
         if (id == activeDacId || id == autoConnectingId) return
         val eligible = shouldAutoConnect(autoConnectEnabled, sameDac(lastDac, state.device.dacIdentity()), state.permitted,
@@ -613,35 +599,6 @@ class MainActivity : ComponentActivity() {
         selectedId = id
         autoConnectingId = id
         checkPlaybackReadiness(play = true)
-    }
-
-    private fun offerStartupOutput(preferredId: Int?) {
-        startupOfferId = preferredId?.takeIf { id -> devices.any { it.device.deviceId == id } } ?: selectedId
-        if (startupOfferId == null) selectAndroidOutput(false, onlyIfUnselected = true)
-    }
-
-    private fun acceptStartupOutput(useDac: Boolean) {
-        val id = startupOfferId ?: return
-        startupOfferId = null
-        if (outputRoute != "NONE") return
-        refreshDevices()
-        val device = devices.firstOrNull { it.device.deviceId == id }
-        if (!useDac || device == null) {
-            selectAndroidOutput(false, onlyIfUnselected = true)
-        } else {
-            selectedId = id
-            if (device.permitted) checkPlaybackReadiness(onlyIfUnselected = true)
-            else requestAccess(forStartup = true)
-        }
-    }
-
-    private fun finishStartupPermission(id: Int, granted: Boolean) {
-        if (outputRoute != "NONE") return
-        refreshDevices()
-        if (granted && devices.any { it.device.deviceId == id && it.permitted }) {
-            selectedId = id
-            checkPlaybackReadiness(onlyIfUnselected = true)
-        } else selectAndroidOutput(false, onlyIfUnselected = true)
     }
 
     private fun chooseAutoConnect(enabled: Boolean) {
@@ -658,9 +615,6 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putBoolean("chooseStartupRoute", chooseStartupRoute)
-        startupOfferId?.let { outState.putInt("startupOfferId", it) }
-        startupPermissionId?.let { outState.putInt("startupPermissionId", it) }
         outState.putStringArrayList("playerScreens", ArrayList(navigation.map { it.name }))
         outState.putStringArrayList("playlistAddIds",ArrayList(playlistAddIds));outState.putBoolean("playlistSaveQueue",playlistSaveQueue)
         playlistAddFilter?.let {filter ->outState.putBundle("playlistAddFilter",Bundle().apply {
@@ -719,6 +673,16 @@ class MainActivity : ComponentActivity() {
             ?: source.getString(PlaybackService.FILE_URI)?.let { lyrics.file(applicationContext, id, it) }
     }
 
+    override fun onResume() {
+        super.onResume()
+        foreground = true
+    }
+
+    override fun onPause() {
+        foreground = false
+        super.onPause()
+    }
+
     override fun onStart() {
         super.onStart()
         connectPlayback(SessionToken(this, ComponentName(this, PlaybackService::class.java)), forStartup = true)
@@ -754,22 +718,10 @@ class MainActivity : ComponentActivity() {
                     connected.addListener(playerListener)
                     refreshPlayback(connected)
                     dispatchLocalFile()
-                    if (forStartup && (chooseStartupRoute || startupOfferId != null || startupPermissionId != null)) {
-                        chooseStartupRoute = false
-                        if (outputRoute != "NONE") {
-                            startupOfferId = null
-                            startupPermissionId = null
-                            connectPluggedDac()
-                        } else {
-                            val preferredId = startupOfferId ?: autoConnectId ?: selectedId
-                            val permissionId = startupPermissionId
-                            autoConnectId = null
-                            if (permissionId != null) {
-                                startupPermissionId = null
-                                finishStartupPermission(permissionId, granted = true)
-                            } else offerStartupOutput(preferredId)
-                        }
-                    } else connectPluggedDac()
+                    connectPluggedDac()
+                    if (forStartup && outputRoute == "NONE" && autoConnectingId == null) {
+                        selectAndroidOutput(false, onlyIfUnselected = true)
+                    }
                 } catch (_: Exception) {
                     releaseController()
                     playbackMessage = "Playback controls could not connect. Reopen Evanna to retry."
@@ -811,19 +763,19 @@ class MainActivity : ComponentActivity() {
      * Opens the selected DAC, paused. With [play] (a DAC plugged in that was used before) it carries on into playback as soon as
      * the opened output allows it, exactly as if Play were pressed: focus, Strict rules and the DAC's volume are still checked first.
      */
-    private fun checkPlaybackReadiness(play: Boolean = false, onlyIfUnselected: Boolean = false) {
-        if (!onlyIfUnselected) { usbKeys.reset(); usbKeyIndicator = null }
+    private fun checkPlaybackReadiness(play: Boolean = false) {
+        usbKeys.reset()
+        usbKeyIndicator = null
         val controller = mediaController ?: return
         val id = selectedId ?: return
         val name = devices.firstOrNull { it.device.deviceId == id }?.device?.dacIdentity()?.displayName ?: "USB DAC"
-        if (!onlyIfUnselected) playbackMessage = "Opening the selected USB output…"
+        playbackMessage = "Opening the selected USB output…"
         val result = controller.sendCustomCommand(SessionCommand(PlaybackService.OPEN_USB, Bundle.EMPTY),
             Bundle().apply {
                 putInt(PlaybackService.DEVICE_ID, id)
-                putBoolean(PlaybackService.ONLY_IF_UNSELECTED, onlyIfUnselected)
             })
         result.addListener({
-            if (!onlyIfUnselected) autoConnectingId = null
+            autoConnectingId = null
             if (mediaController === controller) {
                 try {
                     val reply=result.get()
@@ -838,10 +790,7 @@ class MainActivity : ComponentActivity() {
                             playAfterOpenUntil = 0
                             if (remembered) message = "$name connected. Choose a song to play."
                         }
-                    }
-                    else if (onlyIfUnselected && outputRoute == "NONE") {
-                        selectAndroidOutput(false, onlyIfUnselected = true)
-                    } else if (!onlyIfUnselected) {
+                    } else {
                         playbackMessage = "The USB output could not be opened. Check access and reconnect if needed."
                         if (play) message = "$name could not be opened. Check access below, then press Use DAC."
                     }
@@ -1176,18 +1125,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestAccess(forStartup: Boolean = false) {
+    private fun requestAccess() {
         val device = devices.firstOrNull { it.device.deviceId == selectedId }?.device ?: return
         try {
             if (usbManager.hasPermission(device)) {
                 message = "USB access is already allowed."
-                if (forStartup) checkPlaybackReadiness(onlyIfUnselected = true)
                 return
             }
             val request = permissions.begin(device.deviceId)
             CrashRecorder.event(DiagnosticEvent.PERMISSION_REQUEST, device.vendorId.toLong(), device.productId.toLong())
             pending = request
-            if (forStartup) startupPermissionId = device.deviceId
             val intent = Intent(permissionAction).setPackage(packageName)
                 .setData(Uri.parse("evanna://usb-permission/${request.deviceId}/${request.token}"))
             val callback = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_ONE_SHOT)
@@ -1202,10 +1149,7 @@ class MainActivity : ComponentActivity() {
             pending = null
             message = "The DAC is no longer available. Refresh and try again."
         }
-        if (forStartup && pending == null) {
-            startupPermissionId = null
-            selectAndroidOutput(false, onlyIfUnselected = true)
-        }
+
     }
 
     private val settingsPages = setOf(PlayerScreen.OUTPUT, PlayerScreen.AUDIO_OUTPUT, PlayerScreen.LIBRARY_SETTINGS,
@@ -1227,6 +1171,14 @@ class MainActivity : ComponentActivity() {
     private fun chooseLook(choice: EvannaLook) {
         look = choice
         getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putString(LOOK_PREFERENCE, choice.name).apply()
+    }
+
+    private fun openSourceLink(url: String): Boolean = try {
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        true
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(this, "No browser is installed to open the source link.", Toast.LENGTH_LONG).show()
+        false
     }
 
     @OptIn(ExperimentalLayoutApi::class)
@@ -1299,6 +1251,15 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
+                    }
+                }
+                item(key = "public-repository") {
+                    Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+                        TextButton(
+                            onClick = { openSourceLink(EVANNA_REPOSITORY) },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            colors = ButtonDefaults.textButtonColors(muted),
+                        ) { Text("Evanna on GitHub") }
                     }
                 }
             }
@@ -1504,10 +1465,7 @@ class MainActivity : ComponentActivity() {
         }
         file.source?.let { source ->
             TextButton(onClick = {
-                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(source))) }
-                catch (_: ActivityNotFoundException) {
-                    Toast.makeText(this@MainActivity, "No browser is installed to open the source link.", Toast.LENGTH_LONG).show()
-                }
+                openSourceLink(source)
             }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Open component source") }
         }
         SelectionContainer(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
@@ -1524,6 +1482,7 @@ private val licenseFiles = listOf(
     LicenseFile("libebur128 queue · BSD 3-Clause", "licenses/libebur128-queue-BSD-3-Clause.txt"),
     LicenseFile("C++ runtime · LLVM notices", "licenses/NDK-libcxx.txt", "https://developer.android.com/ndk/downloads"),
     LicenseFile("Components and attribution", "third-party-notices.txt"),
+    LicenseFile("Georgia-ReBORN disc artwork (MIT)", "licenses/Georgia-ReBORN-MIT.txt", "https://github.com/TT-ReBORN/Georgia-ReBORN"),
     LicenseFile("Apache License 2.0", "licenses/Apache-2.0.txt", "https://github.com/devang-altf4/truesample-player/tree/cf23a00030cd2d27c91f667737f0ca9aa30256a4/usbaudio"),
     LicenseFile("libusb · LGPL 2.1", "licenses/LGPL-2.1.txt", "https://github.com/libusb/libusb/tree/v1.0.29"),
     LicenseFile("libsamplerate · BSD 2-Clause", "licenses/libsamplerate-BSD-2-Clause.txt", "https://github.com/libsndfile/libsamplerate/tree/0.2.2"),

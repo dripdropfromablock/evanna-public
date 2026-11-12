@@ -32,7 +32,8 @@ internal class EvannaPlayer(private val owner: UsbSessionOwner) : SimpleBasePlay
         val commands = Player.Commands.Builder().addAll(Player.COMMAND_RELEASE, Player.COMMAND_STOP,
             Player.COMMAND_GET_CURRENT_MEDIA_ITEM, Player.COMMAND_GET_TIMELINE, Player.COMMAND_GET_METADATA,
             Player.COMMAND_SET_REPEAT_MODE,Player.COMMAND_SET_SHUFFLE_MODE)
-        if (opened) commands.add(Player.COMMAND_PLAY_PAUSE)
+        val canStartOnAndroid = snapshot.route == null && !owner.sourceSelectionFailed && (track != null || queue.current != null)
+        if (opened || canStartOnAndroid) commands.add(Player.COMMAND_PLAY_PAUSE)
         if (track?.seekable == true && !owner.sourceSelectionFailed) commands.addAll(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, Player.COMMAND_SEEK_TO_PREVIOUS)
         if (queue.items.isNotEmpty()) commands.add(Player.COMMAND_SEEK_TO_MEDIA_ITEM)
         if (queue.navigationIndex(-1)>=0) commands.addAll(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM, Player.COMMAND_SEEK_TO_PREVIOUS)
@@ -62,8 +63,8 @@ internal class EvannaPlayer(private val owner: UsbSessionOwner) : SimpleBasePlay
             queue.restoreFailed -> "The saved queue could not be restored. It was kept on disk; choose a new song or Close output to replace it."
             queue.saveFailed -> "Queue changes could not be saved. Free storage and try again; playback can continue in this session."
             queue.historySaveFailed -> "Play history could not be saved. Free storage and retry; playback can continue."
-            queue.items.isNotEmpty() && track==null -> "Saved queue restored paused. Choose an output and press Play; unavailable sources stay in the queue."
-            track!=null && snapshot.route==null -> "Song selected. Choose an output, then press Play."
+            queue.items.isNotEmpty() && track==null -> "Saved queue restored paused. Press Play to resume. Unavailable sources stay in the queue."
+            track!=null && snapshot.route==null -> "Song selected. Press Play to listen through Android audio."
             else -> "Queue and estimated position are saved on this device."
         }
         val sleepLabel=owner.sleepTimer.value.label

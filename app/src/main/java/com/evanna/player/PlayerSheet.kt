@@ -64,6 +64,7 @@ internal class PlayerSheetMotion(initiallyOpen: Boolean) {
     private var flightTrack by mutableStateOf<String?>(null)
     var dragging by mutableStateOf(false)
         private set
+    private var settlingPull by mutableStateOf(false)
     var travelPx = 0
     var miniCover by mutableStateOf<LayoutCoordinates?>(null)
     var fullCover by mutableStateOf<LayoutCoordinates?>(null)
@@ -71,6 +72,7 @@ internal class PlayerSheetMotion(initiallyOpen: Boolean) {
 
     val progress get() = (dragPosition ?: position.value).coerceIn(0f, 1f)
     val offsetY get() = travelPx * (1f - progress)
+    val chromeOffsetY get() = if (dragPosition != null || settlingPull) offsetY else 0f
 
     fun beginPull(track: String?): Boolean {
         if (travelPx <= 0 || dragging) return false
@@ -93,12 +95,14 @@ internal class PlayerSheetMotion(initiallyOpen: Boolean) {
     suspend fun settle(open: Boolean, track: String?) {
         val held = dragPosition
         if (held != null) {
+            settlingPull = true
             position.snapTo(held)
             dragPosition = null
         } else if (progress == 0f || progress == 1f) captureTrack(track)
         val velocity = releaseVelocity
         releaseVelocity = 0f
         position.animateTo(if (open) 1f else 0f, EvannaMotion.playerSpring, initialVelocity = velocity)
+        settlingPull = false
     }
 
     fun isFlying(track: String?): Boolean = track != null && track == flightTrack &&
@@ -203,7 +207,7 @@ internal fun PlayerSheet(motion: PlayerSheetMotion, cover: Bitmap?, flying: Bool
     }
     DisposableEffect(scroll) { onDispose(scroll::cancel) }
     Box(Modifier.fillMaxSize().nestedScroll(scroll).playerPull(motion, true, track, onOpenChange)) {
-        Box(Modifier.matchParentSize().graphicsLayer { translationY = motion.offsetY }
+        Box(Modifier.matchParentSize().graphicsLayer { translationY = motion.chromeOffsetY }
             .onGloballyPositioned { sheet = it }.playerFocusScope(blocked = !ready)) { content() }
         if (flying) FlyingCover(motion, cover, sheet)
         // New touches wait for the animation; the pointer already pulling the sheet keeps its original target.
@@ -220,7 +224,7 @@ private fun FlyingCover(motion: PlayerSheetMotion, cover: Bitmap?, sheet: Layout
         }, RectangleShape)
     }, modifier = Modifier.fillMaxSize()) { measurables, constraints ->
         val from = coverBounds(motion.miniCover)
-        // The artwork flies between the stationary endpoints while the chrome slides underneath it.
+        // The artwork flies between stationary endpoints, including during an interactive pull.
         val to = coverBounds(motion.fullCover, sheet)
         if (from == null || to == null) return@Layout layout(constraints.maxWidth, constraints.maxHeight) {}
         val frame = androidx.compose.ui.geometry.lerp(from, to, motion.progress)

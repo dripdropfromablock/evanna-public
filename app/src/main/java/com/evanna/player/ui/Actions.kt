@@ -7,6 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
@@ -96,12 +98,25 @@ internal fun Modifier.pressScale(interaction: MutableInteractionSource): Modifie
 }
 
 @Composable
+internal fun Modifier.controlFocus(interaction: MutableInteractionSource, shape: Shape): Modifier {
+    val focused by interaction.collectIsFocusedAsState()
+    val hovered by interaction.collectIsHoveredAsState()
+    val ink = EvannaDesign.colorScheme.onSurface
+    return when {
+        focused -> border(2.dp, ink, shape)
+        hovered -> border(1.dp, ink.copy(alpha = 0.32f), shape)
+        else -> this
+    }
+}
+
+@Composable
 internal fun IconButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
     colors: ActionColors = IconButtonDefaults.iconButtonColors(LocalContentColor.current), content: @Composable () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     Box(modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).clip(CircleShape)
         .background(if (enabled) colors.container else Color.Transparent)
+        .controlFocus(interaction, CircleShape)
         .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick), contentAlignment = Alignment.Center) {
         val ink = if (enabled) colors.content else EvannaDesign.colorScheme.onSurface.copy(alpha = 0.38f)
         CompositionLocalProvider(LocalContentColor provides ink) {

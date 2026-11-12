@@ -36,7 +36,7 @@ class PlaybackService : MediaSessionService() {
             if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) { scope.launch(start=CoroutineStart.UNDISPATCHED) { owner.pause() } }
             if (intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED) {
                 @Suppress("DEPRECATION") val device = intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
-                if (device?.deviceId == owner.snapshot.value.deviceId) { scope.launch(start=CoroutineStart.UNDISPATCHED) { owner.shutdown() } }
+                if (device != null && device.deviceId == owner.snapshot.value.deviceId) { scope.launch(start=CoroutineStart.UNDISPATCHED) { owner.shutdown() } }
             }
         }
     }

@@ -10,7 +10,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -31,18 +31,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
-import androidx.compose.ui.draw.BlurredEdgeTreatment
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -123,9 +123,9 @@ private data class CarouselSelection(
     val album: AlbumIdentity,
     val tracks: LibraryPage,
     val summary: AlbumSummary,
-    val cover: Bitmap?,
-    val accent: Color?,
 )
+
+private data class CarouselCover(val bitmap: Bitmap?)
 
 private suspend fun <T> readCarousel(block: suspend () -> T): Result<T> = try {
     Result.success(block())
@@ -164,7 +164,7 @@ internal fun CarouselScreen(
                 bottomInset, onSelect, onAdd, onPlayNext, onPlaylistSong)
         }
     } else {
-        Column(Modifier.fillMaxSize().padding(bottom = bottomInset)) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().padding(bottom = bottomInset)) {
             CarouselHeader(enabled = false, onRoll = {})
             Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally) {
@@ -203,11 +203,12 @@ private fun CarouselBrowser(
     )
     val pages = remember(albums) { mutableStateMapOf(0 to albums.groups) }
     val backdrops = remember(revision) { CarouselBackdrops() }
+    val covers = remember(revision) { mutableStateMapOf<AlbumIdentity, CarouselCover>() }
     var metadataRetry by remember { mutableIntStateOf(0) }
     var metadataFailed by remember { mutableStateOf(false) }
     var rolling by remember { mutableStateOf(false) }
     var selection by remember { mutableStateOf<CarouselSelection?>(null) }
-    var selectionFailed by remember { mutableStateOf(false) }
+    var failedAlbum by remember { mutableStateOf<AlbumIdentity?>(null) }
     var selectionRetry by remember { mutableIntStateOf(0) }
     var trackInfo by remember { mutableStateOf<LibrarySong?>(null) }
     var playbackFailed by remember { mutableStateOf(false) }
@@ -300,19 +301,42 @@ private fun CarouselBrowser(
     LaunchedEffect(active, centeredAlbum, selectionRetry) {
         val album = centeredAlbum ?: return@LaunchedEffect
         if (!active || selection?.album == album) return@LaunchedEffect
-        selectionFailed = false
+        failedAlbum = null
         readCarousel {
-            coroutineScope {
-                val tracks = async(Dispatchers.IO) {
-                    database.page(filter = LibraryFilter(kind = LibraryGroupKind.ALBUM, value = album.title,
-                        albumArtist = album.albumArtist)) to database.albumSummary(album)
-                }
-                val cover = readCarousel { artwork.album(album, ArtworkSize.MEDIUM) }.getOrNull()
-                val accent = cover?.let { withContext(Dispatchers.Default) { sampleArtworkAccent(it) } }
-                val (page, summary) = tracks.await()
-                CarouselSelection(album, page, summary, cover, accent)
+            withContext(Dispatchers.IO) {
+                val filter = LibraryFilter(kind = LibraryGroupKind.ALBUM, value = album.title, albumArtist = album.albumArtist)
+                CarouselSelection(album, database.page(filter = filter), database.albumSummary(album))
             }
-        }.onSuccess { selection = it }.onFailure { selectionFailed = true }
+        }.onSuccess { selection = it }.onFailure { failedAlbum = album }
+    }
+
+    LaunchedEffect(active, revision) {
+        if (!active) return@LaunchedEffect
+        snapshotFlow {
+            val page = pager.currentPage
+            listOf(page, pager.settledPage, page - 1, page + 1)
+                .filter { it in 0 until pager.pageCount }
+                .mapNotNull { albumAt(carouselAlbumIndex(it, count))?.identity() }.distinct()
+        }.collectLatest { wanted ->
+            (covers.keys - wanted.toSet()).forEach(covers::remove)
+            for (album in wanted) {
+                if (album !in covers) {
+                    covers[album] = CarouselCover(readCarousel { artwork.album(album, ArtworkSize.MEDIUM) }.getOrNull())
+                }
+                covers[album]?.bitmap?.let { backdrops.prepare(album, it) }
+            }
+        }
+    }
+
+    fun playFocusedAlbum(page: Int): Boolean {
+        if (!active || rolling || albumHeaderProgress > 0f || pager.isScrollInProgress ||
+            page != pager.settledPage || LocalLibrary.scanning || LocalLibrary.managingFolders) return false
+        val album = albumAt(carouselAlbumIndex(page, count))?.identity() ?: return false
+        val filter = LibraryFilter(kind = LibraryGroupKind.ALBUM, value = album.title, albumArtist = album.albumArtist)
+        onSelect(LibraryContextRequest(filter, null, LibraryContextAction.PLAY_FIRST)) { success ->
+            if (!success) playbackFailed = true
+        }
+        return true
     }
 
     fun moveTo(page: Int) {
@@ -346,7 +370,14 @@ private fun CarouselBrowser(
     }
 
     val look = LocalLookStyle.current.look
-    val accent = selection?.accent
+    val centeredCover = centeredAlbum?.let(covers::get)
+    var accent by remember(revision) { mutableStateOf<Color?>(null) }
+    var themedAlbum by remember(revision) { mutableStateOf<AlbumIdentity?>(null) }
+    LaunchedEffect(active, centeredAlbum, centeredCover) {
+        if (!active || centeredAlbum == null || centeredCover == null) return@LaunchedEffect
+        accent = centeredCover.bitmap?.let { cover -> withContext(Dispatchers.Default) { sampleArtworkAccent(cover) } }
+        themedAlbum = centeredAlbum
+    }
     val theme = remember(look, accent) { look.colors.withArtwork(accent, look.dark, look.apple, surfaceTint = 0.12f) }
     val heroColor by animateColorAsState(
         accent?.let { lerp(theme.background, it, if (look.dark) 0.21f else 0.12f) } ?: theme.background,
@@ -355,12 +386,10 @@ private fun CarouselBrowser(
     val cardColor by animateColorAsState(theme.surfaceContainerHigh, EvannaMotion.ambient, label = "Carousel cards")
     val listColor by animateColorAsState(theme.surfaceContainer, EvannaMotion.ambient, label = "Carousel track list")
     val visibleSelection = selection?.takeIf { it.album == centeredAlbum }
-    LaunchedEffect(selection) {
-        selection?.let { selected -> selected.cover?.let { cover -> backdrops.prepare(selected.album, cover) } }
-    }
+
     ProvideEvannaColors(theme.copy(surfaceContainer = listColor, surfaceContainerHigh = cardColor)) {
         BoxWithConstraints(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(heroColor, listColor)))) {
-            CarouselArtworkBackdrop(pager, backdrops, selection?.album,
+            CarouselArtworkBackdrop(pager, backdrops, themedAlbum,
                 albumAtPage = { albumAt(carouselAlbumIndex(it, count))?.identity() },
                 modifier = Modifier.matchParentSize())
             Box(Modifier.matchParentSize().background(Brush.verticalGradient(
@@ -379,7 +408,7 @@ private fun CarouselBrowser(
             val progress = albumHeaderProgress
             val headerWidth = lerpDp(cardWidth, maxWidth, progress)
             val headerHeight = lerpDp(cardHeight, pinnedHeight, progress)
-            Column(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 Box(Modifier.fillMaxWidth().height(lerpDp(browseHeight, pinnedHeight, progress)).clipToBounds()
                     .draggable(headerDrag, Orientation.Vertical, enabled = active && !rolling,
                         onDragStopped = { settleHeader(it) })) {
@@ -398,6 +427,10 @@ private fun CarouselBrowser(
                                         add(CustomAccessibilityAction("Previous album") { moveTo(pager.settledPage - 1); true })
                                         add(CustomAccessibilityAction("Next album") { moveTo(pager.settledPage + 1); true })
                                     }
+                                    if (active && centered != null && !pager.isScrollInProgress &&
+                                        !LocalLibrary.scanning && !LocalLibrary.managingFolders) {
+                                        add(CustomAccessibilityAction("Play album from first track") { playFocusedAlbum(pager.settledPage) })
+                                    }
                                     add(CustomAccessibilityAction("Expand album artwork") {
                                         scope.launch { animateHeaderTo(1f) }
                                         true
@@ -411,25 +444,29 @@ private fun CarouselBrowser(
                             flingBehavior = flingBehavior,
                             beyondViewportPageCount = 1,
                         ) { page ->
-                            val offset = ((page - pager.currentPage) - pager.currentPageOffsetFraction).coerceIn(-3f, 3f)
-                            val distance = abs(offset)
                             val group = albumAt(carouselAlbumIndex(page, count))
-                            val blurRadius = ((distance - 0.15f).coerceIn(0f, 0.85f) * 2f).dp
-                            CarouselAlbumCard(group, artwork, backdrops, revision, cardWidth, captionHeight, blurRadius, Modifier.graphicsLayer {
+                            val pageOffset = remember(pager, page) {
+                                { ((page - pager.currentPage) - pager.currentPageOffsetFraction).coerceIn(-3f, 3f) }
+                            }
+                            CarouselAlbumCard(group, group?.identity()?.let(covers::get)?.bitmap, cardWidth, captionHeight,
+                                focused = page == pager.settledPage, pageOffset = pageOffset, modifier = Modifier.graphicsLayer {
                                 if (progress > 0f && page == pager.settledPage) alpha = 0f
                                 if (!reducedMotion) {
+                                    val offset = pageOffset()
+                                    val distance = abs(offset)
                                     val scale = 1f - distance.coerceAtMost(2f) * 0.075f
                                     scaleX = scale
                                     scaleY = scale
                                     rotationY = -offset.coerceIn(-1.25f, 1.25f) * 14f
                                     cameraDistance = size.width * 4f
                                 }
-                            }, onClick = { if (progress == 0f) moveTo(page) })
+                            }, onClick = { if (progress == 0f) moveTo(page) },
+                                onDoubleClick = if (page == pager.settledPage) ({ playFocusedAlbum(page) }) else null)
                         }
                     }
                     if (progress > 0f) {
                         ExpandingCarouselAlbum(
-                            centered, visibleSelection?.cover, progress, captionHeight,
+                            centered, centeredCover?.bitmap, progress, captionHeight,
                             coverHeight = lerpDp(cardWidth - CarouselCoverInset * 2, pinnedHeight, progress),
                             modifier = Modifier.align(Alignment.TopCenter).offset(y = lerpDp(57.dp, 0.dp, progress))
                                 .width(headerWidth).height(headerHeight).semantics {
@@ -456,10 +493,11 @@ private fun CarouselBrowser(
                             modifier = Modifier.padding(vertical = 4.dp))
                     }
                     when {
-                        selectionFailed -> TextButton(onClick = { selectionRetry++ }) { Text("Retry loading tracks") }
+                        visibleSelection == null && centeredAlbum != null && failedAlbum == centeredAlbum ->
+                            TextButton(onClick = { selectionRetry++ }) { Text("Retry loading tracks") }
                         visibleSelection == null -> Text("Loading tracks…", modifier = Modifier.padding(vertical = 12.dp))
                         else -> key(visibleSelection.album.key) {
-                            CarouselTracks(visibleSelection, database, active, bottomInset, scope, trackList,
+                            CarouselTracks(visibleSelection, centeredCover?.bitmap, database, active, bottomInset, scope, trackList,
                                 Modifier.nestedScroll(headerScroll), onSelect, onAdd,
                                 onPlayNext, onPlaylistSong, { trackInfo = it }, { playbackFailed = true })
                         }
@@ -555,28 +593,39 @@ private fun ExpandingCarouselAlbum(
 
 @Composable
 private fun CarouselAlbumCard(
-    group: LibraryGroup?, artwork: EmbeddedArtwork, backdrops: CarouselBackdrops, revision: Int, width: Dp, captionHeight: Dp,
-    blurRadius: Dp, modifier: Modifier, onClick: () -> Unit,
+    group: LibraryGroup?, shown: Bitmap?, width: Dp, captionHeight: Dp,
+    focused: Boolean, pageOffset: () -> Float, modifier: Modifier, onClick: () -> Unit, onDoubleClick: (() -> Unit)?,
 ) {
     val colors = EvannaDesign.colorScheme
-    Surface(modifier.width(width).clickable(interactionSource = null, indication = null, enabled = group != null, onClick = onClick),
+    Surface(modifier.width(width).combinedClickable(interactionSource = null, indication = null,
+        enabled = group != null, onClick = onClick, onDoubleClick = onDoubleClick),
         shape = CarouselCardShape, color = colors.surfaceContainerHigh.copy(alpha = 0.62f),
         border = BorderStroke(1.dp, carouselGlassRim(1f))) {
         Column(Modifier.padding(CarouselCoverInset)) {
             val cover = Modifier.fillMaxWidth().aspectRatio(1f)
-            val album = group?.identity()
-            var bitmap by remember(album, revision) { mutableStateOf<Bitmap?>(null) }
-            LaunchedEffect(album, revision) {
-                if (album != null) {
-                    bitmap = readCarousel { artwork.album(album, ArtworkSize.MEDIUM) }.getOrNull()
-                    bitmap?.let { backdrops.prepare(album, it) }
+
+            if (focused && shown != null) {
+                BoxWithConstraints(cover, contentAlignment = Alignment.Center) {
+                    val artworkSize = maxWidth * 0.84f
+                    AlbumDisc(shown, Modifier.align(Alignment.CenterEnd).size(artworkSize))
+                    ArtworkImage(shown, Modifier.align(Alignment.CenterStart).size(artworkSize), CarouselCoverShape)
                 }
-            }
-            val shown = bitmap
-            if (Build.VERSION.SDK_INT >= 31) {
-                val blur = if (blurRadius > 0.dp) Modifier.blur(blurRadius, BlurredEdgeTreatment(CarouselCoverShape)) else Modifier
-                ArtworkImage(shown, cover.then(blur), CarouselCoverShape)
+            } else if (Build.VERSION.SDK_INT >= 31) {
+                val density = LocalDensity.current
+                val blurSteps = remember(density) {
+                    List(8) { step ->
+                        val radius = with(density) { (step * 0.25f).dp.toPx() }
+                        if (step == 0) null else BlurEffect(radius, radius, TileMode.Clamp)
+                    }
+                }
+                ArtworkImage(shown, cover.graphicsLayer {
+                    val blurStep = ((abs(pageOffset()) - 0.15f) * 8f).roundToInt().coerceIn(0, blurSteps.lastIndex)
+                    shape = CarouselCoverShape
+                    clip = true
+                    renderEffect = blurSteps[blurStep]
+                }, CarouselCoverShape)
             } else {
+                val soften by remember(pageOffset) { derivedStateOf { abs(pageOffset()) >= 0.60f } }
                 val softened = remember(shown) {
                     shown?.takeIf { maxOf(it.width, it.height) > 112 }?.let {
                         val scale = 112f / maxOf(it.width, it.height)
@@ -584,10 +633,14 @@ private fun CarouselAlbumCard(
                             (it.height * scale).toInt().coerceAtLeast(1), true)
                     }
                 }
-                ArtworkImage(if (blurRadius >= 0.9.dp) softened ?: shown else shown, cover, CarouselCoverShape)
+                ArtworkImage(if (soften) softened ?: shown else shown, cover, CarouselCoverShape)
             }
             Column(Modifier.fillMaxWidth().height(captionHeight).padding(start = 6.dp, end = 6.dp, top = 6.dp),
                 verticalArrangement = Arrangement.Center) {
+                if (focused && group != null) {
+                    Box(Modifier.width(26.dp).height(2.dp).background(colors.primary))
+                    Spacer(Modifier.height(4.dp))
+                }
                 CarouselAlbumLabel(group)
             }
         }
@@ -605,7 +658,7 @@ private fun CarouselAlbumLabel(group: LibraryGroup?, heading: Boolean = false) {
 
 @Composable
 private fun CarouselTracks(
-    selection: CarouselSelection, database: LibraryDatabase, active: Boolean, bottomInset: Dp, scope: CoroutineScope,
+    selection: CarouselSelection, cover: Bitmap?, database: LibraryDatabase, active: Boolean, bottomInset: Dp, scope: CoroutineScope,
     list: LazyListState, modifier: Modifier,
     onSelect: (LibraryContextRequest, (Boolean) -> Unit) -> Unit,
     onAdd: (String, (Boolean) -> Unit) -> Unit, onPlayNext: (String, (Boolean) -> Unit) -> Unit,
@@ -648,7 +701,7 @@ private fun CarouselTracks(
             LibrarySongRow(song, enabled = active && !busy, scope = scope, onPlay = {
                 onSelect(LibraryContextRequest(filter, song.id, LibraryContextAction.PLAY_FROM)) { if (!it) onPlaybackFailed() }
             }, onAdd = onAdd, onPlayNext = onPlayNext, onPlaylistSong = onPlaylistSong, onTrackInfo = { onTrackInfo(song) }) {
-                ArtworkImage(selection.cover, Modifier.size(44.dp))
+                ArtworkImage(cover, Modifier.size(44.dp))
                 Column(Modifier.weight(1f).padding(start = 12.dp)) {
                     Text(song.title, style = EvannaDesign.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     val artist = song.artist ?: selection.summary.displayArtist
