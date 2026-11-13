@@ -6,6 +6,8 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -62,17 +64,32 @@ internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // AutoEq's ParametricEQ.txt replaces the parametric bands and resets the preamp; the graphic sliders and tone stay.
+    fun applyAutoEq(text: String, label: String): String {
+        val found = parseAutoEq(text)
+        SoundSettings.update { it.copy(enabled = true, preampDb = 0f, bands = found.bands) }
+        chosen = 0; tab = 1
+        return "$label: ${found.bands.size} bands." + if (found.skipped > 0) " ${found.skipped} lines were left out." else ""
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             note = try {
-                val text = withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.use(::readSmallText) } ?: ""
-                val found = parseAutoEq(text)
-                SoundSettings.update { it.copy(enabled = true, preampDb = 0f, bands = found.bands) }
-                chosen = 0; tab = 1
-                "Imported ${found.bands.size} bands." + if (found.skipped > 0) " ${found.skipped} lines were left out." else ""
+                applyAutoEq(withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.use(::readSmallText) } ?: "", "Imported")
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 "That file has no AutoEq filters. Pick a ParametricEQ.txt file."
+            }
+        }
+    }
+    var searching by remember { mutableStateOf(false) }
+    if (searching) AutoEqSearchDialog(onClose = { searching = false }) { entry ->
+        searching = false
+        scope.launch {
+            note = "Loading ${entry.name}…"
+            note = try {
+                applyAutoEq(AutoEqLibrary.profile(entry), "${entry.name} (${entry.source})")
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                "Could not load ${entry.name}. Check the internet and try again."
             }
         }
     }
@@ -117,8 +134,11 @@ internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
                 EqCard {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("Presets", style = eqText(15.sp, 20.sp, FontWeight.Medium), color = p.text, modifier = Modifier.weight(1f).semantics { heading() })
-                        TextButton(onClick = { picker.launch(arrayOf("text/*", "application/octet-stream")) }) { Text("Import AutoEq") }
                         TextButton(onClick = { naming = true }) { Text("Save") }
+                    }
+                    Row(Modifier.fillMaxWidth()) {
+                        TextButton(onClick = { searching = true }) { Text("Find headphones") }
+                        TextButton(onClick = { picker.launch(arrayOf("text/*", "application/octet-stream")) }) { Text("Import file") }
                     }
                     FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         for (preset in BUILT_IN_PRESETS + mine)
@@ -243,4 +263,45 @@ private fun BandEditor(index: Int, band: Band, onBand: (Band) -> Unit, onRemove:
         EqHSlider("Q", String.format(Locale.ROOT, "%.2f", band.q), qPosition(band.q), false, "Band ${index + 1} Q", true) { onBand(band.copy(q = qAt(it))) }
         TextButton(onClick = onRemove, modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp)) { Text("Remove band ${index + 1}") }
     }
+}
+
+/** Searches AutoEq's headphone list (fetched on open, cached a week) and hands back the chosen profile. */
+@Composable
+private fun AutoEqSearchDialog(onClose: () -> Unit, onPick: (AutoEqEntry) -> Unit) {
+    val context = LocalContext.current
+    val p = eqPalette()
+    var query by rememberSaveable { mutableStateOf("") }
+    var entries by remember { mutableStateOf<List<AutoEqEntry>?>(null) }
+    var failed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        try { entries = AutoEqLibrary.index(context) } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            failed = true
+        }
+    }
+    val results = remember(entries, query) { entries?.let { searchAutoEq(it, query) } ?: emptyList() }
+    AlertDialog(onDismissRequest = onClose, title = { Text("Find headphones") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(query, { query = it.take(60) }, "Headphone name", Modifier.fillMaxWidth())
+                val status = when {
+                    failed -> "Could not reach AutoEq. Check the internet and try again."
+                    entries == null -> "Loading the headphone list…"
+                    query.isBlank() -> "${entries!!.size} profiles. Type a name, like HD 600."
+                    results.isEmpty() -> "No match."
+                    else -> null
+                }
+                status?.let { Text(it, style = eqText(13.sp, 18.sp), color = p.muted) }
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+                    items(results, key = { it.path }) { entry ->
+                        Column(Modifier.fillMaxWidth().clickable { onPick(entry) }.padding(vertical = 10.dp)) {
+                            Text(entry.name, style = eqText(15.sp, 20.sp, FontWeight.Medium), color = p.text)
+                            Text(entry.source, style = eqText(12.5.sp, 17.sp), color = p.muted)
+                        }
+                    }
+                }
+                Text("Profiles from AutoEq by Jaakko Pasanen (MIT).", style = eqText(11.5.sp, 15.sp), color = p.muted)
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Close") } })
 }
