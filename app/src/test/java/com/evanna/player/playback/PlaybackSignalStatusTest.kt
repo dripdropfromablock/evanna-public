@@ -57,7 +57,7 @@ class PlaybackSignalStatusTest {
     }
     @Test fun minimalSummaryFlagsConversionsProblemsAndUnconfirmedStates() {
         val converted=signalSummary(clean.copy(stream=stream.copy(outputRate=48000,bitPerfect=false,resampled=true),stats=StreamStats(10,0,0,false)))
-        assertEquals("Resampling 44100 → 48000 Hz",converted.first {it.label=="Processing"}.value)
+        assertEquals("Resampling 44100 → 48000 Hz with 2 dB headroom",converted.first {it.label=="Processing"}.value)
         assertTrue(converted.first {it.label=="Processing"}.changed && converted.first {it.label=="Output"}.changed)
         val unhealthy=signalSummary(clean.copy(stats=StreamStats(10,3,0,false))).last()
         assertEquals("Health",unhealthy.label);assertEquals("Problem found. See Advanced",unhealthy.value);assertTrue(unhealthy.changed)
@@ -68,7 +68,7 @@ class PlaybackSignalStatusTest {
         val planned=signalSummary(UsbPlaybackSnapshot(route=PlaybackRoute.DIRECT_USB,source=TrackPcmFormat(44100,32,2,null,"MP3",false,null),
             plan=PlaybackPlan(48000,16,true,false)))
         assertEquals(listOf("Planned output","Processing","Volume"),planned.map {it.label})
-        assertEquals("Processed decode / S32 quantization; resampling 44100 → 48000 Hz; precision reduction 32 → 16 bits",planned[1].value)
+        assertEquals("Processed decode / S32 quantization; resampling 44100 → 48000 Hz with 2 dB headroom; precision reduction 32 → 16 bits",planned[1].value)
     }
     @Test fun minimalSummaryNeverBorrowsUsbClaimsForAndroidOrAnUnselectedOutput() {
         val android=signalSummary(clean.copy(route=PlaybackRoute.ANDROID,stream=null,androidStream=AndroidOutputInfo(44100,2,22)))

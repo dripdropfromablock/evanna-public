@@ -840,6 +840,8 @@ bool UsbStreamer::resampleAndPush(size_t frames, bool endOfInput) {
             return false;
         }
         if (d.output_frames_gen > 0) {
+            float* out = resampleOut_.data();
+            for (long i = 0, n = d.output_frames_gen * channels; i < n; ++i) out[i] *= kResampleHeadroom;
             cf_.process(resampleOut_.data(), size_t(d.output_frames_gen));
             if (!pushProcessedFloat(resampleOut_.data(), size_t(d.output_frames_gen))) return false;
         }

@@ -28,6 +28,11 @@ struct SRC_STATE_tag;
 
 class UsbStreamer {
 public:
+    // -2 dB on converted audio only. Rate conversion of loud masters overshoots full scale: measured
+    // +1.66 dB on a 0 dBFS 88.2 kHz song played at 44.1 kHz (42,463 clipped samples without this).
+    // The app's Audio quality window names it; keep its text in step (usbConversions).
+    static constexpr float kResampleHeadroom = 0.7943282f;
+
     struct StreamInfo {
         int outputIndex = -1;
         uint32_t sampleRate = 0;  // source

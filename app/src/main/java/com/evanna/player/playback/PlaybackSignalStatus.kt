@@ -12,7 +12,8 @@ internal data class SignalStage(val label:String,val value:String,val changed:Bo
 /** What changes the samples on Direct USB; the full stage and the short summary both read this one list. */
 private fun UsbPlaybackSnapshot.usbConversions(source: PcmFormat, rate: Int, bits: Int): List<String> = buildList {
     if (!source.strictEligible) add("processed decode / S32 quantization")
-    if (rate != source.sampleRate) add("resampling ${source.sampleRate} → $rate Hz")
+    // The 2 dB is UsbStreamer::kResampleHeadroom: converted audio is turned down so loud masters do not clip.
+    if (rate != source.sampleRate) add("resampling ${source.sampleRate} → $rate Hz with 2 dB headroom")
     if (bits < source.significantBits) add("precision reduction ${source.significantBits} → $bits bits")
     if(eqProcessed)add("EQ · preamp $eqPreampDb dB")
     if(crossfeedProcessed)add("crossfeed ${crossfeed.label.lowercase()}")

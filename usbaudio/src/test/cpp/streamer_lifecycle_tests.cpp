@@ -1223,7 +1223,33 @@ static void resamplerDrainCompletesTheReferenceTail() {
     while (first + 1 < bytes.size() / 4 && std::abs(sample(first * 2)) < 1000) ++first;
     CHECK((first + size_t(data.output_frames_gen)) * 4 <= bytes.size());
     for (long frame = 0; frame < data.output_frames_gen; ++frame) for (int ch = 0; ch < 2; ++ch)
-        CHECK(std::abs(sample((first + size_t(frame)) * 2 + ch) - double(reference[size_t(frame) * 2 + ch]) * 32768.0) <= 3.5);
+        CHECK(std::abs(sample((first + size_t(frame)) * 2 + ch) -
+            double(reference[size_t(frame) * 2 + ch]) * UsbStreamer::kResampleHeadroom * 32768.0) <= 3.5);
+    allowCallbacks(); CHECK(output.close());
+}
+
+// Evanna 2026-11-13: converting a loud master's rate overshot full scale and was clipped (heard as slight distortion).
+static void fullScaleSquareDoesNotClipWhenResampled() {
+    reset(); UsbStreamer output;
+    CHECK(openAndStart(output, false, true, 44100));
+    std::vector<int32_t> pcm(4410 * 2);
+    // ±0.85 (-1.4 dBFS), 441 Hz: converted it peaks near +0.7 dBFS, like the loud masters measured. A full-scale square
+    // peaks at +2.1 dBFS, past what 2 dB of headroom covers.
+    for (size_t i = 0; i < pcm.size(); ++i) pcm[i] = (i / 2) % 100 < 50 ? 1825361101 : -1825361101;
+    // The same square without headroom overshoots full scale, so this test can fail.
+    std::vector<float> input(pcm.size()), plain(6000 * 2);
+    for (size_t i = 0; i < pcm.size(); ++i) input[i] = float(double(pcm[i]) / 2147483648.0);
+    SRC_DATA data{};
+    data.data_in = input.data(); data.input_frames = 4410;
+    data.data_out = plain.data(); data.output_frames = 6000;
+    data.src_ratio = 48000.0 / 44100; data.end_of_input = 1;
+    CHECK(src_simple(&data, SRC_SINC_BEST_QUALITY, 2) == 0);
+    float peak = 0;
+    for (long i = 0; i < data.output_frames_gen * 2; ++i) peak = std::max(peak, std::abs(plain[size_t(i)]));
+    if (!(peak > 1.0f && peak * UsbStreamer::kResampleHeadroom < 1.0f)) std::printf("square peak %f\n", double(peak));
+    CHECK(peak > 1.0f && peak * UsbStreamer::kResampleHeadroom < 1.0f);
+    CHECK(output.write(pcm.data(), 4410) == 4410);
+    CHECK(output.stats().framesQueued > 0 && output.stats().clippedSamples == 0);
     allowCallbacks(); CHECK(output.close());
 }
 
@@ -1292,6 +1318,7 @@ int main() {
     outOfOrderCompletionAndRealGaps();
     readinessLossDuringDrainFails();
     resamplerDrainCompletesTheReferenceTail();
+    fullScaleSquareDoesNotClipWhenResampled();
     blockedConverterTailSharesDrainDeadlineAndStop();
     resampledStartWaitsForATransferBeforeCountingStarvation();
     converterTailDoesNotEraseAnEarlierGap();
