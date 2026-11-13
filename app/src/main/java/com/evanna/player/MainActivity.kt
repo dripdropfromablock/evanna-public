@@ -150,7 +150,7 @@ class MainActivity : ComponentActivity() {
     /** Settings switch: connect and play when a DAC used before is plugged in. */
     private var autoConnectEnabled by mutableStateOf(true)
     /** The saved layout and brightness. The selected song supplies the accent. */
-    private var look by mutableStateOf(EvannaLook.EVANNA)
+    private var look by mutableStateOf(EvannaLook.APPLE_DARK)
     /** Liquid glass on the floating controls, in the Apple looks; Reduce transparency keeps it frosted and dense. */
     private var liquidGlass by mutableStateOf(true)
     private var reduceTransparency by mutableStateOf(false)
@@ -1457,18 +1457,16 @@ class MainActivity : ComponentActivity() {
             } }
             if (page == PlayerScreen.APPEARANCE) item { SettingsCard("Liquid glass") {
                 val tier = glassTier(Build.VERSION.SDK_INT, look.apple && liquidGlass, reduceTransparency)
-                SwitchRow("Liquid glass", "See-through tab bar and mini player in the Dark and Light looks.", liquidGlass,
-                    enabled = look.apple) { on ->
+                SwitchRow("Liquid glass", "See-through tab bar and mini player.", liquidGlass) { on ->
                     liquidGlass = on
                     getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putBoolean(GLASS_PREFERENCE, on).apply()
                 }
                 SwitchRow("Reduce transparency", "Keeps the glass frosted and solid behind text.", reduceTransparency,
-                    enabled = look.apple && liquidGlass) { on ->
+                    enabled = liquidGlass) { on ->
                     reduceTransparency = on
                     getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putBoolean(REDUCE_TRANSPARENCY_PREFERENCE, on).apply()
                 }
                 Text(when {
-                    !look.apple -> "Pick the Dark or Light look to use glass."
                     tier == GlassTier.FULL -> "This phone shows full glass: blur and a bent edge."
                     tier == GlassTier.BLUR -> "This phone shows blurred glass. The bent edge needs Android 13."
                     tier == GlassTier.FROSTED && !reduceTransparency && liquidGlass -> "This phone shows frosted glass. Live blur needs Android 12."

@@ -76,11 +76,6 @@ internal class EqPalette(val card: Color, val chip: Color, val track: Color, val
 internal fun eqPalette(): EqPalette {
     val c = EvannaDesign.colorScheme
     return when (LocalLookStyle.current.look) {
-        EvannaLook.EVANNA -> EqPalette(card = c.surfaceContainer, chip = c.surfaceContainerHigh, track = c.surfaceContainerHighest,
-            line = c.outlineVariant, accent = c.primary, fill = c.primary,
-            onFill = c.onPrimary, accentSoft = c.primary.copy(alpha = 0.16f), grid = c.onSurface.copy(alpha = 0.10f), zero = c.onSurface.copy(alpha = 0.30f),
-            text = c.onSurface, muted = c.onSurfaceVariant, tonal = c.secondaryContainer, onTonal = c.onSecondaryContainer,
-            segment = Color.Transparent, whiteThumbs = false)
         EvannaLook.APPLE_DARK -> EqPalette(card = c.surfaceContainer, chip = c.surfaceContainerHigh, track = c.surfaceContainerHighest,
             line = Color.Transparent, accent = c.primary, fill = c.secondaryContainer, onFill = c.onSecondaryContainer,
             accentSoft = c.primary.copy(alpha = 0.18f), grid = c.onSurface.copy(alpha = 0.08f), zero = c.onSurface.copy(alpha = 0.26f), text = c.onSurface, muted = c.onSurfaceVariant,

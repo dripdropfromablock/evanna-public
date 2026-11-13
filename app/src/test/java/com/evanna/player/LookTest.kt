@@ -8,6 +8,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LookTest {
+    @Test fun onlyDarkAndLightAreLeftAndTheOldEvannaLookOpensAsDark() {
+        assertEquals(listOf("Dark", "Light"), EvannaLook.entries.map { it.label })
+        assertEquals(EvannaLook.APPLE_DARK, storedLook(null))
+        assertEquals(EvannaLook.APPLE_DARK, storedLook("EVANNA"))  // saved before Evanna dark was removed
+        assertEquals(EvannaLook.APPLE_LIGHT, storedLook("APPLE_LIGHT"))
+        assertEquals(EvannaLook.APPLE_DARK, storedLook("APPLE_DARK"))
+    }
     @Test fun animationSpeedDefaultsToMediumAndRespectsAndroidMotionScale() {
         assertEquals(AnimationSpeed.MEDIUM, storedAnimationSpeed(null))
         assertEquals(AnimationSpeed.MEDIUM, storedAnimationSpeed("unknown"))
@@ -130,8 +137,8 @@ class LookTest {
             assertEquals(look.name, look.dark, relativeLuminance(look.colors.background.toArgb()) < 0.2)
         assertEquals(Color.Black, EvannaLook.APPLE_DARK.colors.background)
     }
-    @Test fun unknownOrMissingStoredLooksFallBackToEvanna() {
+    @Test fun unknownOrMissingStoredLooksFallBackToDark() {
         assertEquals(EvannaLook.APPLE_LIGHT, storedLook("APPLE_LIGHT"))
-        for (value in listOf(null, "", "apple_light", 3)) assertEquals(EvannaLook.EVANNA, storedLook(value))
+        for (value in listOf(null, "", "apple_light", 3)) assertEquals(EvannaLook.APPLE_DARK, storedLook(value))
     }
 }

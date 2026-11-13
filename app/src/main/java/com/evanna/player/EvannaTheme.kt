@@ -92,22 +92,26 @@ private val AppleShapes = EvannaShapes(
     extraLarge = RoundedCornerShape(14.dp).continuous(),
 )
 
-/** Keep the stored IDs so upgrades preserve the selected layout and brightness. */
+/**
+ * Dark (the default) and Light. Keep the stored IDs so upgrades preserve the choice. The old "Evanna dark" look was
+ * removed; its stored ID now opens as Dark (see [storedLook]).
+ */
 internal enum class EvannaLook(val label: String, val apple: Boolean, val dark: Boolean) {
-    EVANNA("Evanna dark", false, true), APPLE_DARK("Dark", true, true), APPLE_LIGHT("Light", true, false);
-    val colors: EvannaPalette get() = when (this) { EVANNA -> EvannaColors; APPLE_DARK -> AppleDarkColors; APPLE_LIGHT -> AppleLightColors }
+    APPLE_DARK("Dark", true, true), APPLE_LIGHT("Light", true, false);
+    val colors: EvannaPalette get() = when (this) { APPLE_DARK -> AppleDarkColors; APPLE_LIGHT -> AppleLightColors }
 }
 /** SharedPreferences file for appearance choices; [LOOK_PREFERENCE] holds an [EvannaLook] name. */
 internal const val UI_SETTINGS = "ui-settings"
 internal const val LOOK_PREFERENCE = "look"
-internal fun storedLook(value: Any?) = EvannaLook.entries.firstOrNull { it.name == value } ?: EvannaLook.EVANNA
+/** Unknown values, and "EVANNA" from before the Evanna dark look was removed, open as Dark. */
+internal fun storedLook(value: Any?) = EvannaLook.entries.firstOrNull { it.name == value } ?: EvannaLook.APPLE_DARK
 
 /**
  * What the looks draw differently: Evanna cards have a hairline, Apple cells are flat, Apple chips are capsules, and
  * grouped screens (Settings, Equalizer) use [groupedBackground] behind their cards.
  */
 internal class LookStyle(val look: EvannaLook, val hairlineCards: Boolean, val chipShape: Shape?, val groupedBackground: Color)
-internal val LocalLookStyle = staticCompositionLocalOf { LookStyle(EvannaLook.EVANNA, hairlineCards = true, chipShape = null, EvannaColors.background) }
+internal val LocalLookStyle = staticCompositionLocalOf { LookStyle(EvannaLook.APPLE_DARK, hairlineCards = false, chipShape = null, AppleDarkColors.background) }
 
 private val DefaultShapes = EvannaShapes(
     extraSmall = RoundedCornerShape(8.dp),
@@ -252,7 +256,7 @@ internal fun ProvideEvannaColors(colors: EvannaPalette, content: @Composable () 
 }
 
 @Composable
-internal fun EvannaTheme(look: EvannaLook = EvannaLook.EVANNA, artwork: Color? = null, content: @Composable () -> Unit) {
+internal fun EvannaTheme(look: EvannaLook = EvannaLook.APPLE_DARK, artwork: Color? = null, content: @Composable () -> Unit) {
     val colors = remember(look, artwork) { look.colors.withArtwork(artwork, look.dark, filledChips = look.apple) }
     val style = LookStyle(look, hairlineCards = !look.apple, chipShape = if (look.apple) SquirclePillShape() else null,
         groupedBackground = if (look == EvannaLook.APPLE_LIGHT) LightGroupedBackground else colors.background)
