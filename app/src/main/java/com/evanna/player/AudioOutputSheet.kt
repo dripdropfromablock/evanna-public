@@ -48,7 +48,7 @@ internal fun AudioOutputSheet(
 ) {
     var showPipeline by rememberSaveable { mutableStateOf(false) }
     val colors = EvannaDesign.colorScheme
-    val rowShape = if (LocalLookStyle.current.look.apple) RoundedCornerShape(14.dp) else EvannaDesign.shapes.small
+    val rowShape = RoundedCornerShape(14.dp)
     val android = state.route == "ANDROID"
     OutputSheet(
         origin = origin,
@@ -117,16 +117,13 @@ private fun OutputVolumeKeys(onVolumeKey: (KeyEvent) -> Boolean) {
 @Composable
 internal fun OutputRow(title: String, subtitle: String, icon: ImageVector, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val colors = EvannaDesign.colorScheme
-    val apple = LocalLookStyle.current.look.apple
-    val shape = if (apple) RoundedCornerShape(14.dp) else EvannaDesign.shapes.small
+    val shape = RoundedCornerShape(14.dp)
     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
         .clickable(enabled = enabled, role = Role.Button, onClick = onClick).clip(shape)
         .background((if (selected) colors.surfaceContainerHighest else colors.surfaceContainerHigh).copy(alpha = 0.72f))
         .semantics { this.selected = selected }
         .padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(36.dp).background(
-            if (selected && !apple) colors.primaryContainer else colors.onSurface.copy(alpha = if (selected) 0.14f else 0.08f),
-            if (apple) CircleShape else EvannaDesign.shapes.extraSmall),
+        Box(Modifier.size(36.dp).background(colors.onSurface.copy(alpha = if (selected) 0.14f else 0.08f), CircleShape),
             contentAlignment = Alignment.Center) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
         }

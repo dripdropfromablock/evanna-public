@@ -32,9 +32,7 @@ internal fun LibraryAlbumCard(group: LibraryGroup, revision: Int, modifier: Modi
     val artwork=remember {LocalLibrary.artwork(context)}
     // The mockup's album card: a 7 dp cover, a 15 sp title and the artist in grey; the year shows on the album page.
     // No side padding, so the grid's 12 dp gap and 16 dp edge are the visible ones.
-    val apple = LocalLookStyle.current.look.apple
-    val cover = if (apple) androidx.compose.foundation.shape.RoundedCornerShape(7.dp) else EvannaDesign.shapes.small
-    val frame = if (apple) Modifier else Modifier.border(1.dp, EvannaDesign.colorScheme.outlineVariant.copy(alpha = 0.55f), cover)
+    val cover = androidx.compose.foundation.shape.RoundedCornerShape(7.dp)
     val clickable = modifier.clip(EvannaDesign.shapes.small).clickable(enabled = enabled, onClick = onOpen)
     val title = group.value ?: "Unknown album"
     val artist = group.artist ?: "${group.count} songs"
@@ -42,7 +40,7 @@ internal fun LibraryAlbumCard(group: LibraryGroup, revision: Int, modifier: Modi
         Column {
             Row(clickable.fillMaxWidth().heightIn(min = 60.dp).padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                LibraryArtwork(album.key, revision, Modifier.size(48.dp).then(frame), cover) {
+                LibraryArtwork(album.key, revision, Modifier.size(48.dp), cover) {
                     artwork.album(album, ArtworkSize.MEDIUM)
                 }
                 Column(Modifier.weight(1f).padding(start = 12.dp)) {
@@ -55,11 +53,11 @@ internal fun LibraryAlbumCard(group: LibraryGroup, revision: Int, modifier: Modi
             HorizontalDivider(Modifier.padding(start = 60.dp), color = EvannaDesign.colorScheme.outlineVariant.copy(alpha = 0.32f))
         }
     } else Column(clickable.padding(vertical = 4.dp)) {
-        LibraryArtwork(album.key, revision, Modifier.fillMaxWidth().aspectRatio(1f).then(frame), cover) {
+        LibraryArtwork(album.key, revision, Modifier.fillMaxWidth().aspectRatio(1f), cover) {
             artwork.album(album, ArtworkSize.MEDIUM)
         }
         Text(title, style = EvannaDesign.typography.titleSmall.copy(fontSize = 15.sp, lineHeight = 20.sp),
-            fontWeight = if (apple) FontWeight.Medium else FontWeight.SemiBold,
+            fontWeight = FontWeight.Medium,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))
         if (!compact) Text(artist, style = EvannaDesign.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 18.sp),
             color = EvannaDesign.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)

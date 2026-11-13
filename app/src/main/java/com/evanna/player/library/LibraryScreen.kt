@@ -201,7 +201,6 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
     val songsView = kind != null || view in listOf(LibraryView.TRACKS,LibraryView.ADDED)
     val resultLabel = if (songsView) "songs" else view.label.lowercase()
     val muted = EvannaDesign.colorScheme.onSurfaceVariant
-    val studio = !LocalLookStyle.current.look.apple
 
     fun back() {
         kind = parentKind
@@ -323,7 +322,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
     Box(Modifier.fillMaxSize().then(libraryInsets)) {
     CompositionLocalProvider(LocalBarRoom provides barRoom, LocalLineInset provides if (albumDetail) 16.dp else 0.dp) {
     LazyVerticalGrid(cells, Modifier.fillMaxSize(), state = scroll,
-        verticalArrangement = Arrangement.spacedBy(if (studio && libraryHome) 12.dp else 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(top = if (albumDetail) 0.dp else if (libraryHome) 6.dp else 8.dp, bottom = 24.dp + bottomInset, end = barRoom)) {
         // Grid items get a fixed full width; the Box lets the button keep its own width at the start.
         if (kind != null && !albumDetail) line { Box {
@@ -365,7 +364,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                     shown?.let { album ->
                         val count = if (album.total == 1) "1 song" else "${album.total} songs"
                         Text(listOfNotNull(album.albumSummary?.year?.toString(), count).joinToString(" · "),
-                            style = if (studio) EvannaType.technical else EvannaDesign.typography.bodyMedium,
+                            style = EvannaDesign.typography.bodyMedium,
                             color = muted, modifier = Modifier.padding(bottom = 8.dp))
                     }
                     val play: @Composable (Modifier) -> Unit = { actionModifier ->
@@ -437,7 +436,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
             }
         }
         if (searchMode) line {
-            val shape = if (studio) EvannaDesign.shapes.medium else EvannaDesign.shapes.extraLarge
+            val shape = EvannaDesign.shapes.extraLarge
             val colors = EvannaDesign.colorScheme
             TextField(value = filter.search, onValueChange = ::updateSearch,
                 placeholder = when {
@@ -456,8 +455,8 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
                 shape = shape,
-                colors = if (studio) fieldColors() else fieldColors(colors.surfaceContainerHighest, colors.surfaceContainerHighest),
-                modifier = Modifier.fillMaxWidth().then(if (studio) Modifier.border(1.dp, colors.outlineVariant, shape) else Modifier))
+                colors = fieldColors(colors.surfaceContainerHighest, colors.surfaceContainerHighest),
+                modifier = Modifier.fillMaxWidth())
         }
         if (libraryHome || (searchMode && kind == null && !searchHome)) line {
             var collectionsOpen by remember { mutableStateOf(false) }
@@ -525,7 +524,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
         // Albums go directly from the filters to the covers. Other lists keep their count.
         shown?.takeIf { it.total > 0 && !searchHome && (searchMode || kind != null || view != LibraryView.ALBUMS) }?.let {
             line { Text("${it.total} $resultLabel",
-                style = if (studio) EvannaType.technical else EvannaDesign.typography.titleSmall, color = muted) }
+                style = EvannaDesign.typography.titleSmall, color = muted) }
         }
         if (failed == request) line {
             Column {
@@ -617,10 +616,9 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                                     style = EvannaDesign.typography.bodySmall, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             if (compactRow && duration != null) Text(duration,
-                                style = if (studio) EvannaType.technical else EvannaDesign.typography.labelSmall, color = muted,
+                                style = EvannaDesign.typography.labelSmall, color = muted,
                                 maxLines = 1, modifier = Modifier.padding(start = 6.dp))
                         }
-                        if (studio) HorizontalDivider(color = EvannaDesign.colorScheme.outlineVariant.copy(alpha = 0.32f))
                     }
                 }
             } else if (view == LibraryView.ALBUMS) {

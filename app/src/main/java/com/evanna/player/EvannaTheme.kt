@@ -8,7 +8,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -22,7 +21,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.evanna.player.ui.LocalContentColor
 import com.evanna.player.ui.ProvideTextStyle
-import com.evanna.player.ui.SquirclePillShape
 import com.evanna.player.ui.continuous
 
 internal data class EvannaPalette(
@@ -45,17 +43,6 @@ internal data class EvannaTypography(
 )
 
 /** Neutral palettes also serve as the bases for the artwork tints. */
-internal val EvannaColors = EvannaPalette(
-    primary = Color(0xFFDEDEDE), onPrimary = Color.Black,
-    primaryContainer = Color(0xFF303030), onPrimaryContainer = Color(0xFFF0F0F0),
-    secondaryContainer = Color(0xFF3A3A3A), onSecondaryContainer = Color(0xFFF0F0F0),
-    background = Color(0xFF101010), onBackground = Color(0xFFF0F0F0),
-    surface = Color(0xFF191919), onSurface = Color(0xFFF0F0F0),
-    onSurfaceVariant = Color(0xFFC8C8C8), surfaceContainerLow = Color(0xFF1A1A1A),
-    surfaceContainer = Color(0xFF202020), surfaceContainerHigh = Color(0xFF282828), surfaceContainerHighest = Color(0xFF363636),
-    outline = Color(0xFF949494), outlineVariant = Color(0xFF515151), error = Color(0xFFF0F0F0),
-)
-
 internal val AppleDarkColors = EvannaPalette(
     primary = Color(0xFFDEDEDE), onPrimary = Color.Black,
     primaryContainer = Color(0xFF303030), onPrimaryContainer = Color.White,
@@ -96,8 +83,8 @@ private val AppleShapes = EvannaShapes(
  * Dark (the default) and Light. Keep the stored IDs so upgrades preserve the choice. The old "Evanna dark" look was
  * removed; its stored ID now opens as Dark (see [storedLook]).
  */
-internal enum class EvannaLook(val label: String, val apple: Boolean, val dark: Boolean) {
-    APPLE_DARK("Dark", true, true), APPLE_LIGHT("Light", true, false);
+internal enum class EvannaLook(val label: String, val dark: Boolean) {
+    APPLE_DARK("Dark", true), APPLE_LIGHT("Light", false);
     val colors: EvannaPalette get() = when (this) { APPLE_DARK -> AppleDarkColors; APPLE_LIGHT -> AppleLightColors }
 }
 /** SharedPreferences file for appearance choices; [LOOK_PREFERENCE] holds an [EvannaLook] name. */
@@ -106,20 +93,9 @@ internal const val LOOK_PREFERENCE = "look"
 /** Unknown values, and "EVANNA" from before the Evanna dark look was removed, open as Dark. */
 internal fun storedLook(value: Any?) = EvannaLook.entries.firstOrNull { it.name == value } ?: EvannaLook.APPLE_DARK
 
-/**
- * What the looks draw differently: Evanna cards have a hairline, Apple cells are flat, Apple chips are capsules, and
- * grouped screens (Settings, Equalizer) use [groupedBackground] behind their cards.
- */
-internal class LookStyle(val look: EvannaLook, val hairlineCards: Boolean, val chipShape: Shape?, val groupedBackground: Color)
-internal val LocalLookStyle = staticCompositionLocalOf { LookStyle(EvannaLook.APPLE_DARK, hairlineCards = false, chipShape = null, AppleDarkColors.background) }
-
-private val DefaultShapes = EvannaShapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(20.dp),
-    extraLarge = RoundedCornerShape(28.dp),
-)
+/** The look in force; grouped screens (Settings, Equalizer) use [groupedBackground] behind their cards. */
+internal class LookStyle(val look: EvannaLook, val groupedBackground: Color)
+internal val LocalLookStyle = staticCompositionLocalOf { LookStyle(EvannaLook.APPLE_DARK, AppleDarkColors.background) }
 
 /**
  * Platform sans with deliberate weight and tracking: headlines tighten slightly and
@@ -165,14 +141,6 @@ private val BaseTypography = EvannaTypography(
         fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Medium,
         fontSize = 11.sp, lineHeight = 16.sp, letterSpacing = 0.4.sp,
     ),
-)
-
-private val DefaultTypography = BaseTypography.copy(
-    headlineSmall = BaseTypography.headlineSmall.copy(
-        fontSize = 30.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.7).sp,
-    ),
-    titleMedium = BaseTypography.titleMedium.copy(letterSpacing = (-0.1).sp),
-    bodyLarge = BaseTypography.bodyLarge.copy(letterSpacing = 0.sp),
 )
 
 /** Tabular numerals for everything that ticks: timecodes, dB readouts, rates, positions. */
@@ -234,9 +202,9 @@ private val AppleTypography = BaseTypography.copy(
     ),
 )
 
-private val LocalPalette = staticCompositionLocalOf { EvannaColors }
-private val LocalTypography = staticCompositionLocalOf { DefaultTypography }
-private val LocalShapes = staticCompositionLocalOf { DefaultShapes }
+private val LocalPalette = staticCompositionLocalOf { AppleDarkColors }
+private val LocalTypography = staticCompositionLocalOf { AppleTypography }
+private val LocalShapes = staticCompositionLocalOf { AppleShapes }
 
 internal object EvannaDesign {
     val colorScheme: EvannaPalette @Composable get() = LocalPalette.current
@@ -245,10 +213,8 @@ internal object EvannaDesign {
 }
 
 /** Now Playing sits on the dark cover backdrop in every look, so it always uses a dark scheme with the look's accent. */
-internal fun playerColorScheme(look: EvannaLook, artwork: Color?) =
-    (if (look.apple) AppleDarkColors else EvannaColors).withArtwork(
-        artwork, dark = true, filledChips = look.apple, surfaceTint = 0.18f,
-    )
+internal fun playerColorScheme(artwork: Color?) =
+    AppleDarkColors.withArtwork(artwork, dark = true, surfaceTint = 0.18f)
 
 @Composable
 internal fun ProvideEvannaColors(colors: EvannaPalette, content: @Composable () -> Unit) {
@@ -257,12 +223,11 @@ internal fun ProvideEvannaColors(colors: EvannaPalette, content: @Composable () 
 
 @Composable
 internal fun EvannaTheme(look: EvannaLook = EvannaLook.APPLE_DARK, artwork: Color? = null, content: @Composable () -> Unit) {
-    val colors = remember(look, artwork) { look.colors.withArtwork(artwork, look.dark, filledChips = look.apple) }
-    val style = LookStyle(look, hairlineCards = !look.apple, chipShape = if (look.apple) SquirclePillShape() else null,
-        groupedBackground = if (look == EvannaLook.APPLE_LIGHT) LightGroupedBackground else colors.background)
-    val typography = if (look.apple) AppleTypography else DefaultTypography
+    val colors = remember(look, artwork) { look.colors.withArtwork(artwork, look.dark) }
+    val style = LookStyle(look, groupedBackground = if (look == EvannaLook.APPLE_LIGHT) LightGroupedBackground else colors.background)
+    val typography = AppleTypography
     CompositionLocalProvider(LocalLookStyle provides style, LocalTypography provides typography,
-        LocalShapes provides if (look.apple) AppleShapes else DefaultShapes,
+        LocalShapes provides AppleShapes,
         // Every clickable without its own feedback sinks on press instead of drawing a tinted box.
         androidx.compose.foundation.LocalIndication provides com.evanna.player.ui.PressIndication) {
         ProvideEvannaColors(colors) { ProvideTextStyle(typography.bodyLarge, content) }

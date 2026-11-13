@@ -509,8 +509,7 @@ private fun StripButton(icon: ImageVector, on: Boolean, description: String, ena
     onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
-    val apple = LocalLookStyle.current.look.apple
-    val platter = if (apple) Color.White.copy(alpha = 0.22f) else EvannaDesign.colorScheme.primary.copy(alpha = 0.30f)
+    val platter = Color.White.copy(alpha = 0.22f)
     Box(Modifier.size(48.dp).controlFocus(interaction, RoundedCornerShape(12.dp))
         .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description; if (enabled) stateDescription = if (on) "On" else "Off" }, contentAlignment = Alignment.Center) {

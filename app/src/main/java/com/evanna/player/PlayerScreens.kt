@@ -27,11 +27,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -85,39 +83,26 @@ import kotlinx.coroutines.withContext
 
 internal fun routeLabel(route: String) = when (route) { "ANDROID" -> "Android audio"; "DIRECT_USB" -> "Direct USB"; else -> "Choose output" }
 
-/** Title row for pushed screens: a Back arrow and a heading (Apple look: an accent chevron and a centred title). */
+/** Title row for pushed screens: an accent chevron and a centred title. */
 @Composable
 internal fun ScreenHeader(title: String, onBack: () -> Unit) {
-    if (LocalLookStyle.current.look.apple) {
-        Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(top = 4.dp)) {
-            IconButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterStart).semantics { contentDescription = "Back" }) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null, tint = EvannaDesign.colorScheme.primary,
-                    modifier = Modifier.size(32.dp))
-            }
-            Text(title, style = EvannaDesign.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp).semantics { heading() })
+    Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(top = 4.dp)) {
+        IconButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterStart).semantics { contentDescription = "Back" }) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null, tint = EvannaDesign.colorScheme.primary,
+                modifier = Modifier.size(32.dp))
         }
-        return
-    }
-    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Back" }) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
-        }
-        Text(title, style = EvannaDesign.typography.headlineSmall, fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 4.dp).semantics { heading() })
+        Text(title, style = EvannaDesign.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp).semantics { heading() })
     }
 }
 
-/** Evanna dark uses outlined chips. The other looks use filled capsules. */
+/** A filled squircle capsule chip. */
 @Composable
 internal fun LookChip(selected: Boolean, onClick: () -> Unit, label: String, enabled: Boolean = true) {
-    val style = LocalLookStyle.current
-    val shape = style.chipShape
-    // The outlined look marks selection with a check.
-    if (shape == null) FilterChip(selected = selected, onClick = onClick, enabled = enabled, label = { Text(label) },
-        leadingIcon = if (selected) ({ Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }) else null)
-    else FilterChip(selected = selected, onClick = onClick, enabled = enabled, label = { Text(label) }, shape = shape, border = null,
-        colors = FilterChipDefaults.filterChipColors(containerColor = if (style.look.dark) EvannaDesign.colorScheme.surfaceContainerHigh
+    val dark = LocalLookStyle.current.look.dark
+    val shape = remember { SquirclePillShape() }
+    FilterChip(selected = selected, onClick = onClick, enabled = enabled, label = { Text(label) }, shape = shape, border = null,
+        colors = FilterChipDefaults.filterChipColors(containerColor = if (dark) EvannaDesign.colorScheme.surfaceContainerHigh
             else EvannaDesign.colorScheme.surfaceContainerHighest, labelColor = EvannaDesign.colorScheme.onSurface))
 }
 
@@ -139,13 +124,10 @@ internal fun SwitchRow(title: String, note: String, checked: Boolean, enabled: B
 /** A rounded Settings section with a heading. */
 @Composable
 internal fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    val studio = LocalLookStyle.current.hairlineCards
-    Surface(Modifier.fillMaxWidth(), shape = EvannaDesign.shapes.large, color = EvannaDesign.colorScheme.surfaceContainer,
-        border = if (studio) evannaHairline(0.55f) else null) {
-        Column(Modifier.padding(horizontal = if (studio) 16.dp else 20.dp, vertical = 16.dp),
+    Surface(Modifier.fillMaxWidth(), shape = EvannaDesign.shapes.large, color = EvannaDesign.colorScheme.surfaceContainer) {
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, style = if (studio) EvannaType.technical.copy(fontSize = 13.sp) else EvannaDesign.typography.titleMedium,
-                color = if (studio) EvannaDesign.colorScheme.primary else EvannaDesign.colorScheme.onSurface,
+            Text(title, style = EvannaDesign.typography.titleMedium, color = EvannaDesign.colorScheme.onSurface,
                 fontWeight = FontWeight.SemiBold, modifier = Modifier.semantics { heading() })
             content()
         }
@@ -220,7 +202,7 @@ internal fun MiniPlayer(state: PlayerPresentation, cover: Bitmap?, onOpen: () ->
                     .shadow(2.dp, RoundedCornerShape(8.dp)), RoundedCornerShape(8.dp))
                 Column(Modifier.padding(start = 10.dp, top = 4.dp, bottom = 4.dp).pressScale(openPress)) {
                     Text(state.title.ifBlank { "Local audio file" }, style = EvannaDesign.typography.bodyLarge.copy(fontSize = 15.sp, lineHeight = 20.sp),
-                        fontWeight = if (look.apple) FontWeight.Medium else FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (!state.artist.isNullOrBlank()) Text(state.artist,
                         style = EvannaDesign.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -283,7 +265,6 @@ private fun DockTabs(selected: PlayerScreen, onSelect: (PlayerScreen) -> Unit,
     tabs: List<Triple<PlayerScreen, String, ImageVector>>,
 ) {
     val colors = EvannaDesign.colorScheme
-    val look = LocalLookStyle.current.look
     val tabShape = RoundedCornerShape(50)
     val selectedIndex = tabs.indexOfFirst { it.first == selected }
     val searchSelected = selected == PlayerScreen.SEARCH
@@ -325,7 +306,7 @@ private fun DockTabs(selected: PlayerScreen, onSelect: (PlayerScreen) -> Unit,
     }.slidingSelectionPill(tabs.size, { markerPosition }, { colors.onSurface.copy(alpha = SELECTION_PILL_ALPHA * markerOpacity) })) {
         for ((tab, label, icon) in tabs) {
             val on = tab == selected
-            val tint = if (on && !look.apple) colors.primary else if (on) colors.onSurface else colors.onSurfaceVariant
+            val tint = if (on) colors.onSurface else colors.onSurfaceVariant
             val interaction = remember(tab) { MutableInteractionSource() }
             Column(Modifier.weight(1f).heightIn(min = 48.dp).clip(tabShape)
                 .controlFocus(interaction, tabShape)

@@ -32,7 +32,7 @@ import com.evanna.player.ui.glass.backdrop.shadow.Shadow
  * Glass is only for the floating control layer (the dock, the mini player); lists and covers stay solid.
  */
 internal enum class GlassTier {
-    /** Glass off, or the Evanna look: the old filled controls with a hairline. */
+    /** Glass off: filled controls with a hairline. */
     SOLID,
     /** No live blur (Android 11 and older, or Reduce transparency): a dense tinted fill with a light rim. */
     FROSTED,

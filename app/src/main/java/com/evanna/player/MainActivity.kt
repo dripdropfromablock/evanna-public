@@ -347,7 +347,7 @@ class MainActivity : ComponentActivity() {
             }
             val cover = artwork?.first
             val accent = artwork?.second
-            val playerColors = remember(look, accent) { playerColorScheme(look, accent) }
+            val playerColors = remember(accent) { playerColorScheme(accent) }
             EvannaTheme(look, accent) {
                 var licenseIndex by rememberSaveable { mutableStateOf<Int?>(null) }
                 var showOutput by rememberSaveable { mutableStateOf(false) }
@@ -464,7 +464,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 // The page content is recorded for the floating dock's glass to blur and bend; only the live tiers read it.
-                val glassTier = glassTier(Build.VERSION.SDK_INT, look.apple && liquidGlass, reduceTransparency)
+                val glassTier = glassTier(Build.VERSION.SDK_INT, liquidGlass, reduceTransparency)
                 val pageColor = EvannaDesign.colorScheme.background
                 // The recording starts from the page colour: a transparent gap would blur to black.
                 val recordPage = remember(pageColor) { val draw: ContentDrawScope.() -> Unit = { drawRect(pageColor); drawContent() }; draw }
@@ -1456,7 +1456,7 @@ class MainActivity : ComponentActivity() {
                     style = EvannaDesign.typography.bodySmall, color = muted)
             } }
             if (page == PlayerScreen.APPEARANCE) item { SettingsCard("Liquid glass") {
-                val tier = glassTier(Build.VERSION.SDK_INT, look.apple && liquidGlass, reduceTransparency)
+                val tier = glassTier(Build.VERSION.SDK_INT, liquidGlass, reduceTransparency)
                 SwitchRow("Liquid glass", "See-through tab bar and mini player.", liquidGlass) { on ->
                     liquidGlass = on
                     getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putBoolean(GLASS_PREFERENCE, on).apply()

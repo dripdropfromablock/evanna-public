@@ -378,7 +378,7 @@ private fun CarouselBrowser(
         accent = centeredCover.bitmap?.let { cover -> withContext(Dispatchers.Default) { sampleArtworkAccent(cover) } }
         themedAlbum = centeredAlbum
     }
-    val theme = remember(look, accent) { look.colors.withArtwork(accent, look.dark, look.apple, surfaceTint = 0.12f) }
+    val theme = remember(look, accent) { look.colors.withArtwork(accent, look.dark, surfaceTint = 0.12f) }
     val heroColor by animateColorAsState(
         accent?.let { lerp(theme.background, it, if (look.dark) 0.21f else 0.12f) } ?: theme.background,
         EvannaMotion.ambient, label = "Carousel backdrop",

@@ -50,8 +50,9 @@ internal fun artworkAccent(pixels: IntArray): Color? {
     return Color(reds[best] / weight, greens[best] / weight, blues[best] / weight)
 }
 
+/** Tints a palette from the cover: a readable accent, filled chips in it, and surfaces a touch towards it. */
 internal fun EvannaPalette.withArtwork(
-    seed: Color?, dark: Boolean, filledChips: Boolean,
+    seed: Color?, dark: Boolean,
     surfaceTint: Float = if (dark) 0.035f else 0.025f,
 ): EvannaPalette {
     if (seed == null) return this
@@ -62,8 +63,8 @@ internal fun EvannaPalette.withArtwork(
     return copy(
         primary = primary, onPrimary = onPrimary,
         primaryContainer = lerp(primaryContainer, seed, tint),
-        secondaryContainer = if (filledChips) primary else lerp(secondaryContainer, seed, tint),
-        onSecondaryContainer = if (filledChips) onPrimary else onSecondaryContainer,
+        secondaryContainer = primary,
+        onSecondaryContainer = onPrimary,
         surface = lerp(surface, seed, surfaceTint),
         surfaceContainerLow = lerp(surfaceContainerLow, seed, surfaceTint),
         surfaceContainer = lerp(surfaceContainer, seed, surfaceTint),

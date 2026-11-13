@@ -125,42 +125,35 @@ internal fun EqCard(modifier: Modifier = Modifier, content: @Composable ColumnSc
     }
 }
 
-/** Graphic | Parametric uses an outlined bar in Evanna dark and a solid segmented control in the other looks. */
+/** Graphic | Parametric: a solid segmented control. */
 @Composable
-internal fun EqSegments(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, small: Boolean = false,
+internal fun EqSegments(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier,
     enabled: Boolean = true) {
-    val p = eqPalette(); val apple = LocalLookStyle.current.look.apple
-    val outer = if (apple) RoundedCornerShape(9.dp) else EvannaDesign.shapes.small
+    val p = eqPalette()
+    val outer = RoundedCornerShape(9.dp)
     val position by animateFloatAsState(selected.toFloat(), EvannaMotion.enter, label = "EQ segment selection")
-    Row(modifier.fillMaxWidth().heightIn(min = if (apple || small) 32.dp else 40.dp).height(IntrinsicSize.Min).clip(outer)
-        .then(if (apple) Modifier.background(p.segment) else Modifier.border(1.dp, p.line, outer)).padding(2.dp)
+    Row(modifier.fillMaxWidth().heightIn(min = 32.dp).height(IntrinsicSize.Min).clip(outer)
+        .background(p.segment).padding(2.dp)
         .slidingSelectionPill(options.size, { position }) { p.text.copy(alpha = SELECTION_PILL_ALPHA) }
         .selectableGroup().graphicsLayer { alpha = if (enabled) 1f else 0.6f }) {
         options.forEachIndexed { index, label ->
             Box(Modifier.weight(1f).fillMaxHeight().clip(CircleShape)
                 .selectable(index == selected, enabled = enabled, role = Role.Tab) { onSelect(index) },
                 contentAlignment = Alignment.Center) {
-                Text(label, style = eqText(if (apple || small) 13.sp else 14.sp, 18.sp, FontWeight.Medium), color = p.text, maxLines = 1)
+                Text(label, style = eqText(13.sp, 18.sp, FontWeight.Medium), color = p.text, maxLines = 1)
             }
         }
     }
 }
 
-/** Band types use a checked outline or a filled capsule according to the selected layout. */
+/** Band types: a filled capsule, accent-filled when selected. */
 @Composable
 internal fun EqChip(label: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    val p = eqPalette(); val apple = LocalLookStyle.current.look.apple
-    val shape = if (apple) CircleShape else RoundedCornerShape(8.dp)
-    Row(Modifier.heightIn(min = 30.dp).clip(shape)
-        .then(when { apple -> Modifier.background(if (selected) p.fill else p.chip); selected -> Modifier.background(p.tonal); else -> Modifier.border(1.dp, p.line, shape) })
+    val p = eqPalette()
+    Row(Modifier.heightIn(min = 30.dp).clip(CircleShape).background(if (selected) p.fill else p.chip)
         .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
-        .padding(start = if (selected && !apple) 6.dp else 10.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (selected && !apple) {
-            Icon(Icons.Filled.Check, contentDescription = null, tint = p.onTonal, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp))
-        }
-        Text(label, style = eqText(13.sp, 18.sp, FontWeight.Medium), maxLines = 1,
-            color = when { apple && selected -> p.onFill; apple -> p.text; selected -> p.onTonal; else -> p.muted })
+        .padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = eqText(13.sp, 18.sp, FontWeight.Medium), maxLines = 1, color = if (selected) p.onFill else p.text)
     }
 }
 
@@ -288,10 +281,8 @@ private fun handlePoint(handle: Pair<Float, Float>, width: Float, height: Float)
 @Composable
 internal fun BandSlider(gain: Float, label: String, description: String, enabled: Boolean, onGain: (Float) -> Unit) {
     val p = eqPalette()
-    val studio = !LocalLookStyle.current.look.apple
     val latest by rememberUpdatedState(onGain)
     val small = eqText(10.5.sp, 14.sp, FontWeight.Medium, tabular = true)
-        .let { if (studio) it.copy(fontFamily = FontFamily.Monospace) else it }
     Column(Modifier.width(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.padding(horizontal = 1.dp)) { FitText(eqShort(gain), small, p.muted) }
         Canvas(Modifier.padding(vertical = 6.dp).width(28.dp).height(116.dp)
@@ -308,11 +299,6 @@ internal fun BandSlider(gain: Float, label: String, description: String, enabled
             val cx = size.width / 2; val track = 4.dp.toPx(); val h = size.height
             val value = (15f - gain.coerceIn(-15f, 15f)) / 30f * h; val zero = h / 2
             drawRoundRect(p.track, Offset(cx - track / 2, 0f), Size(track, h), CornerRadius(track / 2))
-            if (studio) for (step in 1 until 6) {
-                if (step == 3) continue
-                val y = h * step / 6f
-                drawLine(p.line, Offset(cx + 4.dp.toPx(), y), Offset(cx + 8.dp.toPx(), y), 1.dp.toPx())
-            }
             drawLine(p.zero, Offset(cx - 8.dp.toPx(), zero), Offset(cx + 8.dp.toPx(), zero), 1.dp.toPx())
             drawRoundRect(p.accent, Offset(cx - track / 2, min(value, zero)), Size(track, abs(value - zero)), CornerRadius(track / 2))
             thumb(p, Offset(cx, value))
@@ -338,13 +324,10 @@ internal fun FitText(text: String, style: TextStyle, color: Color) {
 internal fun EqKnob(value: Float, range: ClosedFloatingPointRange<Float>, fraction: Float, text: String, label: String, description: String,
     enabled: Boolean, unit: String = " dB", onValue: (Float) -> Unit) {
     val p = eqPalette()
-    val studio = !LocalLookStyle.current.look.apple
     val latest by rememberUpdatedState(onValue)
     val current by rememberUpdatedState(value)
     val measurer = rememberTextMeasurer()
-    val inside = eqText(12.sp, 16.sp, FontWeight.SemiBold, tabular = true).copy(
-        color = p.text, fontFamily = if (studio) FontFamily.Monospace else FontFamily.SansSerif,
-    )
+    val inside = eqText(12.sp, 16.sp, FontWeight.SemiBold, tabular = true).copy(color = p.text)
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Canvas(Modifier.size(56.dp)
             .pointerInput(enabled) {

@@ -23,7 +23,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.evanna.player.LocalLookStyle
 import com.evanna.player.PlayerIcons
 import com.evanna.player.ui.*
 import java.util.Locale
@@ -46,7 +45,6 @@ private fun hertz(hz: Float) = if (hz >= 1000f) String.format(Locale.ROOT, "%.1f
 @Composable
 internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
     val config by SoundSettings.config.collectAsState()
-    val apple = LocalLookStyle.current.look.apple
     val p = eqPalette()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var chosen by rememberSaveable { mutableIntStateOf(0) }
@@ -125,8 +123,7 @@ internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
                         }
                         Spacer(Modifier.width(12.dp))
                         val toggle: (Boolean) -> Unit = { on -> SoundSettings.update { it.copy(enabled = on) } }
-                        if (apple) AppleSwitch(config.enabled, true, "Equalizer on", toggle)
-                        else Switch(checked = config.enabled, onCheckedChange = toggle, modifier = Modifier.semantics { contentDescription = "Equalizer on" })
+                        AppleSwitch(config.enabled, true, "Equalizer on", toggle)
                     }
                 }
             }
@@ -159,7 +156,7 @@ internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
                         Text("Preamp ", style = eqText(12.sp, 16.sp), color = p.muted)
                         Text("${eqSigned(applied)} dB", style = eqText(12.sp, 16.sp, FontWeight.Medium, tabular = true), color = p.text)
                     }
-                    EqCurve(config, if (apple) 120.dp else 136.dp, config.bands.map { it.frequency to it.gainDb }, if (tab == 1) index else -1,
+                    EqCurve(config, 120.dp, config.bands.map { it.frequency to it.gainDb }, if (tab == 1) index else -1,
                         onSelect = { chosen = it; tab = 1 },
                         onHandle = { i, hz, db -> config.bands.getOrNull(i)?.let { b ->
                             setBand(i, b.copy(frequency = hz.coerceIn(20f, 20000f), gainDb = if (b.type.usesGain) snapGain(db) else b.gainDb)) } },
@@ -244,14 +241,13 @@ internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BandEditor(index: Int, band: Band, onBand: (Band) -> Unit, onRemove: () -> Unit) {
-    val p = eqPalette(); val apple = LocalLookStyle.current.look.apple
+    val p = eqPalette()
     EqCard {
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Band ${index + 1} · ${band.type.label}", style = eqText(15.sp, 20.sp, FontWeight.SemiBold), color = p.text,
                 modifier = Modifier.weight(1f).semantics { heading() })
             val toggle: (Boolean) -> Unit = { onBand(band.copy(on = it)) }
-            if (apple) AppleSwitch(band.on, true, "Band ${index + 1} on", toggle)
-            else Switch(checked = band.on, onCheckedChange = toggle, modifier = Modifier.semantics { contentDescription = "Band ${index + 1} on" })
+            AppleSwitch(band.on, true, "Band ${index + 1} on", toggle)
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             for (type in FilterType.entries) EqChip(type.label, band.type == type, true) { onBand(band.copy(type = type)) }

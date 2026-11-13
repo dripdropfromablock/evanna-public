@@ -77,7 +77,7 @@ internal fun AlphabeticIndex(rowsTop:()->Int,modifier:Modifier=Modifier,slim:Boo
         } else BoxWithConstraints(Modifier.fillMaxHeight()) {
             val step=with(LocalDensity.current){12.sp.toDp()}+3.dp
             val marks=if(maxHeight>=step*27)listOf('#')+('A'..'Z') else listOf('#','A','F','K','P','U','Z')
-            val tint=if(com.evanna.player.LocalLookStyle.current.look.apple)EvannaDesign.colorScheme.primary else EvannaDesign.colorScheme.onSurfaceVariant
+            val tint=EvannaDesign.colorScheme.primary
             Column(Modifier.fillMaxHeight().padding(vertical=8.dp),verticalArrangement=Arrangement.SpaceEvenly,horizontalAlignment=Alignment.CenterHorizontally) {
                 for(mark in marks)Text(mark.toString(),style=EvannaDesign.typography.labelSmall.copy(fontSize=9.5.sp,lineHeight=12.sp),
                     color=tint,modifier=Modifier.clearAndSetSemantics {})

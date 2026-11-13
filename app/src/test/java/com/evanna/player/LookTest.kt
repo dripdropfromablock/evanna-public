@@ -55,13 +55,13 @@ class LookTest {
 
     @Test fun artworkChangesBothTheAccentAndSurfacesInEveryLook() {
         for (look in EvannaLook.entries) {
-            val warm = look.colors.withArtwork(Color(0xFFCB5525), look.dark, look.apple)
-            val cool = look.colors.withArtwork(Color(0xFF1550AD), look.dark, look.apple)
+            val warm = look.colors.withArtwork(Color(0xFFCB5525), look.dark)
+            val cool = look.colors.withArtwork(Color(0xFF1550AD), look.dark)
             assertTrue(warm.primary.red > warm.primary.blue)
             assertTrue(cool.primary.blue > cool.primary.red)
             assertNotEquals(warm.surfaceContainer, cool.surfaceContainer)
             assertEquals(look.colors.background, cool.background)
-            assertEquals(look.colors, look.colors.withArtwork(null, look.dark, look.apple))
+            assertEquals(look.colors, look.colors.withArtwork(null, look.dark))
         }
     }
 
@@ -72,13 +72,13 @@ class LookTest {
         for (look in EvannaLook.entries) {
             assertTextContrast(look, look.colors)
             for (seed in seeds) {
-                val colors = look.colors.withArtwork(seed, look.dark, look.apple)
+                val colors = look.colors.withArtwork(seed, look.dark)
                 assertTextContrast(look, colors)
                 val artwork = if (look.dark) Color.White else Color.Black
                 val menu = colors.surfaceContainerHigh.copy(alpha = MENU_SURFACE_ALPHA).compositeOver(artwork)
                 assertTrue("$look $seed muted menu text over artwork",
                     contrastRatio(colors.onSurfaceVariant.toArgb(), menu.toArgb()) >= 4.5)
-                val player = playerColorScheme(look, seed)
+                val player = playerColorScheme(seed)
                 val backdrop = Color(0xFF4B4B4B)
                 val playerMenu = player.surfaceContainerHigh.copy(alpha = MENU_SURFACE_ALPHA).compositeOver(backdrop)
                 val outputSheet = player.surfaceContainer.copy(alpha = 0.74f).compositeOver(backdrop)
@@ -96,9 +96,9 @@ class LookTest {
     @Test fun playerOverlaysShowMoreArtworkColorThanTheRestOfTheApp() {
         val seed = Color(0xFF18AA50)
         for (look in EvannaLook.entries) {
-            val player = playerColorScheme(look, seed)
-            val neutral = playerColorScheme(look, null)
-            val regular = neutral.withArtwork(seed, dark = true, filledChips = look.apple)
+            val player = playerColorScheme(seed)
+            val neutral = playerColorScheme(null)
+            val regular = neutral.withArtwork(seed, dark = true)
             for ((surface, regularSurface) in listOf(
                 player.surfaceContainer to regular.surfaceContainer,
                 player.surfaceContainerHigh to regular.surfaceContainerHigh,
