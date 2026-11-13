@@ -83,6 +83,7 @@ internal class EvannaPlayer(private val owner: UsbSessionOwner) : SimpleBasePlay
             putString(CROSSFEED,snapshot.crossfeed.name)
             putFloat(EQ_PREAMP,snapshot.eqPreampDb)
             snapshot.appliedGainDb?.let {putFloat(USB_APPLIED_GAIN,it)}
+            if (snapshot.route == PlaybackRoute.DIRECT_USB) snapshot.stats?.let { putLong(USB_DROPPED, it.droppedSinceOpen) }
             putString(SIGNAL_STATUS, signalStatus)
             putString(SLEEP_LABEL,sleepLabel)
             if (currentFavorite != null) {
@@ -263,6 +264,7 @@ internal class EvannaPlayer(private val owner: UsbSessionOwner) : SimpleBasePlay
         const val LEVELING_OFFSET="com.evanna.player.LEVELING_OFFSET"
         const val LEVELING_EVIDENCE="com.evanna.player.LEVELING_EVIDENCE"
         const val USB_APPLIED_GAIN="com.evanna.player.USB_APPLIED_GAIN"
+        const val USB_DROPPED="com.evanna.player.USB_DROPPED"
         const val EQ_PROCESSED="com.evanna.player.EQ_PROCESSED"
         const val EQ_PREAMP="com.evanna.player.EQ_PREAMP"
         const val CROSSFEED="com.evanna.player.CROSSFEED"

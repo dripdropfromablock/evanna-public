@@ -54,6 +54,8 @@ public:
         uint64_t framesCompleted = 0;
         bool inputEnded = false;
         uint64_t clippedSamples = 0; // Processed float values outside full scale, before conversion.
+        uint64_t droppedPackets = 0;   // Isochronous packets the phone's USB failed to send, this stream.
+        uint64_t droppedSinceOpen = 0; // The same, since this DAC was opened.
     };
 
     // How a source format would be played on this DAC.
@@ -214,5 +216,7 @@ private:
     int badTransfersInARow_ = 0;  // event thread only
     int dropReports_ = 0;         // event thread only: caps the drop log lines per stream
     std::atomic<uint64_t> clippedSamples_{0};
+    std::atomic<uint64_t> droppedPackets_{0};
+    std::atomic<uint64_t> droppedSinceOpen_{0};  // never reset: one streamer per opened DAC
     std::atomic<bool> disconnected_{false};
 };

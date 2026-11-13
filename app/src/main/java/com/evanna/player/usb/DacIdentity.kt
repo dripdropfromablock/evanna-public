@@ -38,3 +38,18 @@ internal fun shouldAutoConnect(enabled:Boolean,usedBefore:Boolean,permitted:Bool
 
 internal fun preferredDacId(selected:Int?,connections:List<DacConnection>,last:DacIdentity?):Int? =
     connections.firstOrNull {it.id==selected}?.id ?: connections.firstOrNull {sameDac(it.identity,last)}?.id ?: connections.firstOrNull()?.id
+
+/** Lost USB packets on one DAC before Settings suggests Android audio. Some phones' USB drops packets; Android's own path may not. */
+internal const val USB_DROPS_BEFORE_SUGGESTION=5L
+/** Settings: DAC profile keys whose owner chose to keep Direct USB after the suggestion. */
+internal const val KEEP_DIRECT_USB_PREFERENCE="keep_direct_usb"
+
+/** The most lost packets seen on [profileKey]'s DAC. The count restarts on each plug-in and is missing between songs, so keep the largest. */
+internal fun latestUsbDrops(previous:Pair<String,Long>?,profileKey:String?,dropped:Long):Pair<String,Long>? = when {
+    profileKey==null || dropped<=0 -> previous
+    previous?.first==profileKey -> profileKey to maxOf(previous.second,dropped)
+    else -> profileKey to dropped
+}
+
+internal fun suggestAndroidAudio(route:String,drops:Pair<String,Long>?,profileKey:String?,keptDirect:Set<String>):Boolean =
+    route=="DIRECT_USB" && profileKey!=null && profileKey !in keptDirect && drops?.first==profileKey && drops.second>=USB_DROPS_BEFORE_SUGGESTION

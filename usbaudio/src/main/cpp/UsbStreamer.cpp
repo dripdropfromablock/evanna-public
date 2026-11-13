@@ -264,6 +264,7 @@ bool UsbStreamer::start(uint32_t sampleRate, uint32_t sourceBits, uint32_t chann
     badTransfersInARow_ = 0;
     dropReports_ = 0;
     clippedSamples_ = 0;
+    droppedPackets_ = 0;
     primed_ = false;
     feedbackRequired_ = f.syncType == uac::SyncType::Async;
     feedbackSeen_ = false;
@@ -705,6 +706,8 @@ void UsbStreamer::onTransferDone(libusb_transfer* t) {
                 // Isochronous USB may drop a packet now and then (seen on a Xiaomi host: status 1, 0 bytes sent).
                 // One lost packet is a gap of one USB microframe, so play on; stop only when drops persist.
                 const auto& p = t->iso_packet_desc[first];
+                self->droppedPackets_ += uint64_t(bad);
+                self->droppedSinceOpen_ += uint64_t(bad);
                 if (self->dropReports_++ < 20)
                     LOGW("iso: %d of %d packets dropped (packet %d: status %d, sent %u of %u)", bad, t->num_iso_packets, first,
                          int(p.status), p.actual_length, p.length);
@@ -1118,5 +1121,6 @@ bool UsbStreamer::setVolume(int32_t value) {
 
 UsbStreamer::Stats UsbStreamer::stats() const {
     return Stats{framesSent_.load(), underruns_.load(), transferErrors_.load(), disconnected_.load(),
-        framesQueued_.load(), framesCompleted_.load(), inputEnded_.load(), clippedSamples_.load()};
+        framesQueued_.load(), framesCompleted_.load(), inputEnded_.load(), clippedSamples_.load(),
+        droppedPackets_.load(), droppedSinceOpen_.load()};
 }

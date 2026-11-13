@@ -77,7 +77,9 @@ data class VolumeRange(val minDb: Float, val maxDb: Float, val stepDb: Float, va
 /** Output-frame counters are concurrent snapshots, not a DAC presentation clock. */
 data class StreamStats(val framesSent: Long, val underruns: Long, val transferErrors: Long, val disconnected: Boolean,
     val framesQueued: Long = 0, val framesCompleted: Long = 0, val inputEnded: Boolean = false,
-    val clippedSamples: Long = 0)
+    val clippedSamples: Long = 0,
+    /** USB packets the phone failed to send: this song, and since the DAC was opened. Playback carries on past them. */
+    val droppedPackets: Long = 0, val droppedSinceOpen: Long = 0)
 
 /**
  * Plays PCM on a USB Audio Class DAC directly over USB, bypassing Android's
@@ -231,8 +233,8 @@ class UsbAudioOutput private constructor(
     fun stats(): StreamStats = synchronized(lock) {
         checkOpen()
         val s = NativeBridge.nativeStats(handle)
-        check(s.size == 8) { "Invalid USB statistics" }
-        StreamStats(s[0], s[1], s[2], s[3] != 0L, s[4], s[5], s[6] != 0L, s[7])
+        check(s.size == 10) { "Invalid USB statistics" }
+        StreamStats(s[0], s[1], s[2], s[3] != 0L, s[4], s[5], s[6] != 0L, s[7], s[8], s[9])
     }
 
     /** Releases the DAC; failed cancellation or volume restoration throws and retains ownership for retry. */

@@ -601,6 +601,7 @@ static void oneDroppedPacketPlaysOn() {
         while (audioCompletions < 6 && std::chrono::steady_clock::now() < until) std::this_thread::sleep_for(1ms);
         CHECK(audioCompletions >= 6);
         CHECK(output.stats().transferErrors == 0 && !output.stats().disconnected);
+        CHECK(output.stats().droppedPackets == 1 && output.stats().droppedSinceOpen == 1);
         allowCallbacks();
         CHECK(output.close());
     }

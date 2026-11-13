@@ -105,6 +105,9 @@ import com.evanna.player.usb.UsbPermissionSession
 import com.evanna.player.usb.DacIdentity
 import com.evanna.player.usb.DacConnection
 import com.evanna.player.usb.AUTO_CONNECT_DAC_PREFERENCE
+import com.evanna.player.usb.KEEP_DIRECT_USB_PREFERENCE
+import com.evanna.player.usb.latestUsbDrops
+import com.evanna.player.usb.suggestAndroidAudio
 import com.evanna.player.usb.LAST_DAC_PREFERENCE
 import com.evanna.player.usb.shouldAutoConnect
 import com.evanna.player.usb.dacIdentity
@@ -171,6 +174,8 @@ class MainActivity : ComponentActivity() {
     private var levelingMode by mutableStateOf(com.evanna.player.loudness.LevelingMode.OFF)
     private var crossfeed by mutableStateOf(com.evanna.player.equalizer.Crossfeed.OFF)
     private var androidBitPerfect by mutableStateOf(false)
+    private var usbDrops by mutableStateOf<Pair<String,Long>?>(null)
+    private var keptDirectUsb by mutableStateOf<Set<String>>(emptySet())
     private val usbKeys=UsbVolumeKeys()
     private val usbKeyDowns=mutableMapOf<Int,Pair<MediaController,Long>>()
     private var usbKeyIndicator by mutableStateOf<Float?>(null)
@@ -194,6 +199,7 @@ class MainActivity : ComponentActivity() {
         followSongRate = extras?.getBoolean(EvannaPlayer.FOLLOW_SONG_RATE, true) ?: true
         maxUsbRate=extras?.getInt(EvannaPlayer.MAX_USB_RATE,if(followSongRate)0 else 48000)?.takeIf {it>0}
         dacProfileKey=extras?.getString(EvannaPlayer.DAC_PROFILE_KEY);dacProfileName=extras?.getString(EvannaPlayer.DAC_PROFILE_NAME)
+        usbDrops=latestUsbDrops(usbDrops,dacProfileKey,extras?.getLong(EvannaPlayer.USB_DROPPED,0L) ?: 0L)
         startVolumeDb = extras?.getFloat(EvannaPlayer.USB_START_VOLUME, USB_START_VOLUME_DEFAULT_DB) ?: USB_START_VOLUME_DEFAULT_DB
         volumeLimitDb = extras?.getFloat(EvannaPlayer.USB_VOLUME_LIMIT,USB_VOLUME_LIMIT_DEFAULT_DB) ?: USB_VOLUME_LIMIT_DEFAULT_DB
         usbKeyStepDb = extras?.getFloat(EvannaPlayer.USB_KEY_STEP,USB_KEY_STEP_DEFAULT_DB) ?: USB_KEY_STEP_DEFAULT_DB
@@ -276,6 +282,8 @@ class MainActivity : ComponentActivity() {
         }
         lastDac=storedDacIdentity(getSharedPreferences("playback-settings",MODE_PRIVATE).all[LAST_DAC_PREFERENCE] as? String)
         autoConnectEnabled=getSharedPreferences("playback-settings",MODE_PRIVATE).all[AUTO_CONNECT_DAC_PREFERENCE] as? Boolean ?: true
+        keptDirectUsb=(getSharedPreferences("playback-settings",MODE_PRIVATE).all[KEEP_DIRECT_USB_PREFERENCE] as? Set<*>)
+            ?.filterIsInstance<String>()?.toSet().orEmpty()
         // A recreated screen or a launch restored from Recents must not act on the old plug-in again.
         if(shouldHandleAttachIntent(savedInstanceState!=null,intent.flags))handleAttachIntent(intent)
         volumeControlStream = AudioManager.STREAM_MUSIC
@@ -605,6 +613,15 @@ class MainActivity : ComponentActivity() {
             getSharedPreferences("playback-settings", MODE_PRIVATE).edit().putBoolean(AUTO_CONNECT_DAC_PREFERENCE, enabled).commit()
         }.getOrDefault(false)
         if (saved) autoConnectEnabled = enabled else message = "The setting could not be saved. Check free storage and try again."
+    }
+
+    private fun keepDirectUsb() {
+        val key = dacProfileKey ?: return
+        val kept = keptDirectUsb + key
+        val saved = runCatching {
+            getSharedPreferences("playback-settings", MODE_PRIVATE).edit().putStringSet(KEEP_DIRECT_USB_PREFERENCE, kept).commit()
+        }.getOrDefault(false)
+        if (saved) keptDirectUsb = kept else message = "The setting could not be saved. Check free storage and try again."
     }
 
     override fun onTrimMemory(level: Int) {
@@ -1256,6 +1273,13 @@ class MainActivity : ComponentActivity() {
                 item { SettingsCard("Check your DAC") {
                     Text("Direct USB sends music to your DAC and checks its volume before playback.", color = muted)
                     Text(message, color = EvannaDesign.colorScheme.primary)
+                    if (suggestAndroidAudio(outputRoute, usbDrops, dacProfileKey, keptDirectUsb)) {
+                        Text("This phone's USB lost ${usbDrops?.second} packets of sound, which can sound like slight distortion. " +
+                            "Android audio may sound cleaner on this phone${if (androidBitPerfect) "." else ", but it converts the audio."}")
+                        OutlinedButton(onClick = { selectAndroidOutput(androidBitPerfect) }, enabled = mediaController != null,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Use Android audio") }
+                        TextButton(onClick = ::keepDirectUsb, modifier = Modifier.heightIn(min = 48.dp)) { Text("Keep Direct USB") }
+                    }
                     OutlinedButton(onClick = ::refreshDevices, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh devices") }
                     if (devices.isEmpty()) Text("No USB audio device found. Connect your DAC, then refresh.")
                     for (state in devices) Row(verticalAlignment = Alignment.CenterVertically) {

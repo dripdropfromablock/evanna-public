@@ -4,7 +4,7 @@ internal fun UsbPlaybackSnapshot.usbSamplePathEligible(): Boolean =
     route == PlaybackRoute.DIRECT_USB && state in listOf(UsbPlaybackState.PLAYING, UsbPlaybackState.DRAINING) &&
         failure == null && readiness.clockConfigured && readiness.feedbackReady && readiness.volumeVerified &&
         source?.strictEligible == true && stream?.bitPerfect == true && stream.processed==false && !eqProcessed &&
-        stats?.let { !it.disconnected && it.underruns == 0L && it.transferErrors == 0L && it.clippedSamples == 0L } != false
+        stats?.let { !it.disconnected && it.underruns == 0L && it.transferErrors == 0L && it.clippedSamples == 0L && it.droppedPackets == 0L } != false
 
 /** [brief] rows are the plain lines of the quality window's Minimal view; the rest are its Advanced rows. */
 internal data class SignalStage(val label:String,val value:String,val changed:Boolean=false,val brief:Boolean=false)
@@ -22,7 +22,7 @@ private fun UsbPlaybackSnapshot.usbConversions(source: PcmFormat, rate: Int, bit
 private fun UsbPlaybackSnapshot.eqStatus(): String = if (eqProcessed) "On · preamp $eqPreampDb dB" else "Off"
 
 private fun UsbPlaybackSnapshot.usbUnhealthy(): Boolean =
-    failure != null || stats?.let { it.disconnected || it.underruns > 0 || it.transferErrors > 0 || it.clippedSamples > 0 } == true
+    failure != null || stats?.let { it.disconnected || it.underruns > 0 || it.transferErrors > 0 || it.clippedSamples > 0 || it.droppedPackets > 0 } == true
 
 /** Render typed evidence only: never locations, track IDs or guessed hardware precision. */
 internal fun signalStages(snapshot: UsbPlaybackSnapshot): List<SignalStage> = buildList {
@@ -85,7 +85,7 @@ internal fun signalStages(snapshot: UsbPlaybackSnapshot): List<SignalStage> = bu
             stage("Volume","USB hardware volume · ${if (live && snapshot.readiness.volumeVerified) "control readback verified for this stream" else "control unverified for playback"}${snapshot.usbVolume?.let{" · base ${it.currentDb} dB"}.orEmpty()}${snapshot.appliedGainDb?.let {" · applied $it dB"}.orEmpty()}.")
             val readiness=snapshot.readiness
             stage("Health","Clock ${if(readiness.clockConfigured)"configured" else "unverified"} · feedback ${if(readiness.feedbackReady)"ready" else "unverified"}"+
-                (snapshot.stats?.let {" · underruns ${it.underruns} · transfer errors ${it.transferErrors} · clipped float samples ${it.clippedSamples}${if(it.disconnected)" · disconnected" else ""}"} ?: " · counters unavailable"),
+                (snapshot.stats?.let {" · underruns ${it.underruns} · transfer errors ${it.transferErrors} · clipped float samples ${it.clippedSamples} · dropped packets ${it.droppedPackets}${if(it.disconnected)" · disconnected" else ""}"} ?: " · counters unavailable"),
                 snapshot.usbUnhealthy())
             stage("Sample path",if (snapshot.usbSamplePathEligible()) "eligible at USB input; not a physical bit-perfect measurement or a claim about DAC DSP."
                 else "no active strict eligibility confirmed.",!snapshot.usbSamplePathEligible())

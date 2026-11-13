@@ -160,13 +160,15 @@ JNIEXPORT jboolean JNICALL JNI_FN(nativeSetVolume)(JNIEnv*, jobject, jlong h, ji
     return h && streamer(h)->setVolume(value) ? JNI_TRUE : JNI_FALSE;
 }
 
-// Returns submitted, underruns, errors, disconnected, queued, completed, sealed-input, clipped float values.
+// Returns submitted, underruns, errors, disconnected, queued, completed, sealed-input, clipped float values,
+// dropped packets this stream, dropped packets since the DAC was opened.
 JNIEXPORT jlongArray JNICALL JNI_FN(nativeStats)(JNIEnv* env, jobject, jlong h) {
     const UsbStreamer::Stats s = streamer(h)->stats();
-    const jlong values[8] = {jlong(s.framesSent), jlong(s.underruns), jlong(s.transferErrors), s.disconnected ? 1 : 0,
-        jlong(s.framesQueued), jlong(s.framesCompleted), s.inputEnded ? 1 : 0, jlong(s.clippedSamples)};
-    jlongArray array = env->NewLongArray(8);
-    if (array) env->SetLongArrayRegion(array, 0, 8, values);
+    const jlong values[10] = {jlong(s.framesSent), jlong(s.underruns), jlong(s.transferErrors), s.disconnected ? 1 : 0,
+        jlong(s.framesQueued), jlong(s.framesCompleted), s.inputEnded ? 1 : 0, jlong(s.clippedSamples),
+        jlong(s.droppedPackets), jlong(s.droppedSinceOpen)};
+    jlongArray array = env->NewLongArray(10);
+    if (array) env->SetLongArrayRegion(array, 0, 10, values);
     return array;
 }
 

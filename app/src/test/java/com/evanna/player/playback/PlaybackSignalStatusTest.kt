@@ -13,6 +13,13 @@ class PlaybackSignalStatusTest {
         val clipped=clean.copy(stats=StreamStats(0,0,0,false,clippedSamples=2))
         assertFalse(clipped.usbSamplePathEligible());assertTrue(playbackSignalStatus(clipped).contains("clipped float samples 2"))
     }
+    @Test fun droppedUsbPacketsAreAProblemAndEndTheUnchangedClaim() {
+        assertTrue(clean.copy(stats=StreamStats(10,0,0,false)).usbSamplePathEligible())
+        val dropped=clean.copy(stats=StreamStats(10,0,0,false,droppedPackets=3,droppedSinceOpen=7))
+        assertFalse(dropped.usbSamplePathEligible())
+        assertTrue(playbackSignalStatus(dropped).contains("dropped packets 3"))
+        assertEquals("Problem found. See Advanced",signalSummary(dropped).last().value)
+    }
     @Test fun hardwareLevelingShowsBaseAndAppliedGainWithoutChangingSampleEligibility() {
         val state=clean.copy(levelingMode=com.evanna.player.loudness.LevelingMode.TRACK,
             leveling=com.evanna.player.loudness.LevelingDecision(com.evanna.player.loudness.LevelingMode.TRACK,-4f,"Track gain tag"),
