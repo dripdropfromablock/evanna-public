@@ -79,10 +79,41 @@ class SoundEngineTest {
     }
 
     @Test fun settingsSurviveTheirStoredForm() {
-        val config = SoundConfig(true, -3.5f, List(15) { it - 7f }, listOf(Band(FilterType.NOTCH, 60f, 0f, 8f, false), Band(FilterType.HIGH_SHELF, 9000f, -2.5f, 0.71f)))
+        val config = SoundConfig(true, -3.5f, List(15) { it - 7f }, listOf(Band(FilterType.NOTCH, 60f, 0f, 8f, false), Band(FilterType.HIGH_SHELF, 9000f, -2.5f, 0.71f)),
+            bassDb = 4.5f, airDb = 2f, width = 140f)
         assertEquals(config, decodeSound(encodeSound(config)))
         assertEquals(SoundConfig(), decodeSound(encodeSound(SoundConfig())))
-        assertThrows(IllegalArgumentException::class.java) { decodeSound("1|1|5.0|${List(15) { 0 }.joinToString(",")}|") }
+        val flat = List(15) { 0 }.joinToString(",")
+        assertEquals(SoundConfig(true, -2f), decodeSound("1|1|-2.0|$flat|"))  // step 1's stored form still loads
+        assertThrows(IllegalArgumentException::class.java) { decodeSound("1|1|5.0|$flat|") }
         assertThrows(IllegalArgumentException::class.java) { decodeSound("2|1|0.0||") }
+        assertThrows(IllegalArgumentException::class.java) { decodeSound("2|1|0.0|$flat||13.0|0.0|100.0") }
+    }
+
+    @Test fun bassAndAirAreShelvesAtTheirCorners() {
+        val curve = soundCurveDb(SoundConfig(enabled = true, bassDb = 6f, airDb = 6f), doubleArrayOf(20.0, 1000.0, 20000.0))
+        assertEquals(6.0, curve[0], 0.3)
+        assertEquals(0.0, curve[1], 0.3)
+        assertEquals(6.0, curve[2], 0.6)
+    }
+
+    private fun stereo(left: Double, right: Double, frames: Int): ByteBuffer =
+        ByteBuffer.allocateDirect(frames * 8).order(ByteOrder.LITTLE_ENDIAN).apply {
+            for (f in 0 until frames) { putInt(f * 8, (left * Int.MAX_VALUE).toInt()); putInt(f * 8 + 4, (right * Int.MAX_VALUE).toInt()) }
+        }
+
+    @Test fun widthZeroIsMonoAndWidthChangesOnlyTheSideSignal() {
+        val mono = stereo(0.4, 0.0, 480)
+        SoundEngine().apply { process(mono, 480, 2, 48000, SoundConfig(enabled = true, width = 0f)); assertTrue(active) }
+        assertEquals(0.2, mono.getInt(479 * 8) / 2147483648.0, 1e-6)
+        assertEquals(0.2, mono.getInt(479 * 8 + 4) / 2147483648.0, 1e-6)
+        val wide = stereo(0.3, 0.1, 480)
+        SoundEngine().process(wide, 480, 2, 48000, SoundConfig(enabled = true, width = 200f))
+        assertEquals(0.4, wide.getInt(479 * 8) / 2147483648.0, 1e-6)  // mid 0.2 + side 0.1 x 2
+        assertEquals(0.0, wide.getInt(479 * 8 + 4) / 2147483648.0, 1e-6)
+        // One channel cannot be widened, and 100 % leaves every sample alone.
+        val engine = SoundEngine()
+        engine.process(stereo(0.3, 0.1, 480), 240, 2, 48000, SoundConfig(enabled = true, width = 100f)); assertFalse(engine.active)
+        engine.process(stereo(0.3, 0.1, 480), 480, 1, 48000, SoundConfig(enabled = true, width = 200f)); assertFalse(engine.active)
     }
 }

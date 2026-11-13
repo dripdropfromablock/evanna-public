@@ -341,7 +341,7 @@ internal fun FitText(text: String, style: TextStyle, color: Color) {
  */
 @Composable
 internal fun EqKnob(value: Float, range: ClosedFloatingPointRange<Float>, fraction: Float, text: String, label: String, description: String,
-    enabled: Boolean, onValue: (Float) -> Unit) {
+    enabled: Boolean, unit: String = " dB", onValue: (Float) -> Unit) {
     val p = eqPalette()
     val studio = !LocalLookStyle.current.look.apple
     val latest by rememberUpdatedState(onValue)
@@ -361,7 +361,7 @@ internal fun EqKnob(value: Float, range: ClosedFloatingPointRange<Float>, fracti
                 }
             }
             .semantics {
-                contentDescription = description; stateDescription = "$text dB"
+                contentDescription = description; stateDescription = "$text$unit"
                 progressBarRangeInfo = ProgressBarRangeInfo(value.coerceIn(range), range, steps = ((range.endInclusive - range.start) * 2).roundToInt() - 1)
                 if (enabled) setProgress { target -> latest(snapGain(target, range)); true } else disabled()
             }) {

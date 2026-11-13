@@ -34,13 +34,25 @@ internal const val MAX_BANDS = 16
 /** The limiter keeps every sample at or below this level (-0.2 dBFS). */
 private const val CEILING = 0.977
 
-/** Everything the built-in EQ plays: the 15 graphic sliders and up to 16 parametric bands, all at once. */
+/** Bass is a low shelf and Air a high shelf, both with a gentle slope (Q 0.707). */
+internal const val BASS_HZ = 100f
+internal const val AIR_HZ = 10000f
+internal const val TONE_MAX_DB = 12f
+internal const val WIDTH_MAX = 200f
+
+/**
+ * Everything the built-in EQ plays, all at once: the 15 graphic sliders, up to 16 parametric bands, Bass, Air and
+ * stereo Width in percent (100 leaves the stereo image alone, 0 is mono, 200 doubles the side signal).
+ */
 internal data class SoundConfig(val enabled: Boolean = false, val preampDb: Float = 0f,
-    val graphic: List<Float> = List(GRAPHIC_HZ.size) { 0f }, val bands: List<Band> = emptyList()) {
+    val graphic: List<Float> = List(GRAPHIC_HZ.size) { 0f }, val bands: List<Band> = emptyList(),
+    val bassDb: Float = 0f, val airDb: Float = 0f, val width: Float = 100f) {
     init {
         require(preampDb.isFinite() && preampDb in -20f..0f)
         require(graphic.size == GRAPHIC_HZ.size && graphic.all { it.isFinite() && it in -15f..15f })
         require(bands.size <= MAX_BANDS)
+        require(bassDb.isFinite() && bassDb in 0f..TONE_MAX_DB && airDb.isFinite() && airDb in 0f..TONE_MAX_DB)
+        require(width.isFinite() && width in 0f..WIDTH_MAX)
     }
 }
 
@@ -82,6 +94,8 @@ private fun chain(config: SoundConfig, rate: Int): Chain {
         if (b.on && b.frequency < top && (!b.type.usesGain || abs(b.gainDb) >= 0.05f))
             add(100 + i, biquad(b.type, b.frequency.toDouble(), b.gainDb.toDouble(), b.q.toDouble(), rate))
     }
+    if (config.bassDb >= 0.05f) add(200, biquad(FilterType.LOW_SHELF, BASS_HZ.toDouble(), config.bassDb.toDouble(), 0.7071, rate))
+    if (config.airDb >= 0.05f && AIR_HZ < top) add(201, biquad(FilterType.HIGH_SHELF, AIR_HZ.toDouble(), config.airDb.toDouble(), 0.7071, rate))
     return Chain(keys.toIntArray(), taps.toDoubleArray())
 }
 
@@ -141,6 +155,8 @@ internal class SoundEngine {
     private var limiter = 1.0
     private var smoothing = 1.0
     private var release = 1.0
+    private var wide = false
+    private var side = 1.0
 
     /** Whether the last [process] call changed samples. */
     var active = false
@@ -169,8 +185,12 @@ internal class SoundEngine {
                     y = out
                 }
                 frame[c] = y
-                peak = max(peak, abs(y))
             }
+            if (wide) {  // mid/side: keep (L+R)/2, scale (L-R)/2
+                val mid = (frame[0] + frame[1]) / 2; val sideSignal = (frame[0] - frame[1]) / 2 * side
+                frame[0] = mid + sideSignal; frame[1] = mid - sideSignal
+            }
+            for (c in 0 until channels) peak = max(peak, abs(frame[c]))
             // Peak limiter: cuts at once to the ceiling, so nothing clips, then lets go over about 150 ms.
             val rise = limiter + (1 - limiter) * release
             limiter = if (peak * rise > CEILING) CEILING / peak else rise
@@ -189,7 +209,10 @@ internal class SoundEngine {
         }
         val db = if (config.enabled) config.preampDb - headroomDb(next, config, rate) else 0.0
         val wasActive = active
-        active = config.enabled && (next.keys.isNotEmpty() || abs(db) >= 0.05)
+        // shortcut: widening has no auto headroom; the limiter catches its louder side peaks.
+        wide = config.enabled && channels == 2 && abs(config.width - 100f) >= 0.5f
+        side = config.width / 100.0
+        active = config.enabled && (next.keys.isNotEmpty() || abs(db) >= 0.05 || wide)
         target = 10.0.pow(db / 20)
         // shortcut: switching off is instant and may click once; fade out over a few ms if users notice.
         if (!wasActive || !sameFormat) { gain = target; limiter = 1.0 }
@@ -201,19 +224,22 @@ internal class SoundEngine {
     }
 }
 
-/** One line per config, so a JVM test can read it back: version|on|preamp|15 graphic gains|bands. */
-internal fun encodeSound(config: SoundConfig): String = listOf("1", if (config.enabled) "1" else "0", config.preampDb.toString(),
+/** One line per config, so a JVM test can read it back: version|on|preamp|15 graphic gains|bands|bass|air|width. */
+internal fun encodeSound(config: SoundConfig): String = listOf("2", if (config.enabled) "1" else "0", config.preampDb.toString(),
     config.graphic.joinToString(","),
-    config.bands.joinToString(";") { "${it.type.name}:${it.frequency}:${it.gainDb}:${it.q}:${if (it.on) 1 else 0}" }).joinToString("|")
+    config.bands.joinToString(";") { "${it.type.name}:${it.frequency}:${it.gainDb}:${it.q}:${if (it.on) 1 else 0}" },
+    config.bassDb.toString(), config.airDb.toString(), config.width.toString()).joinToString("|")
 
+/** Reads [encodeSound]'s line; version 1 (step 1, no Bass, Air or Width) still loads. */
 internal fun decodeSound(text: String): SoundConfig {
     require(text.length <= 4096)
     val parts = text.split("|")
-    require(parts.size == 5 && parts[0] == "1" && parts[1] in listOf("0", "1"))
+    require(((parts.size == 5 && parts[0] == "1") || (parts.size == 8 && parts[0] == "2")) && parts[1] in listOf("0", "1"))
     val bands = if (parts[4].isEmpty()) emptyList() else parts[4].split(";").map {
         val v = it.split(":")
         require(v.size == 5 && v[4] in listOf("0", "1"))
         Band(FilterType.valueOf(v[0]), v[1].toFloat(), v[2].toFloat(), v[3].toFloat(), v[4] == "1")
     }
-    return SoundConfig(parts[1] == "1", parts[2].toFloat(), parts[3].split(",").map(String::toFloat), bands)
+    val base = SoundConfig(parts[1] == "1", parts[2].toFloat(), parts[3].split(",").map(String::toFloat), bands)
+    return if (parts.size == 5) base else base.copy(bassDb = parts[5].toFloat(), airDb = parts[6].toFloat(), width = parts[7].toFloat())
 }

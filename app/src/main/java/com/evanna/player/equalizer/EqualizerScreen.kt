@@ -1,5 +1,11 @@
 package com.evanna.player.equalizer
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -50,6 +56,36 @@ internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
         SoundSettings.update { it.copy(bands = it.bands + Band(FilterType.PEAK, hz.coerceIn(20f, 20000f), snapGain(db), 1f)) }
         chosen = config.bands.size; tab = 1
     }
+    val mine by SoundSettings.presets.collectAsState()
+    var naming by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // AutoEq's ParametricEQ.txt replaces the parametric bands and resets the preamp; the graphic sliders and tone stay.
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            note = try {
+                val text = withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.use(::readSmallText) } ?: ""
+                val found = parseAutoEq(text)
+                SoundSettings.update { it.copy(enabled = true, preampDb = 0f, bands = found.bands) }
+                chosen = 0; tab = 1
+                "Imported ${found.bands.size} bands." + if (found.skipped > 0) " ${found.skipped} lines were left out." else ""
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                "That file has no AutoEq filters. Pick a ParametricEQ.txt file."
+            }
+        }
+    }
+    if (naming) {
+        var name by remember { mutableStateOf("") }
+        AlertDialog(onDismissRequest = { naming = false }, title = { Text("Save preset") },
+            text = { OutlinedTextField(name, { name = it.take(32) }, "Name") },
+            confirmButton = {
+                TextButton(onClick = { note = if (SoundSettings.savePreset(name)) null else "You can keep up to $MAX_PRESETS presets."; naming = false },
+                    enabled = cleanPresetName(name).isNotEmpty()) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { naming = false }) { Text("Cancel") } })
+    }
     Column(Modifier.fillMaxSize()) {
         FilledIconButton(onClick = onBack, modifier = Modifier.size(48.dp), colors = IconButtonDefaults.filledIconButtonColors(
             containerColor = p.card, contentColor = p.text)) {
@@ -77,6 +113,25 @@ internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
                     }
                 }
             }
+            item(key = "presets") {
+                EqCard {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Presets", style = eqText(15.sp, 20.sp, FontWeight.Medium), color = p.text, modifier = Modifier.weight(1f).semantics { heading() })
+                        TextButton(onClick = { picker.launch(arrayOf("text/*", "application/octet-stream")) }) { Text("Import AutoEq") }
+                        TextButton(onClick = { naming = true }) { Text("Save") }
+                    }
+                    FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (preset in BUILT_IN_PRESETS + mine)
+                            EqChip(preset.name, config.enabled && preset.matches(config), true) { SoundSettings.update { preset.applyTo(it) } }
+                    }
+                    mine.firstOrNull { it.matches(config) }?.let { preset ->
+                        TextButton(onClick = { SoundSettings.deletePreset(preset.name) }, modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp)) {
+                            Text("Delete ${preset.name}")
+                        }
+                    }
+                    note?.let { Text(it, style = eqText(12.5.sp, 17.sp), color = p.muted, modifier = Modifier.padding(top = 6.dp)) }
+                }
+            }
             item(key = "curve") {
                 EqCard {
                     Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
@@ -89,6 +144,20 @@ internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
                         onHandle = { i, hz, db -> config.bands.getOrNull(i)?.let { b ->
                             setBand(i, b.copy(frequency = hz.coerceIn(20f, 20000f), gainDb = if (b.type.usesGain) snapGain(db) else b.gainDb)) } },
                         onAdd = ::addBand)
+                }
+            }
+            item(key = "tone") {
+                EqCard {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        EqKnob(config.bassDb, 0f..TONE_MAX_DB, config.bassDb / TONE_MAX_DB, eqSigned(config.bassDb), "Bass",
+                            "Bass boost below ${BASS_HZ.roundToInt()} hertz", true) { v -> SoundSettings.update { it.copy(bassDb = v) } }
+                        EqKnob(config.airDb, 0f..TONE_MAX_DB, config.airDb / TONE_MAX_DB, eqSigned(config.airDb), "Air",
+                            "Treble boost above 10 kilohertz", true) { v -> SoundSettings.update { it.copy(airDb = v) } }
+                        EqKnob(config.width, 0f..WIDTH_MAX, config.width / WIDTH_MAX, "${config.width.roundToInt()}%", "Width",
+                            "Stereo width, 100 percent is unchanged", true, unit = "") { v ->
+                            SoundSettings.update { it.copy(width = v.roundToInt().toFloat().coerceIn(0f, WIDTH_MAX)) }
+                        }
+                    }
                 }
             }
             item(key = "tabs") { EqSegments(listOf("Graphic", "Parametric"), tab, { tab = it }) }
