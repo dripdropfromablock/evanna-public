@@ -19,7 +19,6 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.foundation.border
 import androidx.compose.ui.semantics.Role
@@ -37,6 +36,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.layout.layout
@@ -82,19 +85,20 @@ private data class LibraryRequest(val view: LibraryView, val filter: LibraryFilt
 
 /** Room the list rows leave at the end for the A–Z bar. */
 private val LocalBarRoom = compositionLocalOf { 0.dp }
+private val LocalLineInset = compositionLocalOf { 0.dp }
 /** Content type of the list rows the A–Z bar sits beside. */
 private const val LIST_ROW = "list row"
 
 /** A grid item that spans the whole row. Lazy grid items overlap their children, so content needs one root.
  *  Page lines also cover the rows' A–Z bar room, so the bar never narrows them. */
-private fun LazyGridScope.line(key: Any? = null, content: @Composable LazyGridItemScope.() -> Unit) =
+private fun LazyGridScope.line(key: Any? = null, edgeToEdge: Boolean = false, content: @Composable LazyGridItemScope.() -> Unit) =
     item(key = key, span = { GridItemSpan(maxLineSpan) }) {
         val room = LocalBarRoom.current
         Box(Modifier.layout { measurable, constraints ->
             val wide = constraints.maxWidth + room.roundToPx()
             val placeable = measurable.measure(constraints.copy(minWidth = wide, maxWidth = wide))
             layout(constraints.maxWidth, placeable.height) { placeable.placeRelative(0, 0) }
-        }, propagateMinConstraints = true) { content() }
+        }.padding(horizontal = if (edgeToEdge) 0.dp else LocalLineInset.current), propagateMinConstraints = true) { content() }
     }
 
 @Composable
@@ -131,6 +135,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
     val artwork = remember { LocalLibrary.artwork(context) }
     var removeFolder by remember {mutableStateOf<LibraryRoot?>(null)}
     var manageFolder by remember {mutableStateOf<LibraryRoot?>(null)}
+    var trackInfo by remember { mutableStateOf<LibrarySong?>(null) }
     var showMusicFolders by rememberSaveable { mutableStateOf(false) }
     var view by rememberSaveable { mutableStateOf(if (searchMode) LibraryView.TRACKS else LibraryView.ALBUMS) }
     var search by rememberSaveable { mutableStateOf("") }
@@ -138,9 +143,10 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
     var value by rememberSaveable { mutableStateOf<String?>(null) }
     var groupName by rememberSaveable { mutableStateOf("") }
     var albumArtist by rememberSaveable { mutableStateOf<String?>(null) }
-    var artistParent by rememberSaveable {mutableStateOf(false)}
-    var parentArtist by rememberSaveable {mutableStateOf<String?>(null)}
-    var parentArtistName by rememberSaveable {mutableStateOf("")}
+    var parentKind by rememberSaveable { mutableStateOf<LibraryGroupKind?>(null) }
+    var parentValue by rememberSaveable { mutableStateOf<String?>(null) }
+    var parentName by rememberSaveable { mutableStateOf("") }
+    var songAlbumSearch by rememberSaveable { mutableStateOf<String?>(null) }
     val sortScope=when(view) {
         LibraryView.ALBUMS -> LibrarySortScope.ALBUMS
         LibraryView.FOLDERS -> LibrarySortScope.FOLDERS
@@ -164,7 +170,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
     val busy = LocalLibrary.scanning || LocalLibrary.managingFolders
     var selectionFailed by remember { mutableStateOf(false) }
     val rootFilter = LibraryFilter(search = search, sort = selectedSort ?: LibrarySort.TITLE)
-    val filter = rootFilter.copy(kind = kind, value = value, albumArtist = albumArtist)
+    val filter = rootFilter.copy(search = songAlbumSearch ?: search, kind = kind, value = value, albumArtist = albumArtist)
     val selectedAlbum = AlbumIdentity(value, albumArtist)
     // Keep the collection's loaded pages and position while a detail page is open.
     val rootCursor = remember(view, rootFilter, revision) { mutableStateOf(LibraryPageCursor()) }
@@ -197,10 +203,24 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
     val muted = EvannaDesign.colorScheme.onSurfaceVariant
     val studio = !LocalLookStyle.current.look.apple
 
+    fun back() {
+        kind = parentKind
+        value = if (parentKind == null) null else parentValue
+        groupName = if (parentKind == null) "" else parentName
+        albumArtist = null
+        parentKind = null
+        songAlbumSearch = null
+    }
+
+    fun updateSearch(query: String) {
+        val text = query.take(200)
+        if (songAlbumSearch == null) search = text else songAlbumSearch = text
+    }
+
     LaunchedEffect(request, retry,selectedSort!=null) {
         if (selectedSort == null || (loaded == request && failed == null)) return@LaunchedEffect
         try {
-            if (offset == 0 && search.isNotBlank()) delay(250)
+            if (offset == 0 && filter.search.isNotBlank()) delay(250)
             val next = withContext(Dispatchers.IO) {
                 when {
                     songsView -> database.page(offset = offset, filter = filter).let { LibraryListing(it.roots, it.songs, total = it.total,
@@ -213,7 +233,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
             if (kind == LibraryGroupKind.ALBUM && next.total == 0 && withContext(Dispatchers.IO) {
                     database.page(limit = 1, filter = filter.copy(search = "")).total == 0
                 }) {
-                kind = null; value = null; albumArtist = null; groupName = ""
+                back()
                 LocalLibrary.status = "Album information changed. Choose an album again."
                 return@LaunchedEffect
             }
@@ -225,22 +245,21 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
         catch (_: Exception) { failed = request }
     }
 
-    fun back() {
-        if(kind==LibraryGroupKind.ALBUM && artistParent) {kind=LibraryGroupKind.ARTIST;value=parentArtist;groupName=parentArtistName}
-        else {kind=null;value=null;groupName=""}
-        albumArtist=null;artistParent=false
-    }
     val addFolder = rememberAddMusicFolder()
     fun open(groupKind: LibraryGroupKind, groupValue: String?, name: String, taggedArtist: String? = null) {
-        kind = groupKind; value = groupValue; groupName = name; albumArtist = taggedArtist;artistParent=false
+        parentKind = if (groupKind == LibraryGroupKind.ALBUM) kind else null
+        parentValue = value
+        parentName = groupName
+        kind = groupKind
+        value = groupValue
+        groupName = name
+        albumArtist = taggedArtist
+        songAlbumSearch = null
     }
     fun selectView(next: LibraryView) {
         view = next
-        kind = null
-        value = null
-        groupName = ""
-        albumArtist = null
-        artistParent = false
+        parentKind = null
+        back()
     }
     val searchBrowse = searchMode && kind == null && view != LibraryView.TRACKS && search.isBlank()
     ScreenBackHandler(kind != null || searchBrowse) {
@@ -249,6 +268,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
     manageFolder?.let {root -> FolderExclusionsDialog(root){manageFolder=null}}
     removeFolder?.let { root -> RemoveMusicFolderDialog(root, busy) { removeFolder = null } }
     if (showMusicFolders) MusicFoldersDialog { showMusicFolders = false }
+    trackInfo?.let { song -> LibraryTrackInfo(song) { trackInfo = null } }
     if (selectionFailed) AlertDialog(onDismissRequest = { selectionFailed = false },
         title = { Text("Couldn’t open song") },
         text = { Text("Check folder access and reconnect playback controls, then try selecting the song again.") },
@@ -296,51 +316,81 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
         albumHome -> GridCells.Adaptive(143.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))
         else -> GridCells.Adaptive(143.dp)
     }
-    Box(Modifier.fillMaxSize()) {
-    CompositionLocalProvider(LocalBarRoom provides barRoom) {
+    val albumDetail = kind == LibraryGroupKind.ALBUM
+    val windowHeight = LocalConfiguration.current.screenHeightDp.dp
+    val stackAlbumActions = LocalConfiguration.current.screenWidthDp < 360 || LocalDensity.current.fontScale > 1.2f
+    val libraryInsets = if (albumDetail) Modifier else Modifier.statusBarsPadding().padding(horizontal = 16.dp)
+    Box(Modifier.fillMaxSize().then(libraryInsets)) {
+    CompositionLocalProvider(LocalBarRoom provides barRoom, LocalLineInset provides if (albumDetail) 16.dp else 0.dp) {
     LazyVerticalGrid(cells, Modifier.fillMaxSize(), state = scroll,
         verticalArrangement = Arrangement.spacedBy(if (studio && libraryHome) 12.dp else 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(top = if (libraryHome) 6.dp else 8.dp, bottom = 24.dp + bottomInset, end = barRoom)) {
+        contentPadding = PaddingValues(top = if (albumDetail) 0.dp else if (libraryHome) 6.dp else 8.dp, bottom = 24.dp + bottomInset, end = barRoom)) {
         // Grid items get a fixed full width; the Box lets the button keep its own width at the start.
-        if (kind != null) line { Box {
+        if (kind != null && !albumDetail) line { Box {
             TextButton(onClick = { back() }, modifier = Modifier.heightIn(min = 48.dp),
                 colors = ButtonDefaults.textButtonColors(EvannaDesign.colorScheme.onSurface)) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(if(artistParent)"Back to artist" else "Back to ${view.label.lowercase()}")
+                Text("Back to ${parentKind?.name?.lowercase() ?: view.label.lowercase()}")
             }
         } }
-        if (kind == LibraryGroupKind.ALBUM) line {
+        if (albumDetail) line(edgeToEdge = true) {
             val colors = EvannaDesign.colorScheme
             val ink = ButtonDefaults.textButtonColors(colors.onSurface)
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = if (studio) Alignment.Start else Alignment.CenterHorizontally) {
-                LibraryArtwork(selectedAlbum.key, revision,
-                    Modifier.size(if (studio) 176.dp else 200.dp).shadow(12.dp, EvannaDesign.shapes.large),
-                    EvannaDesign.shapes.large) { artwork.album(selectedAlbum, ArtworkSize.MEDIUM) }
-                Spacer(Modifier.height(16.dp))
-                Text(groupName, style = EvannaDesign.typography.headlineSmall, fontWeight = FontWeight.Bold,
-                    textAlign = if (studio) TextAlign.Start else TextAlign.Center,
-                    modifier = Modifier.semantics { heading() })
-                shown?.albumSummary?.displayArtist?.let { Text(it, style = EvannaDesign.typography.titleMedium, color = muted, textAlign = TextAlign.Center) }
-                shown?.let { album ->
-                    val count = if (album.total == 1) "1 song" else "${album.total} songs"
-                    Text(listOfNotNull(album.albumSummary?.year?.toString(), count).joinToString(" · "),
-                        style = if (studio) EvannaType.technical else EvannaDesign.typography.bodyMedium,
-                        color = muted, modifier = Modifier.padding(bottom = 8.dp))
-                }
-                Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { onSelect(LibraryContextRequest(filter,null,LibraryContextAction.PLAY_FIRST)) { selectionFailed=!it } },
-                        colors = ActionColors(colors.surfaceContainerHighest.copy(alpha = 0.74f), colors.onSurface),
-                        enabled = !busy && !loading && (shown?.total ?: 0)>0, modifier = Modifier.weight(1f).heightIn(min=48.dp)) {
-                        Icon(Icons.Filled.PlayArrow,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Play album")
+            val dark = LocalLookStyle.current.look.dark
+            val barScrim = if (dark) Color.Black else Color.White
+            val backInk = if (dark) Color.White else Color.Black
+            Column(Modifier.fillMaxWidth()) {
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val heroHeight = minOf(maxWidth, windowHeight * 0.68f).coerceAtLeast(140.dp)
+                    LibraryArtwork(selectedAlbum.key, revision, Modifier.fillMaxWidth().height(heroHeight), RectangleShape) {
+                        artwork.album(selectedAlbum, ArtworkSize.LARGE)
                     }
-                    OutlinedButton(onClick = { onSelect(LibraryContextRequest(filter,null,LibraryContextAction.SHUFFLE)) { selectionFailed=!it } },
-                        colors = ink, enabled = !busy && !loading && (shown?.total ?: 0)>0, modifier = Modifier.weight(1f).heightIn(min=48.dp)) {
-                        Icon(PlayerIcons.Shuffle,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Shuffle album")
+                    Box(Modifier.matchParentSize().background(Brush.verticalGradient(
+                        0f to barScrim.copy(alpha = 0.85f), 0.25f to barScrim.copy(alpha = 0.65f),
+                        0.62f to Color.Transparent, 1f to colors.background,
+                    )))
+                    TextButton(onClick = { back() }, modifier = Modifier.statusBarsPadding().padding(start = 12.dp),
+                        colors = ButtonDefaults.textButtonColors(backInk)) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Back to ${parentKind?.name?.lowercase() ?: view.label.lowercase()}")
                     }
                 }
-                TextButton(onClick = { onPlaylistAlbum(filter) }, enabled = !busy && !loading && (shown?.total ?: 0) > 0,
-                    modifier = Modifier.heightIn(min = 48.dp), colors = ink) { Text("Add album to playlist") }
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    Text(groupName, style = EvannaDesign.typography.headlineSmall, fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.semantics { heading() })
+                    shown?.albumSummary?.displayArtist?.let { Text(it, style = EvannaDesign.typography.titleMedium, color = muted, textAlign = TextAlign.Center) }
+                    shown?.let { album ->
+                        val count = if (album.total == 1) "1 song" else "${album.total} songs"
+                        Text(listOfNotNull(album.albumSummary?.year?.toString(), count).joinToString(" · "),
+                            style = if (studio) EvannaType.technical else EvannaDesign.typography.bodyMedium,
+                            color = muted, modifier = Modifier.padding(bottom = 8.dp))
+                    }
+                    val play: @Composable (Modifier) -> Unit = { actionModifier ->
+                        Button(onClick = { onSelect(LibraryContextRequest(filter,null,LibraryContextAction.PLAY_FIRST)) { selectionFailed=!it } },
+                            colors = ActionColors(colors.surfaceContainerHighest.copy(alpha = 0.74f), colors.onSurface),
+                            enabled = !busy && !loading && (shown?.total ?: 0)>0, modifier = actionModifier.heightIn(min=48.dp)) {
+                            Icon(Icons.Filled.PlayArrow,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Play album")
+                        }
+                    }
+                    val shuffle: @Composable (Modifier) -> Unit = { actionModifier ->
+                        OutlinedButton(onClick = { onSelect(LibraryContextRequest(filter,null,LibraryContextAction.SHUFFLE)) { selectionFailed=!it } },
+                            colors = ink, enabled = !busy && !loading && (shown?.total ?: 0)>0, modifier = actionModifier.heightIn(min=48.dp)) {
+                            Icon(PlayerIcons.Shuffle,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Shuffle album")
+                        }
+                    }
+                    if (stackAlbumActions) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        play(Modifier.fillMaxWidth())
+                        shuffle(Modifier.fillMaxWidth())
+                    } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        play(Modifier.weight(1f))
+                        shuffle(Modifier.weight(1f))
+                    }
+                    TextButton(onClick = { onPlaylistAlbum(filter) }, enabled = !busy && !loading && (shown?.total ?: 0) > 0,
+                        modifier = Modifier.heightIn(min = 48.dp), colors = ink) { Text("Add album to playlist") }
+                }
             }
         } else line {
             val title = if (kind != null) groupName else if (searchMode) "Search" else "Library"
@@ -389,7 +439,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
         if (searchMode) line {
             val shape = if (studio) EvannaDesign.shapes.medium else EvannaDesign.shapes.extraLarge
             val colors = EvannaDesign.colorScheme
-            TextField(value = search, onValueChange = { search = it.take(200) },
+            TextField(value = filter.search, onValueChange = ::updateSearch,
                 placeholder = when {
                     kind != null -> "Search songs in this collection"
                     view == LibraryView.FOLDERS -> "Filter songs in a folder"
@@ -398,8 +448,8 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                     else -> "Search ${view.label.lowercase()}"
                 },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = if (search.isNotEmpty()) ({
-                    IconButton(onClick = { search = "" }, modifier = Modifier.semantics { contentDescription = "Clear search" }) {
+                trailingIcon = if (filter.search.isNotEmpty()) ({
+                    IconButton(onClick = { updateSearch("") }, modifier = Modifier.semantics { contentDescription = "Clear search" }) {
                         Icon(Icons.Filled.Clear, contentDescription = null)
                     }
                 }) else null,
@@ -466,7 +516,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
         if(view==LibraryView.ADDED && kind==null)line {Text("Sorted by when Evanna first saved the song. Existing songs share the upgrade date.",style=EvannaDesign.typography.bodySmall,color=muted)}
         if (loading && !changingSearchLetter && shown == null) line {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (searchMode && search.isNotBlank()) "Searching…" else "Loading library…",
+                Text(if (searchMode && filter.search.isNotBlank()) "Searching…" else "Loading library…",
                     style = EvannaDesign.typography.bodySmall, color = muted)
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             }
@@ -491,9 +541,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                     enabled=!busy && !loading && (shown?.total ?: 0)>0,modifier=Modifier.heightIn(min=48.dp)){Text("Shuffle")}
             }}
             if(kind==LibraryGroupKind.ARTIST)line {ArtistAlbums(value,search,revision,!busy) {group ->
-                val from=value;val name=groupName
                 open(LibraryGroupKind.ALBUM,group.value,group.value ?: "Unknown album",group.albumArtist)
-                parentArtist=from;parentArtistName=name;artistParent=true
             }}
         }
         if (searchHome && shown?.roots?.isEmpty() == true) line {
@@ -524,7 +572,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
             } else if (songsView) {
                 itemsIndexed(shown.songs, key = { _, song -> "song:${song.id}" }, span = { _, _ -> GridItemSpan(maxLineSpan) },
                     contentType = { _, _ -> LIST_ROW }) { index, song ->
-                    Column(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = if (albumDetail) 16.dp else 0.dp)) {
                         if (kind == LibraryGroupKind.ALBUM) albumDiscHeading(shown.songs, index, shown.albumSummary)?.let { label ->
                             Text(label, style = EvannaDesign.typography.titleSmall,
                                 modifier = Modifier.padding(vertical = 8.dp).semantics { heading() })
@@ -532,63 +580,45 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                         val albumTrack = kind == LibraryGroupKind.ALBUM
                         val compactRow = searchMode || albumTrack
                         val duration = song.durationUs?.let { com.evanna.player.playbackTime(it / 1000) }
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Row(Modifier.weight(1f).clip(EvannaDesign.shapes.medium)
-                                .clickable(enabled = song.available && !busy && !loading) { onSelect(LibraryContextRequest(filter,song.id,LibraryContextAction.PLAY_FROM)) { success -> selectionFailed = !success } }
-                                .alpha(if (song.available) 1f else 0.5f).padding(vertical = 6.dp, horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                if (albumTrack) {
-                                    val number = song.musicTags.trackNumber
-                                    Text(number?.toString().orEmpty(), color = muted, style = EvannaDesign.typography.bodyMedium,
-                                        modifier = Modifier.widthIn(min = 28.dp).semantics {
-                                            if (number != null) contentDescription = "Track $number"
-                                        })
-                                } else {
-                                    LibraryArtwork("song:${song.id}", revision, Modifier.size(if (searchMode) 44.dp else 52.dp)) { artwork.song(song.id) }
+                        LibrarySongRow(song, enabled = !busy && !loading, scope = personalScope,
+                            onPlay = {
+                                onSelect(LibraryContextRequest(filter, song.id, LibraryContextAction.PLAY_FROM)) { success ->
+                                    selectionFailed = !success
                                 }
-                                Column(Modifier.weight(1f).padding(start = if (albumTrack) 0.dp else 12.dp)) {
-                                    Text(song.title, style = EvannaDesign.typography.bodyLarge, fontWeight = FontWeight.Medium,
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    val subtitle = if (albumTrack) song.artist else listOfNotNull(song.artist, song.album).joinToString(" · ")
-                                    subtitle?.takeIf { it.isNotBlank() }?.let {
-                                        Text(it, style = EvannaDesign.typography.bodyMedium, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                    if (!song.available || !compactRow) Text(if (!song.available) "Unavailable · reconnect or rescan the folder" else
-                                        "${song.codec ?: "Unknown format"} · ${song.rate?.let { "$it Hz" } ?: "rate unknown"} · ${duration ?: "Duration unknown"}",
-                                        style = EvannaDesign.typography.bodySmall, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            },
+                            onAdd = onAdd, onPlayNext = onPlayNext, onPlaylistSong = onPlaylistSong,
+                            onTrackInfo = { trackInfo = song },
+                            onOpenAlbum = song.album?.takeUnless { albumTrack || it.isBlank() }?.let { album ->
+                                {
+                                    open(LibraryGroupKind.ALBUM, album, album, song.musicTags.albumArtist?.takeIf { it.isNotEmpty() })
+                                    songAlbumSearch = ""
+                                    focus.clearFocus()
                                 }
-                                if (compactRow && duration != null) Text(duration,
-                                    style = if (studio) EvannaType.technical else EvannaDesign.typography.labelSmall, color = muted,
-                                    maxLines = 1, modifier = Modifier.padding(start = 6.dp))
+                            },
+                        ) {
+                            if (albumTrack) {
+                                val number = song.musicTags.trackNumber
+                                Text(number?.toString().orEmpty(), color = muted, style = EvannaDesign.typography.bodyMedium,
+                                    modifier = Modifier.widthIn(min = 28.dp).semantics {
+                                        if (number != null) contentDescription = "Track $number"
+                                    })
+                            } else {
+                                LibraryArtwork("song:${song.id}", revision, Modifier.size(if (searchMode) 44.dp else 52.dp)) { artwork.song(song.id) }
                             }
-                            IconButton(onClick = { onAdd(song.id) { success -> LocalLibrary.status = if (success) "Added ${song.title} to the queue." else "The song could not be added. Check folder access and the queue limit." } },
-                                enabled = song.available && !busy && !loading, modifier = Modifier.size(48.dp).semantics { contentDescription = "Add ${song.title} to queue" }) {
-                                Icon(Icons.Filled.Add, contentDescription = null)
-                            }
-                            var menu by remember(song.id) { mutableStateOf(false) }
-                            var favorite by remember(song.id) {mutableStateOf<Boolean?>(null)}
-                            LaunchedEffect(menu,personalChanges) {
-                                if(menu)favorite=try {withContext(Dispatchers.IO){personal.isFavorite(song.id)}}
-                                    catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){null}
-                            }
-                            Box {
-                                IconButton(onClick = { menu=true },enabled=song.available && !busy && !loading,
-                                    modifier=Modifier.size(48.dp)) { Icon(Icons.Filled.MoreVert,"More options for ${song.title}") }
-                                DropdownMenu(expanded=menu,onDismissRequest={menu=false}) {
-                                    DropdownMenuItem(text={Text(if(favorite==true)"Remove from favorites" else "Add to favorites")},enabled=favorite!=null,
-                                        onClick={val selected=favorite!=true;menu=false;personalScope.launch {
-                                            val success=withContext(NonCancellable+Dispatchers.IO){personal.setFavorite(song.id,selected)}
-                                            LocalLibrary.status=if(success)"Favorites updated." else "The favorite could not be changed."
-                                        }})
-                                    DropdownMenuItem(text={Text("Add to playlist")},onClick={menu=false;onPlaylistSong(song.id)})
-                                    DropdownMenuItem(text={Text("Play next")},onClick={ menu=false;onPlayNext(song.id) {
-                                        LocalLibrary.status=if(it)"${song.title} will play next." else "The song could not be added. Check folder access and the queue limit."
-                                    } })
-                                    DropdownMenuItem(text={Text("Add to queue")},onClick={ menu=false;onAdd(song.id) {
-                                        LocalLibrary.status=if(it)"Added ${song.title} to the queue." else "The song could not be added. Check folder access and the queue limit."
-                                    } })
+                            Column(Modifier.weight(1f).padding(start = if (albumTrack) 0.dp else 12.dp)) {
+                                Text(song.title, style = EvannaDesign.typography.bodyLarge, fontWeight = FontWeight.Medium,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                val subtitle = if (albumTrack) song.artist else listOfNotNull(song.artist, song.album).joinToString(" · ")
+                                subtitle?.takeIf { it.isNotBlank() }?.let {
+                                    Text(it, style = EvannaDesign.typography.bodyMedium, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
+                                if (!song.available || !compactRow) Text(if (!song.available) "Unavailable · reconnect or rescan the folder" else
+                                    "${song.codec ?: "Unknown format"} · ${song.rate?.let { "$it Hz" } ?: "rate unknown"} · ${duration ?: "Duration unknown"}",
+                                    style = EvannaDesign.typography.bodySmall, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
+                            if (compactRow && duration != null) Text(duration,
+                                style = if (studio) EvannaType.technical else EvannaDesign.typography.labelSmall, color = muted,
+                                maxLines = 1, modifier = Modifier.padding(start = 6.dp))
                         }
                         if (studio) HorizontalDivider(color = EvannaDesign.colorScheme.outlineVariant.copy(alpha = 0.32f))
                     }
@@ -622,7 +652,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
             if (shown.total == 0 && !loading) line {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     val noFolders = shown.roots.isEmpty()
-                    val noMatches = !noFolders && search.isNotBlank()
+                    val noMatches = !noFolders && filter.search.isNotBlank()
                     Text(when {
                         noFolders -> "No music folders yet"
                         noMatches -> "No matching $resultLabel"
@@ -635,7 +665,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                         noMatches -> "Try another search or clear the query."
                         else -> "New music appears after your folders are scanned."
                     }, style = EvannaDesign.typography.bodyMedium, color = muted)
-                    if (noMatches) TextButton(onClick = { search = "" }) { Text("Clear query") }
+                    if (noMatches) TextButton(onClick = { updateSearch("") }) { Text("Clear query") }
                 }
             }
             if (shown.total == 0 && !loading && shown.roots.isEmpty() && !searchMode && kind == null && view != LibraryView.FOLDERS) line { Box {
@@ -647,6 +677,11 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
             } }
         }
     }
+    }
+    if (albumDetail) {
+        val colors = EvannaDesign.colorScheme
+        Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars)
+            .alpha(if (scroll.canScrollBackward) 1f else 0f).background(colors.background))
     }
     // As in the mockup the bar sits 2 dp from the screen edge, 14 dp into the page margin, with the letters 16 dp in.
     if(alphabetic && shown?.total!=0)AlphabeticIndex({rowsTop.intValue},

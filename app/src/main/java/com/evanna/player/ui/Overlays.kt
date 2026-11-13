@@ -28,7 +28,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.isFinite
@@ -36,6 +35,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -131,9 +132,11 @@ private class MenuPosition(
 }
 
 internal const val MENU_SURFACE_ALPHA = 0.84f
+private val MenuItemInset = 4.dp
 
 @Composable
 internal fun DropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit, modifier: Modifier = Modifier,
+    shape: Shape = EvannaDesign.shapes.medium, border: BorderStroke = evannaHairline(0.6f),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val visibility = remember { MutableTransitionState(false) }
@@ -154,9 +157,9 @@ internal fun DropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit, modif
                 scaleX = 0.72f + 0.28f * progress
                 scaleY = scaleX
             }.then(if (expanded) Modifier else Modifier.clearAndSetSemantics {}.blockTouches()),
-            shape = EvannaDesign.shapes.medium,
+            shape = shape,
             color = EvannaDesign.colorScheme.surfaceContainerHigh.copy(alpha = MENU_SURFACE_ALPHA),
-            border = evannaHairline(0.6f), shadowElevation = 8.dp) {
+            border = border, shadowElevation = 8.dp) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 6.dp), content = content)
         }
     }
@@ -164,14 +167,18 @@ internal fun DropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit, modif
 
 @Composable
 internal fun DropdownMenuItem(text: @Composable () -> Unit, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
-    selected: Boolean? = null,
+    selected: Boolean? = null, leadingIcon: (@Composable () -> Unit)? = null,
 ) {
     val ink = EvannaDesign.colorScheme.onSurface
     val action = if (selected == null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick)
         else Modifier.selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
-    Row(modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 4.dp).clip(RoundedCornerShape(22.dp))
+    val shape = if (selected == null) RoundedCornerShape(22.dp) else EvannaDesign.shapes.small
+    Row(modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = MenuItemInset).clip(shape)
         .then(action).padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         CompositionLocalProvider(LocalContentColor provides if (enabled) ink else ink.copy(alpha = 0.38f)) {
+            if (leadingIcon != null) Box(Modifier.padding(end = 12.dp).size(20.dp), contentAlignment = Alignment.Center) {
+                leadingIcon()
+            }
             Box(Modifier.weight(1f)) { ProvideTextStyle(EvannaDesign.typography.bodyMedium, text) }
             if (selected != null) Box(Modifier.padding(start = 8.dp).size(18.dp), contentAlignment = Alignment.Center) {
                 if (selected) Icon(Icons.Filled.Check, contentDescription = null)
@@ -190,15 +197,17 @@ internal fun <T : Any> DropdownChoices(options: List<T>, selected: T?, expanded:
     LaunchedEffect(expanded) { if (expanded) tapped = null }
     val target = (if (expanded) selected else tapped ?: selected)?.let { bounds[it] }
     val color = EvannaDesign.colorScheme.onSurface.copy(alpha = SELECTION_PILL_ALPHA)
+    val shape = EvannaDesign.shapes.small
     val marker = if (target == null) Modifier else {
         val top by animateFloatAsState(target.first, EvannaMotion.exit, label = "menu selection position")
         val height by animateFloatAsState(target.second, EvannaMotion.exit, label = "menu selection height")
         Modifier.drawBehind {
-            val inset = 4.dp.toPx()
+            val inset = MenuItemInset.toPx()
             val gap = 2.dp.toPx()
             val width = (size.width - 2 * inset).coerceAtLeast(0f)
-            val pillHeight = (height - 2 * gap).coerceAtLeast(0f)
-            drawRoundRect(color, Offset(inset, top + gap), Size(width, pillHeight), CornerRadius(minOf(22.dp.toPx(), width / 2f, pillHeight / 2f)))
+            val highlightHeight = (height - 2 * gap).coerceAtLeast(0f)
+            val outline = shape.createOutline(Size(width, highlightHeight), layoutDirection, this)
+            translate(left = inset, top = top + gap) { drawOutline(outline, color) }
         }
     }
     Column(Modifier.then(marker).selectableGroup()) {

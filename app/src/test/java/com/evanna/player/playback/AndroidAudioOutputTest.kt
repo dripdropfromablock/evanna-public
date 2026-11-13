@@ -186,8 +186,11 @@ class AndroidAudioOutputTest {
             override fun close() = Unit
         }
         try {
-            assertTrue(owner.openAndroid()); assertFalse(owner.play()); assertEquals(0, opens)
-            assertTrue(owner.selectTrack { track }); assertTrue(owner.openAndroid()); assertTrue(owner.play())
+            assertFalse(owner.play())
+            assertEquals(0, opens)
+            assertNull(owner.snapshot.value.route)
+            val song = QueueSource(null, "Android track", null, null, null) { track }
+            assertTrue(owner.libraryContext { ContextQueue(listOf(song), 0) })
             val end = withTimeout(5000) { owner.snapshot.first { it.state in listOf(UsbPlaybackState.ENDED, UsbPlaybackState.ERROR) } }
             assertEquals(UsbPlaybackState.ENDED, end.state)
             assertEquals(PlaybackRoute.ANDROID, end.route)

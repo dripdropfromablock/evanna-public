@@ -18,6 +18,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -54,7 +55,9 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
@@ -156,37 +159,64 @@ internal fun SettingsLink(label: String, subtitle: String? = null, icon: ImageVe
  */
 @Composable
 internal fun MiniPlayer(state: PlayerPresentation, cover: Bitmap?, onOpen: () -> Unit, onPlayPause: () -> Unit,
-    onNext: () -> Unit, onOutput: () -> Unit, motion: PlayerSheetMotion, flying: Boolean, onOpenChange: (Boolean) -> Unit,
+    onPrevious: () -> Unit, onNext: () -> Unit, onOutput: () -> Unit,
+    motion: PlayerSheetMotion, flying: Boolean, onOpenChange: (Boolean) -> Unit,
 ) {
     if (!state.hasSong) return
     val look = LocalLookStyle.current.look
     val colors = EvannaDesign.colorScheme
     val shape = RoundedCornerShape(50)
     val border = evannaHairline(if (look.dark) 0.62f else 0.70f)
+    val openPress = remember { MutableInteractionSource() }
+    val canPrevious = state.connected && state.canPrevious
+    val canNext = state.connected && state.canNext
+    val previous by rememberUpdatedState(onPrevious)
+    val next by rememberUpdatedState(onNext)
     Surface(Modifier.fillMaxWidth(),
         shape = shape, color = if (look.dark) colors.surfaceContainerLow.copy(alpha = 0.94f) else colors.surfaceContainerHigh,
         border = border, shadowElevation = 6.dp) {
         val rowHeight = 56.dp
         Row(Modifier.heightIn(min = rowHeight).padding(end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f).heightIn(min = rowHeight).playerPull(motion, false, state.id, onOpenChange)
-                .clickable(onClick = onOpen).semantics { contentDescription = "Open Now Playing" }
+                .pointerInput(state.id, canPrevious, canNext) {
+                    if (!canPrevious && !canNext) return@pointerInput
+                    var distance = 0f
+                    val threshold = 40.dp.toPx()
+                    detectHorizontalDragGestures(
+                        onDragStart = { distance = 0f },
+                        onHorizontalDrag = { _, delta -> distance += delta },
+                        onDragEnd = {
+                            if (distance <= -threshold && canNext) next()
+                            if (distance >= threshold && canPrevious) previous()
+                        },
+                    )
+                }
+                .controlFocus(openPress, shape)
+                .clickable(openPress, indication = null, onClick = onOpen).semantics {
+                    contentDescription = "Open Now Playing"
+                    customActions = buildList {
+                        if (canPrevious) add(CustomAccessibilityAction("Previous track") { onPrevious(); true })
+                        if (canNext) add(CustomAccessibilityAction("Next track") { onNext(); true })
+                    }
+                }
                 .padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 ArtworkImage(cover, Modifier.size(38.dp).dockingCover(motion, flying, mini = true)
                     .shadow(2.dp, RoundedCornerShape(8.dp)), RoundedCornerShape(8.dp))
-                Column(Modifier.padding(start = 10.dp, top = 4.dp, bottom = 4.dp)) {
+                Column(Modifier.padding(start = 10.dp, top = 4.dp, bottom = 4.dp).pressScale(openPress)) {
                     Text(state.title.ifBlank { "Local audio file" }, style = EvannaDesign.typography.bodyLarge.copy(fontSize = 15.sp, lineHeight = 20.sp),
                         fontWeight = if (look.apple) FontWeight.Medium else FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (!state.artist.isNullOrBlank()) Text(state.artist,
                         style = EvannaDesign.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            if (state.route == "NONE") TextButton(onClick = onOutput, enabled = state.connected, modifier = Modifier.heightIn(min = 48.dp)) { Text("Output") }
+            if (state.route == "NONE" && !state.canPlayPause) TextButton(onClick = onOutput, enabled = state.connected, modifier = Modifier.heightIn(min = 48.dp)) { Text("Output") }
             else {
                 IconButton(onClick = onPlayPause, enabled = state.connected && state.canPlayPause,
-                    modifier = Modifier.semantics { contentDescription = if (state.playing) "Pause playback" else "Play playback" }) {
+                    modifier = Modifier.size(48.dp).semantics { contentDescription = if (state.playing) "Pause playback" else "Play playback" }) {
                     Icon(if (state.playing) PlayerIcons.Pause else Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(26.dp))
                 }
-                IconButton(onClick = onNext, enabled = state.connected && state.canNext, modifier = Modifier.semantics { contentDescription = "Next" }) {
+                IconButton(onClick = onNext, enabled = canNext,
+                    modifier = Modifier.size(48.dp).semantics { contentDescription = "Next" }) {
                     Icon(PlayerIcons.Next, contentDescription = null, modifier = Modifier.size(26.dp))
                 }
             }
@@ -216,11 +246,15 @@ internal fun PlayerDock(selected: PlayerScreen, onSelect: (PlayerScreen) -> Unit
                 }
                 Surface(Modifier.size(56.dp), shape = CircleShape, color = surface, border = border, shadowElevation = 6.dp) {
                     val searchSelected = selected == PlayerScreen.SEARCH
+                    val interaction = remember { MutableInteractionSource() }
                     val searchOpacity by animateFloatAsState(if (searchSelected) 1f else 0f, EvannaMotion.enter, label = "search selection opacity")
                     Box(Modifier.fillMaxSize().drawBehind { drawCircle(colors.onSurface.copy(alpha = SELECTION_PILL_ALPHA * searchOpacity)) }
-                        .selectable(selected = searchSelected, role = Role.Tab, onClick = { onSelect(PlayerScreen.SEARCH) })
+                        .controlFocus(interaction, CircleShape)
+                        .selectable(selected = searchSelected, interactionSource = interaction, indication = null,
+                            role = Role.Tab, onClick = { onSelect(PlayerScreen.SEARCH) })
                         .semantics { text = AnnotatedString("Search") }, contentAlignment = Alignment.Center) {
-                        Icon(searchIcon, contentDescription = null, tint = if (searchSelected) colors.primary else colors.onSurfaceVariant)
+                        Icon(searchIcon, contentDescription = null, modifier = Modifier.pressScale(interaction),
+                            tint = if (searchSelected) colors.primary else colors.onSurfaceVariant)
                     }
                 }
             }
@@ -276,10 +310,13 @@ private fun DockTabs(selected: PlayerScreen, onSelect: (PlayerScreen) -> Unit,
         for ((tab, label, icon) in tabs) {
             val on = tab == selected
             val tint = if (on && !look.apple) colors.primary else if (on) colors.onSurface else colors.onSurfaceVariant
+            val interaction = remember(tab) { MutableInteractionSource() }
             Column(Modifier.weight(1f).heightIn(min = 48.dp).clip(tabShape)
-                .selectable(selected = on, role = Role.Tab, onClick = { onSelect(tab) }).padding(vertical = 3.dp),
+                .controlFocus(interaction, tabShape)
+                .selectable(selected = on, interactionSource = interaction, indication = null,
+                    role = Role.Tab, onClick = { onSelect(tab) }).padding(vertical = 3.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Icon(icon, contentDescription = null, tint = if (on) colors.primary else tint, modifier = Modifier.size(24.dp))
+                Icon(icon, contentDescription = null, tint = if (on) colors.primary else tint, modifier = Modifier.size(24.dp).pressScale(interaction))
                 Spacer(Modifier.height(3.dp))
                 Text(label, style = EvannaDesign.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 13.sp),
                     fontWeight = FontWeight.Medium, color = tint, maxLines = 1, overflow = TextOverflow.Ellipsis)

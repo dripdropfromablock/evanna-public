@@ -237,7 +237,9 @@ internal object EvannaDesign {
 
 /** Now Playing sits on the dark cover backdrop in every look, so it always uses a dark scheme with the look's accent. */
 internal fun playerColorScheme(look: EvannaLook, artwork: Color?) =
-    (if (look.apple) AppleDarkColors else EvannaColors).withArtwork(artwork, dark = true, filledChips = look.apple)
+    (if (look.apple) AppleDarkColors else EvannaColors).withArtwork(
+        artwork, dark = true, filledChips = look.apple, surfaceTint = 0.18f,
+    )
 
 @Composable
 internal fun ProvideEvannaColors(colors: EvannaPalette, content: @Composable () -> Unit) {
