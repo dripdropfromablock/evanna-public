@@ -8,6 +8,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -26,6 +28,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onPlaced
@@ -165,6 +168,11 @@ private fun StopRow(stop: SoundStop, modifier: Modifier, lift: androidx.compose.
     var open by rememberSaveable(stop.kind) { mutableStateOf(false) }
     val canOpen = stop.details.isNotEmpty()
     val turn by animateFloatAsState(if (open) 180f else 0f, EvannaMotion.enter, label = "chevron")
+    // No press highlight: a press sinks the row and its disc a little instead, and they spring back on release.
+    val press = remember { MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    val rowPress by animateFloatAsState(if (pressed) 0.97f else 1f, EvannaMotion.press, label = "stop press")
+    val discPress by animateFloatAsState(if (pressed) 0.88f else 1f, EvannaMotion.press, label = "disc press")
     val (disc, ink) = when (stop.state) {
         StopState.CHANGED -> colors.primary to colors.onPrimary
         StopState.PROBLEM -> ProblemAmber to OnProblemAmber
@@ -173,7 +181,7 @@ private fun StopRow(stop: SoundStop, modifier: Modifier, lift: androidx.compose.
     Row(modifier.fillMaxWidth()) {
         Box(Modifier.padding(top = 12.dp).size(40.dp).graphicsLayer {
             val l = lift()
-            scaleX = 1f + 0.1f * l; scaleY = scaleX
+            scaleX = (1f + 0.1f * l) * discPress; scaleY = scaleX
         }.background(disc, CircleShape).then(if (stop.state == StopState.SAME || stop.state == StopState.END)
             Modifier.drawBehind { drawCircle(colors.onSurface.copy(alpha = if (stop.state == StopState.END) 0.16f else 0.28f), style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx())) }
             else Modifier), contentAlignment = Alignment.Center) {
@@ -182,7 +190,10 @@ private fun StopRow(stop: SoundStop, modifier: Modifier, lift: androidx.compose.
         }
         Column(Modifier.weight(1f).padding(start = 14.dp)) {
             Row(Modifier.fillMaxWidth().heightIn(min = 64.dp)
-                .then(if (canOpen) Modifier.clickable(role = Role.Button, onClickLabel = if (open) "Hide details" else "Show details") { open = !open } else Modifier)
+                .graphicsLayer { scaleX = rowPress; scaleY = rowPress; transformOrigin = TransformOrigin(0f, 0.5f) }
+                .then(if (canOpen) Modifier.controlFocus(press, RoundedCornerShape(12.dp))
+                    .clickable(press, indication = null, role = Role.Button, onClickLabel = if (open) "Hide details" else "Show details") { open = !open }
+                    else Modifier)
                 .semantics { if (stop.state == StopState.CHANGED) stateDescription = "Changed" else if (stop.state == StopState.PROBLEM) stateDescription = "Problem" }
                 .padding(top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
