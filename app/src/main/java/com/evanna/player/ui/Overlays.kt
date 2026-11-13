@@ -4,7 +4,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -20,38 +19,34 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.isFinite
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.drawOutline
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onPlaced
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.dismiss
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -59,6 +54,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
@@ -67,8 +63,11 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.evanna.player.EvannaDesign
 import com.evanna.player.EvannaMotion
+import com.evanna.player.LocalLookStyle
+import com.evanna.player.PlayerIcons
 import com.evanna.player.blockTouches
 import com.evanna.player.evannaHairline
+import com.evanna.player.ui.glass.rimColors
 
 @Composable
 internal fun Surface(modifier: Modifier = Modifier, shape: Shape = RectangleShape,
@@ -132,12 +131,32 @@ private class MenuPosition(
     }
 }
 
-internal const val MENU_SURFACE_ALPHA = 0.84f
-private val MenuItemInset = 4.dp
+/** Menus are opaque: a popup window can't blur the page behind it, and even 3% see-through lets list text ghost through. */
+internal const val MENU_SURFACE_ALPHA = 1f
+private val MenuItemInset = 6.dp
+private val MenuShape = RoundedCornerShape(24.dp).continuous()
+private val MenuRowShape = RoundedCornerShape(16.dp).continuous()
+private val MenuCheckWidth = 28.dp
+/** iOS menu text: 17 sp with slightly tight tracking. */
+private val MenuText = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.2).sp)
 
+/** True in a menu that has choices: every row keeps the leading checkmark column, so all the text lines up. */
+private val LocalMenuChecks = staticCompositionLocalOf { false }
+
+/** The rim light along a menu's edge, as on the frosted glass dock. */
+@Composable
+internal fun menuRim(): BorderStroke {
+    val dark = LocalLookStyle.current.look.dark
+    return remember(dark) { rimColors(dark).let { (top, bottom) -> BorderStroke(1.dp, Brush.verticalGradient(listOf(top, bottom))) } }
+}
+
+/**
+ * An iOS pull-down menu: a frosted, round-cornered panel that grows out of the button that opened it. Pass [checkmarks]
+ * when it holds [DropdownChoices], so the chosen row's leading checkmark has a column every row shares.
+ */
 @Composable
 internal fun DropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit, modifier: Modifier = Modifier,
-    shape: Shape = EvannaDesign.shapes.medium, border: BorderStroke = evannaHairline(0.6f),
+    shape: Shape = MenuShape, border: BorderStroke = menuRim(), checkmarks: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val visibility = remember { MutableTransitionState(false) }
@@ -151,7 +170,7 @@ internal fun DropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit, modif
     val chevronInset = with(LocalDensity.current) { 24.dp.roundToPx() }
     val position = remember(chevronInset) { MenuPosition(chevronInset) { origin = it } }
     Popup(position, onDismissRequest = { if (expanded) onDismissRequest() }, properties = PopupProperties(focusable = expanded)) {
-        Surface(modifier.widthIn(min = 128.dp, max = 304.dp).width(IntrinsicSize.Max).heightIn(max = 360.dp)
+        Surface(modifier.widthIn(min = 220.dp, max = 300.dp).width(IntrinsicSize.Max).heightIn(max = 420.dp)
             .graphicsLayer {
                 transformOrigin = origin
                 alpha = progress
@@ -160,61 +179,65 @@ internal fun DropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit, modif
             }.then(if (expanded) Modifier else Modifier.clearAndSetSemantics {}.blockTouches()),
             shape = shape,
             color = EvannaDesign.colorScheme.surfaceContainerHigh.copy(alpha = MENU_SURFACE_ALPHA),
-            border = border, shadowElevation = 8.dp) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 6.dp), content = content)
+            border = border, shadowElevation = 16.dp) {
+            CompositionLocalProvider(LocalMenuChecks provides checkmarks) {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp), content = content)
+            }
         }
     }
 }
 
+/**
+ * One menu row, as iOS draws it: 17 sp text, a checkmark before the chosen option, the icon after the text.
+ * [destructive] rows are red, like Remove.
+ */
 @Composable
 internal fun DropdownMenuItem(text: @Composable () -> Unit, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
-    selected: Boolean? = null, leadingIcon: (@Composable () -> Unit)? = null,
+    selected: Boolean? = null, icon: ImageVector? = null, destructive: Boolean = false,
 ) {
-    val ink = EvannaDesign.colorScheme.onSurface
+    val dark = LocalLookStyle.current.look.dark
+    val base = if (destructive) AppleColors.red(dark) else EvannaDesign.colorScheme.onSurface
     val action = if (selected == null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick)
         else Modifier.selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
-    val shape = if (selected == null) RoundedCornerShape(22.dp) else EvannaDesign.shapes.small
-    Row(modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = MenuItemInset).clip(shape)
-        .then(action).padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        CompositionLocalProvider(LocalContentColor provides if (enabled) ink else ink.copy(alpha = 0.38f)) {
-            if (leadingIcon != null) Box(Modifier.padding(end = 12.dp).size(20.dp), contentAlignment = Alignment.Center) {
-                leadingIcon()
-            }
-            Box(Modifier.weight(1f)) { ProvideTextStyle(EvannaDesign.typography.bodyMedium, text) }
-            if (selected != null) Box(Modifier.padding(start = 8.dp).size(18.dp), contentAlignment = Alignment.Center) {
-                if (selected) Icon(Icons.Filled.Check, contentDescription = null)
-            }
+    Row(modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = MenuItemInset).clip(MenuRowShape)
+        .then(action).padding(start = 10.dp, end = 14.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        CompositionLocalProvider(LocalContentColor provides if (enabled) base else base.copy(alpha = 0.38f)) {
+            if (selected != null || LocalMenuChecks.current) Box(Modifier.width(MenuCheckWidth)) {
+                if (selected == true) Icon(PlayerIcons.Check, contentDescription = null, modifier = Modifier.size(17.dp))
+            } else Spacer(Modifier.width(6.dp))
+            Box(Modifier.weight(1f)) { ProvideTextStyle(MenuText, text) }
+            if (icon != null) Icon(icon, contentDescription = null, modifier = Modifier.padding(start = 16.dp).size(21.dp))
         }
     }
 }
 
+/** A thin line between groups of menu rows. */
+@Composable
+internal fun MenuDivider() {
+    Box(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().height(0.5.dp)
+        .background(AppleColors.separator(LocalLookStyle.current.look.dark)))
+}
+
+/** A small gray title over a group of menu rows, lined up with their text. */
+@Composable
+internal fun MenuSectionTitle(text: String) {
+    val start = MenuItemInset + 10.dp + if (LocalMenuChecks.current) MenuCheckWidth else 6.dp
+    Text(text, style = EvannaDesign.typography.labelMedium, fontSize = 13.sp, color = EvannaDesign.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = start, end = 16.dp, top = 4.dp, bottom = 2.dp).semantics { heading() })
+}
+
+/** Menu rows for a set of options; the chosen one carries a checkmark. Use in a menu opened with checkmarks = true. */
 @Composable
 internal fun <T : Any> DropdownChoices(options: List<T>, selected: T?, expanded: Boolean, onSelect: (T) -> Unit, enabled: Boolean = true,
     text: @Composable (T) -> Unit,
 ) {
-    val bounds = remember(options) { mutableStateMapOf<T, Pair<Float, Float>>() }
-    // Keep the exit responsive even if the choice is saved asynchronously.
+    // Keep the checkmark on the tapped row while the menu closes, even if the choice is saved asynchronously.
     var tapped by remember(options) { mutableStateOf<T?>(null) }
     LaunchedEffect(expanded) { if (expanded) tapped = null }
-    val target = (if (expanded) selected else tapped ?: selected)?.let { bounds[it] }
-    val color = EvannaDesign.colorScheme.onSurface.copy(alpha = SELECTION_PILL_ALPHA)
-    val shape = EvannaDesign.shapes.small
-    val marker = if (target == null) Modifier else {
-        val top by animateFloatAsState(target.first, EvannaMotion.exit, label = "menu selection position")
-        val height by animateFloatAsState(target.second, EvannaMotion.exit, label = "menu selection height")
-        Modifier.drawBehind {
-            val inset = MenuItemInset.toPx()
-            val gap = 2.dp.toPx()
-            val width = (size.width - 2 * inset).coerceAtLeast(0f)
-            val highlightHeight = (height - 2 * gap).coerceAtLeast(0f)
-            val outline = shape.createOutline(Size(width, highlightHeight), layoutDirection, this)
-            translate(left = inset, top = top + gap) { drawOutline(outline, color) }
-        }
-    }
-    Column(Modifier.then(marker).selectableGroup()) {
+    val shown = if (expanded) selected else tapped ?: selected
+    Column(Modifier.selectableGroup()) {
         for (option in options) key(option) {
-            DropdownMenuItem(text = { text(option) }, selected = selected == option, enabled = enabled,
-                modifier = Modifier.onPlaced { bounds[option] = it.positionInParent().y to it.size.height.toFloat() },
+            DropdownMenuItem(text = { text(option) }, selected = shown == option, enabled = enabled,
                 onClick = { tapped = option; onSelect(option) })
         }
     }

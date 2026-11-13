@@ -32,7 +32,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -40,10 +39,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import com.evanna.player.ui.*
@@ -1217,11 +1213,9 @@ class MainActivity : ComponentActivity() {
         false
     }
 
-    @OptIn(ExperimentalLayoutApi::class)
     @Composable
     private fun SettingsScreen(page: PlayerScreen, onBack: (() -> Unit)?, bottomInset: Dp, onNotices: () -> Unit) {
-        val colors = EvannaDesign.colorScheme
-        val muted = colors.onSurfaceVariant
+        val muted = EvannaDesign.colorScheme.onSurfaceVariant
         var settingsQuery by rememberSaveable { mutableStateOf("") }
         var showMusicFolders by rememberSaveable { mutableStateOf(false) }
         val profile=dacProfileKey
@@ -1232,60 +1226,37 @@ class MainActivity : ComponentActivity() {
             PlayerScreen.SETTINGS_TOOLS -> "Diagnostics and notices"
             else -> "Settings"
         }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp + bottomInset)) {
+        // iOS inset-grouped Settings: each item is one group with its header above and its notes below.
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(24.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp + bottomInset)) {
             item {
-                if (onBack != null) ScreenHeader(title, onBack)
-                else Text("Settings", style = EvannaDesign.typography.headlineSmall, fontSize = 34.sp,
-                    lineHeight = 40.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 24.dp).semantics { heading() })
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (onBack != null) ScreenHeader(title, onBack)
+                    else Text("Settings", style = EvannaDesign.typography.headlineSmall, fontSize = 34.sp,
+                        lineHeight = 40.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 24.dp).semantics { heading() })
+                    if (page == PlayerScreen.OUTPUT) SearchField(settingsQuery, { settingsQuery = it.take(120) }, "Search settings",
+                        Modifier.fillMaxWidth(), clearLabel = "Clear settings search")
+                }
             }
             if (page == PlayerScreen.OUTPUT) {
-                val panelFill = colors.surfaceContainer.copy(alpha = 0.74f)
-                item {
-                    val shape = EvannaDesign.shapes.small
-                    TextField(settingsQuery, { settingsQuery = it.take(120) },
-                        modifier = Modifier.fillMaxWidth().border(evannaHairline(0.6f), shape),
-                        label = "Search settings", leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                        trailingIcon = if (settingsQuery.isNotEmpty()) ({
-                            IconButton(onClick = { settingsQuery = "" }) { Icon(Icons.Filled.Clear, "Clear settings search") }
-                        }) else null,
-                        shape = shape, colors = fieldColors(
-                            focused = colors.surfaceContainerHigh.copy(alpha = 0.86f), unfocused = panelFill))
-                }
+                val query = settingsQuery.trim()
                 val sections = listOf(
                     "Audio" to listOf(
-                        Triple("Audio output and USB", routeLabel(outputRoute), PlayerScreen.AUDIO_OUTPUT),
-                        Triple("Equalizer", "Graphic and parametric, on every output", PlayerScreen.EQUALIZER),
+                        SettingsEntry("Audio output and USB", null, routeLabel(outputRoute), PlayerScreen.AUDIO_OUTPUT, PlayerIcons.VolumeUp, TilePink),
+                        SettingsEntry("Equalizer", "Graphic and parametric, on every output", null, PlayerScreen.EQUALIZER, PlayerIcons.Pipeline, TileOrange),
                     ),
                     "App" to listOf(
-                        Triple("Library settings", "Manage folders and open files", PlayerScreen.LIBRARY_SETTINGS),
-                        Triple("Appearance", look.label, PlayerScreen.APPEARANCE),
-                        Triple("Diagnostics and notices", "Signal status, file checks and licenses", PlayerScreen.SETTINGS_TOOLS),
+                        SettingsEntry("Library settings", "Manage folders and open files", null, PlayerScreen.LIBRARY_SETTINGS, musicNote, TilePurple),
+                        SettingsEntry("Appearance", null, look.label, PlayerScreen.APPEARANCE, PlayerIcons.Appearance, TileBlue),
+                        SettingsEntry("Diagnostics and notices", "Signal status, file checks and licenses", null, PlayerScreen.SETTINGS_TOOLS,
+                            PlayerIcons.Pulse, TileGray),
                     ),
-                ).map { (heading, rows) ->
-                    heading to rows.filter { (label, subtitle) ->
-                        label.contains(settingsQuery.trim(), ignoreCase = true) || subtitle.contains(settingsQuery.trim(), ignoreCase = true)
-                    }
-                }.filter { it.second.isNotEmpty() }
-                if (sections.isEmpty()) item { Text("No matching settings", color = muted) }
+                ).map { (heading, rows) -> heading to rows.filter { it.matches(query) } }.filter { it.second.isNotEmpty() }
+                if (sections.isEmpty()) item { Text("No matching settings", color = muted, modifier = Modifier.padding(horizontal = 16.dp)) }
                 for ((heading, rows) in sections) item(key = heading) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(heading, style = EvannaDesign.typography.labelMedium, color = muted,
-                            modifier = Modifier.semantics { heading() })
-                        Surface(shape = EvannaDesign.shapes.small, color = panelFill, border = evannaHairline(0.6f)) {
-                            Column(Modifier.padding(horizontal = 12.dp)) {
-                                rows.forEachIndexed { index, (label, subtitle, target) ->
-                                    if (index > 0) HorizontalDivider(color = muted.copy(alpha = 0.15f))
-                                    val icon = when (target) {
-                                        PlayerScreen.AUDIO_OUTPUT -> PlayerIcons.VolumeUp
-                                        PlayerScreen.EQUALIZER -> PlayerIcons.Pipeline
-                                        PlayerScreen.LIBRARY_SETTINGS -> musicNote
-                                        PlayerScreen.APPEARANCE -> Icons.Filled.Settings
-                                        else -> null
-                                    }
-                                    SettingsLink(label, subtitle, icon) { navigate(target) }
-                                }
-                            }
+                    SettingsSection(heading, separatorInset = SettingsTileInset) {
+                        for (entry in rows) row(entry.target) {
+                            SettingsLink(entry.label, entry.note, entry.icon, entry.tile, entry.value) { navigate(entry.target) }
                         }
                     }
                 }
@@ -1300,217 +1271,208 @@ class MainActivity : ComponentActivity() {
                 }
             }
             if (page == PlayerScreen.AUDIO_OUTPUT) {
-                item { SettingsCard("Check your DAC") {
-                    Text("Direct USB sends music to your DAC and checks its volume before playback.", color = muted)
-                    Text(message, color = EvannaDesign.colorScheme.primary)
-                    if (suggestAndroidAudio(outputRoute, usbDrops, dacProfileKey, keptDirectUsb)) {
-                        Text("This phone's USB lost ${usbDrops?.second} packets of sound, which can sound like slight distortion. " +
-                            "Android audio may sound cleaner on this phone${if (androidBitPerfect) "." else ", but it converts the audio."}")
-                        OutlinedButton(onClick = { selectAndroidOutput(androidBitPerfect) }, enabled = mediaController != null,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Use Android audio") }
-                        TextButton(onClick = ::keepDirectUsb, modifier = Modifier.heightIn(min = 48.dp)) { Text("Keep Direct USB") }
-                    }
-                    OutlinedButton(onClick = ::refreshDevices, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh devices") }
-                    if (devices.isEmpty()) Text("No USB audio device found. Connect your DAC, then refresh.")
-                    for (state in devices) Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = selectedId == state.device.deviceId,
-                            onClick = { selectedId = state.device.deviceId },
-                            enabled = pending == null,
-                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).semantics {
-                                contentDescription = "Select USB audio connection ${state.device.deviceId}"
-                            },
-                        )
-                        Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                            Text(state.device.dacIdentity().displayName, style = EvannaDesign.typography.titleSmall)
-                            Text("VID %04X · PID %04X".format(state.device.vendorId, state.device.productId), style = EvannaDesign.typography.bodySmall, color = muted)
-                            Text("Connection ${state.device.deviceId}", style = EvannaDesign.typography.bodySmall, color = muted)
-                            Text(if (state.permitted) "Access allowed" else "Access needed", style = EvannaDesign.typography.bodySmall)
+                item(key = "dac") {
+                    SettingsSection("Check your DAC", footer = "Direct USB sends music to your DAC and checks its volume before playback.",
+                        choices = true) {
+                        row("status") { SettingsCell { Text(message, style = RowTitleStyle) } }
+                        if (suggestAndroidAudio(outputRoute, usbDrops, dacProfileKey, keptDirectUsb)) {
+                            row("drops") { SettingsCell {
+                                Text("This phone's USB lost ${usbDrops?.second} packets of sound, which can sound like slight distortion. " +
+                                    "Android audio may sound cleaner on this phone${if (androidBitPerfect) "." else ", but it converts the audio."}",
+                                    style = EvannaDesign.typography.bodyMedium)
+                            } }
+                            row("drops-android") {
+                                ActionRow("Use Android audio", enabled = mediaController != null) { selectAndroidOutput(androidBitPerfect) }
+                            }
+                            row("drops-keep") { ActionRow("Keep Direct USB", onClick = ::keepDirectUsb) }
+                        }
+                        row("refresh") { ActionRow("Refresh devices", onClick = ::refreshDevices) }
+                        if (devices.isEmpty()) row("none") { SettingsCell {
+                            Text("No USB audio device found. Connect your DAC, then refresh.", style = RowNoteStyle, color = muted)
+                        } }
+                        for (state in devices) row(state.device.deviceId) {
+                            CheckRow(state.device.dacIdentity().displayName, selectedId == state.device.deviceId, enabled = pending == null,
+                                note = "VID %04X · PID %04X".format(state.device.vendorId, state.device.productId),
+                                extra = listOf("Connection ${state.device.deviceId}", if (state.permitted) "Access allowed" else "Access needed"),
+                            ) { selectedId = state.device.deviceId }
+                        }
+                        row("access") {
+                            ActionRow(if (pending != null) "Waiting for access…" else "Allow USB access",
+                                enabled = selectedId != null && pending == null, onClick = ::requestAccess)
+                        }
+                        row("use") {
+                            ActionRow(if (activeDacId != null && activeDacId == selectedId) "DAC selected" else "Use DAC",
+                                enabled = mediaController != null && !playing && devices.any { it.device.deviceId == selectedId && it.permitted } &&
+                                    activeDacId != selectedId, onClick = ::checkPlaybackReadiness)
                         }
                     }
-                    Button(
-                        onClick = ::requestAccess,
-                        enabled = selectedId != null && pending == null,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    ) { Text(if (pending != null) "Waiting for access…" else "Allow USB access") }
-                    Button(onClick=::checkPlaybackReadiness,enabled=mediaController!=null && !playing &&
-                        devices.any {it.device.deviceId==selectedId && it.permitted} && activeDacId!=selectedId,
-                        modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)) {Text(if(activeDacId!=null && activeDacId==selectedId)"DAC selected" else "Use DAC")}
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Connect and play when plugged in", style = EvannaDesign.typography.titleSmall)
-                            Text("Resume your queue at the saved starting volume on a known DAC. New DACs ask first.",
-                                style = EvannaDesign.typography.bodySmall, color = muted)
+                }
+                item(key = "auto-connect") {
+                    SettingsSection(footer = "Resume your queue at the saved starting volume on a known DAC. New DACs ask first.") {
+                        row { SwitchRow("Connect and play when plugged in", checked = autoConnectEnabled, onChange = ::chooseAutoConnect) }
+                    }
+                }
+                item(key = "route") {
+                    val notes = listOfNotNull(
+                        when (outputRoute) {
+                            "ANDROID" -> "Android audio uses system volume and may change the audio."
+                            "DIRECT_USB" -> "Direct USB uses DAC volume and bypasses Android's mixer."
+                            else -> "No output selected"
+                        },
+                        // Shown only on Android 14+ when a USB output lists a bit-perfect mixer; never chosen automatically.
+                        if (androidBitPerfect) "Android bit-perfect plays supported integer audio unchanged through Android's USB mixer. " +
+                            "System volume leaves samples unchanged. Hardware verification is pending." else null,
+                        "Close output clears the saved queue.",
+                    )
+                    SettingsSection("Playback route", footer = notes.joinToString("\n\n")) {
+                        row("message") { SettingsCell { Text(playbackMessage, style = RowTitleStyle) } }
+                        row("android") { ActionRow("Use Android audio", enabled = mediaController != null) { selectAndroidOutput() } }
+                        if (androidBitPerfect) row("bit-perfect") {
+                            ActionRow("Use Android bit-perfect (Android 14+)", enabled = mediaController != null) { selectAndroidOutput(true) }
                         }
-                        Switch(checked = autoConnectEnabled, onCheckedChange = ::chooseAutoConnect,
-                            modifier = Modifier.padding(start = 12.dp).semantics { contentDescription = "Connect and play when a DAC is plugged in" })
+                        row("close") { ActionRow("Close output", enabled = mediaController != null, destructive = true) { mediaController?.stop() } }
                     }
-                } }
-                item { SettingsCard("Playback route") {
-                    Text(playbackMessage)
-                    Text(when (outputRoute) {
-                        "ANDROID" -> "Android audio uses system volume and may change the audio."
-                        "DIRECT_USB" -> "Direct USB uses DAC volume and bypasses Android's mixer."
-                        else -> "No output selected"
-                    }, style = EvannaDesign.typography.bodySmall)
-                    OutlinedButton(onClick = ::selectAndroidOutput, enabled = mediaController != null,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Use Android audio") }
-                    // Shown only on Android 14+ when a USB output lists a bit-perfect mixer; never chosen automatically.
-                    if (androidBitPerfect) {
-                        OutlinedButton(onClick = { selectAndroidOutput(true) }, enabled = mediaController != null,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Use Android bit-perfect (Android 14+)") }
-                        Text("Plays supported integer audio unchanged through Android's USB mixer. System volume leaves samples unchanged. Hardware verification is pending.",
-                            style = EvannaDesign.typography.bodySmall)
-                    }
-                    OutlinedButton(onClick = { mediaController?.stop() }, enabled = mediaController != null,
-                        modifier = Modifier.heightIn(min = 48.dp)) { Text("Close output") }
-                    Text("Close output clears the saved queue.", style = EvannaDesign.typography.bodySmall, color = muted)
-                } }
-                item { SettingsCard("USB playback mode") {
-                    // Same row shape as Max output rate below: the whole row is the 48 dp target.
-                    for (policy in UsbPlaybackPolicy.entries) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                        .selectable(selected = usbPolicy == policy, enabled = mediaController != null && !modeChanging,
-                            role = Role.RadioButton, onClick = { chooseUsbPolicy(policy) }),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = usbPolicy == policy, onClick = null, enabled = mediaController != null && !modeChanging)
-                        Text(if (policy == UsbPlaybackPolicy.STRICT) "Strict USB" else "Compatibility USB")
-                    }
-                    Text("Strict USB plays audio only when it can stay unchanged. Compatibility USB converts audio when needed. After changing modes, press Play to resume.", style = EvannaDesign.typography.bodySmall, color = muted)
-                    Text(dacProfileName?.let {"Saved DAC: $it"} ?: "Select a DAC to set its volume and rate.",style=EvannaDesign.typography.titleSmall)
-                    key(profile) {
-                        Text("Max output rate",style=EvannaDesign.typography.titleMedium)
-                        for(rate in listOf<Int?>(null,48000,96000,192000))Row(Modifier.fillMaxWidth().heightIn(min=48.dp)
-                            .selectable(selected=maxUsbRate==rate,enabled=mediaController!=null && profile!=null && !modeChanging,
-                                role=Role.RadioButton,onClick={chooseMaxUsbRate(rate,profile)})
-                            .semantics {contentDescription=if(rate==null)"Follow song rate" else "USB max rate ${rate/1000} kHz"},
-                            verticalAlignment=Alignment.CenterVertically) {
-                            RadioButton(selected=maxUsbRate==rate,onClick=null,enabled=mediaController!=null && profile!=null && !modeChanging)
-                            Text(if(rate==null)"Song rate" else "${rate/1000} kHz")
+                }
+                item(key = "mode") {
+                    SettingsSection("USB playback mode", choices = true, footer = "Strict USB plays audio only when it can stay unchanged. " +
+                        "Compatibility USB converts audio when needed. After changing modes, press Play to resume.") {
+                        for (policy in UsbPlaybackPolicy.entries) row(policy) {
+                            CheckRow(if (policy == UsbPlaybackPolicy.STRICT) "Strict USB" else "Compatibility USB", usbPolicy == policy,
+                                enabled = mediaController != null && !modeChanging) { chooseUsbPolicy(policy) }
                         }
                     }
-                    Text("Limits the sample rate for this DAC. In Compatibility USB, higher rates can be converted. Press Play after changing the limit.",style=EvannaDesign.typography.bodySmall,color=muted)
-                } }
-                item(key="start:$profile") { SettingsCard("USB starting volume") {
+                }
+                item(key = "rate:$profile") {
+                    SettingsSection("Max output rate", choices = true,
+                        footer = (dacProfileName?.let { "Saved DAC: $it. " } ?: "Select a DAC to set its volume and rate. ") +
+                            "Limits the sample rate for this DAC. In Compatibility USB, higher rates can be converted. Press Play after changing the limit.") {
+                        for (rate in listOf<Int?>(null, 48000, 96000, 192000)) row(rate ?: 0) {
+                            CheckRow(if (rate == null) "Song rate" else "${rate / 1000} kHz", maxUsbRate == rate,
+                                enabled = mediaController != null && profile != null && !modeChanging) { chooseMaxUsbRate(rate, profile) }
+                        }
+                    }
+                }
+                item(key = "start:$profile") {
                     var draft by remember(startVolumeDb) { mutableFloatStateOf(startVolumeDb) }
-                    Text("${draft.toInt()} dB", style = EvannaDesign.typography.titleMedium)
-                    Slider(value = draft, onValueChange = { draft = it.roundToInt().toFloat() }, onValueChangeFinished = { chooseUsbVolumeSetting(PlaybackService.SET_USB_START_VOLUME,draft,profile) { draft = startVolumeDb } },
-                        valueRange = USB_START_VOLUME_MIN_DB..0f, enabled = mediaController != null && profile!=null,
-                        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "USB starting volume" })
-                    Text("Sets the DAC volume when you connect, up to the Max USB volume.",
-                        style = EvannaDesign.typography.bodySmall, color = muted)
-                } }
-                item(key="limit:$profile") { SettingsCard("Max USB volume") {
-                    var draft by remember(volumeLimitDb) {mutableFloatStateOf(volumeLimitDb)}
-                    Text("${draft.toInt()} dB maximum",style=EvannaDesign.typography.titleMedium)
-                    Slider(value=draft,onValueChange={draft=it.roundToInt().toFloat()},onValueChangeFinished={
-                        chooseUsbVolumeSetting(PlaybackService.SET_USB_VOLUME_LIMIT,draft,profile) {draft=volumeLimitDb}
-                    },valueRange=USB_START_VOLUME_MIN_DB..0f,enabled=mediaController!=null && profile!=null,
-                        modifier=Modifier.fillMaxWidth().semantics {contentDescription="Max USB volume"})
-                    Text("Caps the starting volume and USB volume controls. Playback stops if the DAC can't lower its volume to the limit.",
-                        style=EvannaDesign.typography.bodySmall,color=muted)
-                } }
-                item(key="step:$profile") { SettingsCard("USB volume step") {
-                    // Chips keep a 48 dp touch area and wrap when the labels need more space.
-                    FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                        for(step in listOf(0.5f,1f,2f,3f))FilterChip(selected=usbKeyStepDb==step,
-                            onClick={chooseUsbVolumeSetting(PlaybackService.SET_USB_KEY_STEP,step,profile) {}},enabled=mediaController!=null && profile!=null,
-                            label={Text("${step.toString().removeSuffix(".0")} dB")})
+                    SettingsSection("USB starting volume", footer = "Sets the DAC volume when you connect, up to the Max USB volume.") {
+                        row { SettingsSliderCell(draft, USB_START_VOLUME_MIN_DB..0f, "${draft.toInt()} dB", "USB starting volume",
+                            enabled = mediaController != null && profile != null, onChange = { draft = it.roundToInt().toFloat() }) {
+                            chooseUsbVolumeSetting(PlaybackService.SET_USB_START_VOLUME, draft, profile) { draft = startVolumeDb }
+                        } }
                     }
-                    Text("Sets how much the USB volume changes per press. Your DAC determines the exact step.",style=EvannaDesign.typography.bodySmall,color=muted)
-                } }
-                item(key="leveling:$profile") {SettingsCard("Volume leveling") {
-                    FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                        for(mode in com.evanna.player.loudness.LevelingMode.entries)FilterChip(selected=levelingMode==mode,
-                            onClick={chooseLevelingMode(mode,profile)},enabled=mediaController!=null && profile!=null && !modeChanging,
-                            label={Text(mode.name.lowercase().replaceFirstChar {it.uppercase()})})
+                }
+                item(key = "limit:$profile") {
+                    var draft by remember(volumeLimitDb) { mutableFloatStateOf(volumeLimitDb) }
+                    SettingsSection("Max USB volume", footer = "Caps the starting volume and USB volume controls. " +
+                        "Playback stops if the DAC can't lower its volume to the limit.") {
+                        row { SettingsSliderCell(draft, USB_START_VOLUME_MIN_DB..0f, "${draft.toInt()} dB", "Max USB volume",
+                            enabled = mediaController != null && profile != null, onChange = { draft = it.roundToInt().toFloat() }) {
+                            chooseUsbVolumeSetting(PlaybackService.SET_USB_VOLUME_LIMIT, draft, profile) { draft = volumeLimitDb }
+                        } }
                     }
-                    Text("Evens out loudness in Direct USB using DAC volume, up to the Max USB volume. Press Play after changing modes.",style=EvannaDesign.typography.bodySmall,color=muted)
-                    Text("Evanna measures untagged albums offline. New measurements apply the next time you start playback.",style=EvannaDesign.typography.bodySmall,color=muted)
-                    com.evanna.player.loudness.LoudnessAnalysisControls()
-                }}
-                item(key="crossfeed:$profile") {SettingsCard("Crossfeed") {
-                    FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                        for(level in com.evanna.player.equalizer.Crossfeed.entries)FilterChip(selected=crossfeed==level,
-                            onClick={chooseCrossfeed(level,profile)},enabled=mediaController!=null && profile!=null && !modeChanging,
-                            label={Text(level.label)})
+                }
+                item(key = "step:$profile") {
+                    val steps = listOf(0.5f, 1f, 2f, 3f)
+                    SettingsSection("USB volume step", footer = "Sets how much the USB volume changes per press. Your DAC determines the exact step.") {
+                        row { SettingsCell(vertical = 4.dp) {
+                            SingleChoiceSegmentedButtonRow(steps.map { "${it.toString().removeSuffix(".0")} dB" }, steps.indexOf(usbKeyStepDb),
+                                { chooseUsbVolumeSetting(PlaybackService.SET_USB_KEY_STEP, steps[it], profile) {} },
+                                enabled = mediaController != null && profile != null)
+                        } }
                     }
-                    Text("Blends left and right slightly for a softer stereo effect in headphones. Direct USB only. Strict USB asks before changing the audio. Press Play after changing the setting.",
-                        style=EvannaDesign.typography.bodySmall,color=muted)
-                }}
+                }
+                item(key = "leveling:$profile") {
+                    val modes = com.evanna.player.loudness.LevelingMode.entries
+                    SettingsSection("Volume leveling", footer = "Evens out loudness in Direct USB using DAC volume, up to the Max USB volume. " +
+                        "Press Play after changing modes.\n\nEvanna measures untagged albums offline. New measurements apply the next time you start playback.") {
+                        row { SettingsCell(vertical = 4.dp) {
+                            SingleChoiceSegmentedButtonRow(modes.map { mode -> mode.name.lowercase().replaceFirstChar { it.uppercase() } },
+                                modes.indexOf(levelingMode), { chooseLevelingMode(modes[it], profile) },
+                                enabled = mediaController != null && profile != null && !modeChanging)
+                        } }
+                    }
+                }
+                item(key = "loudness") { com.evanna.player.loudness.LoudnessAnalysisControls() }
+                item(key = "crossfeed:$profile") {
+                    val levels = com.evanna.player.equalizer.Crossfeed.entries
+                    SettingsSection("Crossfeed", footer = "Blends left and right slightly for a softer stereo effect in headphones. Direct USB only. " +
+                        "Strict USB asks before changing the audio. Press Play after changing the setting.") {
+                        row { SettingsCell(vertical = 4.dp) {
+                            SingleChoiceSegmentedButtonRow(levels.map { it.label }, levels.indexOf(crossfeed), { chooseCrossfeed(levels[it], profile) },
+                                enabled = mediaController != null && profile != null && !modeChanging)
+                        } }
+                    }
+                }
             }
-            if (page == PlayerScreen.LIBRARY_SETTINGS) item { SettingsCard("Local music") {
-                SettingsLink("Manage music folders") { showMusicFolders = true }
-                SettingsLink("Open music library") { selectTab(PlayerScreen.LIBRARY) }
-                OutlinedButton(onClick = { filePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE); type = "audio/*"; putExtra(Intent.EXTRA_LOCAL_ONLY, true)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-                }) }, enabled = mediaController != null, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Choose local file") }
-            } }
-            if (page == PlayerScreen.APPEARANCE) item { SettingsCard("Look") {
-                for (choice in EvannaLook.entries) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .selectable(selected = look == choice, role = Role.RadioButton, onClick = { chooseLook(choice) }),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = look == choice, onClick = null)
-                    Text(choice.label, modifier = Modifier.padding(start = 12.dp))
+            if (page == PlayerScreen.LIBRARY_SETTINGS) item {
+                SettingsSection("Local music") {
+                    row { SettingsLink("Manage music folders") { showMusicFolders = true } }
+                    row { SettingsLink("Open music library") { selectTab(PlayerScreen.LIBRARY) } }
+                    row { ActionRow("Choose local file", enabled = mediaController != null) {
+                        filePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE); type = "audio/*"; putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                        })
+                    } }
                 }
-                Text("Sets the app's colours and shapes.",
-                    style = EvannaDesign.typography.bodySmall, color = muted)
-            } }
-            if (page == PlayerScreen.APPEARANCE) item { SettingsCard("Liquid glass") {
-                val tier = glassTier(Build.VERSION.SDK_INT, liquidGlass, reduceTransparency)
-                SwitchRow("Liquid glass", "See-through tab bar and mini player.", liquidGlass) { on ->
-                    liquidGlass = on
-                    getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putBoolean(GLASS_PREFERENCE, on).apply()
-                }
-                SwitchRow("Reduce transparency", "Keeps the glass frosted and solid behind text.", reduceTransparency,
-                    enabled = liquidGlass) { on ->
-                    reduceTransparency = on
-                    getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putBoolean(REDUCE_TRANSPARENCY_PREFERENCE, on).apply()
-                }
-                Text(when {
-                    tier == GlassTier.FULL -> "This phone shows full glass: blur and a bent edge."
-                    tier == GlassTier.BLUR -> "This phone shows blurred glass. The bent edge needs Android 13."
-                    tier == GlassTier.FROSTED && !reduceTransparency && liquidGlass -> "This phone shows frosted glass. Live blur needs Android 12."
-                    else -> "Controls are drawn solid."
-                }, style = EvannaDesign.typography.bodySmall, color = muted)
-            } }
-            if (page == PlayerScreen.APPEARANCE) item { SettingsCard("Start page") {
-                Column(Modifier.selectableGroup()) {
-                    for (choice in startPages) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                        .selectable(selected = startPage == choice, role = Role.RadioButton, onClick = {
-                            startPage = choice
-                            getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit()
-                                .putString(START_PAGE_PREFERENCE, choice.name).apply()
-                        }), verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = startPage == choice, onClick = null)
-                        Text(if (choice == PlayerScreen.CAROUSEL) "Carousel" else "Library", modifier = Modifier.padding(start = 12.dp))
+            }
+            if (page == PlayerScreen.APPEARANCE) {
+                item(key = "look") {
+                    SettingsSection("Look", footer = "Sets the app's colours and shapes.", choices = true) {
+                        for (choice in EvannaLook.entries) row(choice) { CheckRow(choice.label, look == choice) { chooseLook(choice) } }
                     }
                 }
-                Text("Opens on the next app launch.", style = EvannaDesign.typography.bodySmall, color = muted)
-            } }
-            if (page == PlayerScreen.APPEARANCE) item { SettingsCard("Animation speed") {
-                Column(Modifier.selectableGroup()) {
-                    for (choice in AnimationSpeed.entries) {
-                        val selected = motionScale.speed == choice
-                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                            .selectable(selected = selected, role = Role.RadioButton, onClick = {
-                                motionScale.speed = choice
-                                getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit()
-                                    .putString(ANIMATION_SPEED_PREFERENCE, choice.name).apply()
-                            }), verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = selected, onClick = null)
-                            Text(choice.label, modifier = Modifier.padding(start = 12.dp))
+                item(key = "glass") {
+                    val tier = glassTier(Build.VERSION.SDK_INT, liquidGlass, reduceTransparency)
+                    SettingsSection(footer = when {
+                        tier == GlassTier.FULL -> "This phone shows full glass: blur and a bent edge."
+                        tier == GlassTier.BLUR -> "This phone shows blurred glass. The bent edge needs Android 13."
+                        tier == GlassTier.FROSTED && !reduceTransparency && liquidGlass -> "This phone shows frosted glass. Live blur needs Android 12."
+                        else -> "Controls are drawn solid."
+                    }) {
+                        row { SwitchRow("Liquid glass", "See-through tab bar and mini player.", liquidGlass) { on ->
+                            liquidGlass = on
+                            getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putBoolean(GLASS_PREFERENCE, on).apply()
+                        } }
+                        row { SwitchRow("Reduce transparency", "Keeps the glass frosted and solid behind text.", reduceTransparency,
+                            enabled = liquidGlass) { on ->
+                            reduceTransparency = on
+                            getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putBoolean(REDUCE_TRANSPARENCY_PREFERENCE, on).apply()
+                        } }
+                    }
+                }
+                item(key = "start") {
+                    SettingsSection("Start page", footer = "Opens on the next app launch.", choices = true) {
+                        for (choice in startPages) row(choice) {
+                            CheckRow(if (choice == PlayerScreen.CAROUSEL) "Carousel" else "Library", startPage == choice) {
+                                startPage = choice
+                                getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putString(START_PAGE_PREFERENCE, choice.name).apply()
+                            }
                         }
                     }
                 }
-            } }
+                item(key = "speed") {
+                    SettingsSection("Animation speed", choices = true) {
+                        for (choice in AnimationSpeed.entries) row(choice) {
+                            CheckRow(choice.label, motionScale.speed == choice) {
+                                motionScale.speed = choice
+                                getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putString(ANIMATION_SPEED_PREFERENCE, choice.name).apply()
+                            }
+                        }
+                    }
+                }
+            }
             if (page == PlayerScreen.SETTINGS_TOOLS) {
-                item { SettingsCard("Signal status") { Text(signalStatus, style = EvannaDesign.typography.bodySmall, color = muted) } }
-                item { SettingsCard("App tools") {
-                    SettingsLink("Diagnostics and crash reports") { navigate(PlayerScreen.DIAGNOSTICS) }
-                    SettingsLink("Check a local audio file") { navigate(PlayerScreen.DECODE) }
-                    SettingsLink("Open-source notices", onClick = onNotices)
-                } }
+                item(key = "signal") {
+                    SettingsSection("Signal status") { row { SettingsCell { Text(signalStatus, style = EvannaDesign.typography.bodyMedium) } } }
+                }
+                item(key = "tools") {
+                    SettingsSection("App tools") {
+                        row { SettingsLink("Diagnostics and crash reports") { navigate(PlayerScreen.DIAGNOSTICS) } }
+                        row { SettingsLink("Check a local audio file") { navigate(PlayerScreen.DECODE) } }
+                        row { SettingsLink("Open-source notices", onClick = onNotices) }
+                    }
+                }
             }
         }
         if (page == PlayerScreen.LIBRARY_SETTINGS && showMusicFolders) MusicFoldersDialog { showMusicFolders = false }
@@ -1536,6 +1498,11 @@ class MainActivity : ComponentActivity() {
 }
 
 private data class DeviceState(val device: UsbDevice, val permitted: Boolean)
+/** A row on the main Settings page: a [note] under the label or a [value] at the end, and its icon tile. */
+private class SettingsEntry(val label: String, val note: String?, val value: String?, val target: PlayerScreen,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector, val tile: Color) {
+    fun matches(query: String) = listOfNotNull(label, note, value).any { it.contains(query, ignoreCase = true) }
+}
 private data class LicenseFile(val title: String, val asset: String, val source: String? = null)
 private val licenseFiles = listOf(
     LicenseFile("Evanna · GPL 3.0", "licenses/Evanna-GPL-3.0.txt"),

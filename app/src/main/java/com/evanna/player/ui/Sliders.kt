@@ -21,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
@@ -41,6 +43,7 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.evanna.player.EvannaDesign
+import com.evanna.player.LocalLookStyle
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -57,6 +60,7 @@ internal fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modi
     onOpenOutput: ((Offset?) -> Unit)? = null,
 ) {
     val colors = EvannaDesign.colorScheme
+    val empty = AppleColors.strongFill(LocalLookStyle.current.look.dark)
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val change by rememberUpdatedState(onValueChange)
     val finish by rememberUpdatedState(onValueChangeFinished)
@@ -124,16 +128,21 @@ internal fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modi
     }
     Layout(content = {
         Box(Modifier.graphicsLayer { scaleX = if (rtl) -1f else 1f }) {
-            if (track != null) track(position) else Canvas(Modifier.fillMaxWidth().height(5.dp)) {
+            // iOS 26: a 6 dp track filled with the accent, under a white oval knob with a soft shadow.
+            if (track != null) track(position) else Canvas(Modifier.fillMaxWidth().height(6.dp)) {
                 val rounding = CornerRadius(size.height / 2f)
-                drawRoundRect(colors.surfaceContainerHighest, cornerRadius = rounding)
-                drawRoundRect(if (active) colors.primary else colors.onSurfaceVariant, size = Size(size.width * position.fraction, size.height), cornerRadius = rounding)
+                drawRoundRect(empty, cornerRadius = rounding)
+                drawRoundRect(if (active) colors.primary else colors.onSurfaceVariant,
+                    size = Size(size.width * position.fraction, size.height), cornerRadius = rounding)
             }
         }
         Box(Modifier.onSizeChanged { thumbWidth = it.width }) {
-            if (thumb != null) thumb(position) else Box(Modifier.size(16.dp).background(if (active) colors.primary else colors.onSurfaceVariant, CircleShape))
+            if (thumb != null) thumb(position) else Box(Modifier.size(38.dp, 24.dp)
+                .shadow(3.dp, CircleShape).background(Color.White, CircleShape))
         }
     }, modifier = modifier.fillMaxWidth().heightIn(min = 48.dp)
+        // A disabled default slider fades as one piece, as iOS does, so the track never shows through the knob.
+        .then(if (!active && thumb == null && track == null) Modifier.graphicsLayer { alpha = 0.5f } else Modifier)
         .then(if (hasOutputAction) Modifier.onGloballyPositioned { coordinates = it } else Modifier)
         .then(dragGestures).then(tapGestures).semantics {
         if (active || !hasOutputAction) progressBarRangeInfo = ProgressBarRangeInfo(position.value, valueRange)

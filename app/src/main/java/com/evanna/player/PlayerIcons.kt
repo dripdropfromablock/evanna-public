@@ -182,6 +182,46 @@ internal object PlayerIcons {
         line { moveTo(13.5f, 12f); arcToRelative(2f, 2f, 0f, false, true, 4f, 0f); arcToRelative(2f, 2f, 0f, false, true, -4f, 0f); close() }
         line { moveTo(8f, 10.5f); verticalLineTo(13.5f) }
     }
+    // iOS-style glyphs for rows and menus, drawn like SF Symbols at a regular weight.
+    private fun ImageVector.Builder.thin(width: Float = 1.9f, block: PathBuilder.() -> Unit) = path(stroke = ink,
+        strokeLineWidth = width, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round, pathBuilder = block)
+    /** A row's disclosure chevron (chevron.right). */
+    val ChevronRight = icon("Chevron right") { thin(2.6f) { moveTo(9f, 5f); lineTo(16f, 12f); lineTo(9f, 19f) } }
+    /** A pop-up button's chevrons (chevron.up.chevron.down). */
+    val ChevronUpDown = icon("Chevron up down") {
+        thin(2.2f) { moveTo(8f, 9.5f); lineTo(12f, 5.5f); lineTo(16f, 9.5f) }
+        thin(2.2f) { moveTo(8f, 14.5f); lineTo(12f, 18.5f); lineTo(16f, 14.5f) }
+    }
+    /** The chosen option in a list or menu (checkmark). */
+    val Check = icon("Check") { thin(2.6f) { moveTo(4.5f, 12.5f); lineTo(9.5f, 17.5f); lineTo(19.5f, 6.5f) } }
+    val Search = icon("Search") {
+        thin(2.2f) { moveTo(17f, 10.5f); arcToRelative(6.5f, 6.5f, 0f, true, true, -13f, 0f); arcToRelative(6.5f, 6.5f, 0f, true, true, 13f, 0f); close() }
+        thin(2.2f) { moveTo(15.4f, 15.4f); lineTo(20.5f, 20.5f) }
+    }
+    val Close = icon("Close") { thin(2.6f) { moveTo(6.5f, 6.5f); lineTo(17.5f, 17.5f); moveTo(17.5f, 6.5f); lineTo(6.5f, 17.5f) } }
+    val Plus = icon("Plus") { thin { moveTo(12f, 4.5f); verticalLineTo(19.5f); moveTo(4.5f, 12f); horizontalLineTo(19.5f) } }
+    val Info = icon("Info") {
+        thin { moveTo(21f, 12f); arcToRelative(9f, 9f, 0f, true, true, -18f, 0f); arcToRelative(9f, 9f, 0f, true, true, 18f, 0f); close() }
+        thin(2.2f) { moveTo(12f, 11f); verticalLineTo(16.5f) }
+        path(fill = ink) { moveTo(10.75f, 7.6f); arcToRelative(1.25f, 1.25f, 0f, true, true, 2.5f, 0f); arcToRelative(1.25f, 1.25f, 0f, true, true, -2.5f, 0f); close() }
+    }
+    /** Stacked squares: an album (square.stack). */
+    val Album = icon("Album") {
+        thin {
+            moveTo(6.5f, 9f); horizontalLineTo(17.5f); quadTo(19.5f, 9f, 19.5f, 11f); verticalLineTo(18.5f); quadTo(19.5f, 20.5f, 17.5f, 20.5f)
+            horizontalLineTo(6.5f); quadTo(4.5f, 20.5f, 4.5f, 18.5f); verticalLineTo(11f); quadTo(4.5f, 9f, 6.5f, 9f); close()
+        }
+        thin { moveTo(6.5f, 5.75f); horizontalLineTo(17.5f) }
+        thin { moveTo(8.5f, 2.75f); horizontalLineTo(15.5f) }
+    }
+    /** A half-filled circle: light and dark (circle.lefthalf.filled). */
+    val Appearance = icon("Appearance") {
+        thin(2f) { moveTo(20.5f, 12f); arcToRelative(8.5f, 8.5f, 0f, true, true, -17f, 0f); arcToRelative(8.5f, 8.5f, 0f, true, true, 17f, 0f); close() }
+        path(fill = ink) { moveTo(12f, 3.5f); arcTo(8.5f, 8.5f, 0f, false, false, 12f, 20.5f); close() }
+    }
+    /** A heartbeat line: signal checks (waveform.path.ecg). */
+    val Pulse = icon("Pulse") { thin(2f) { moveTo(2.5f, 12.5f); horizontalLineTo(7f); lineTo(9.25f, 6.5f); lineTo(13f, 18f); lineTo(15.5f, 10f); lineTo(17f, 12.5f); horizontalLineTo(21.5f) } }
+
     val Bluetooth = icon("Bluetooth") { line { moveTo(7f, 7f); lineTo(17f, 17f); lineTo(12f, 22f); verticalLineTo(2f); lineTo(17f, 7f); lineTo(7f, 17f) } }
     val Repeat = icon("Repeat") { loop() }
     val RepeatOne = icon("RepeatOne") { loop(); line { moveTo(10.75f, 10.5f); lineTo(12.25f, 9.5f); verticalLineTo(14.5f) } }

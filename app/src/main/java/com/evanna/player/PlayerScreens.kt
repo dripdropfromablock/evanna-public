@@ -33,7 +33,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -71,6 +70,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -101,58 +101,159 @@ internal fun ScreenHeader(title: String, onBack: () -> Unit) {
     }
 }
 
-/** A filled squircle capsule chip. */
-@Composable
-internal fun LookChip(selected: Boolean, onClick: () -> Unit, label: String, enabled: Boolean = true) {
-    val dark = LocalLookStyle.current.look.dark
-    val shape = remember { SquirclePillShape() }
-    FilterChip(selected = selected, onClick = onClick, enabled = enabled, label = { Text(label) }, shape = shape, border = null,
-        colors = FilterChipDefaults.filterChipColors(containerColor = if (dark) EvannaDesign.colorScheme.surfaceContainerHigh
-            else EvannaDesign.colorScheme.surfaceContainerHighest, labelColor = EvannaDesign.colorScheme.onSurface))
+// Settings as an iOS inset-grouped list: a gray header above each rounded group, rows split by hairlines that start at the
+// text, notes in a footer under the group. Rows are 17 sp, notes 13 sp.
+private val SectionShape = RoundedCornerShape(22.dp).continuous()
+internal val RowTitleStyle = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.2).sp)
+internal val RowNoteStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)
+private val SectionHeaderStyle = TextStyle(fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+/** Where row text starts when the row has a 30 dp icon tile: the hairlines start there too. */
+internal val SettingsTileInset = 60.dp
+/** Rows inside a [SettingsSection] get the group's 16 dp side padding; on a plain list they sit almost flush. */
+private val LocalInSection = staticCompositionLocalOf { false }
+
+/** The rows of one [SettingsSection], in order. A [key] keeps a row's state when rows above it come and go. */
+internal class SettingsRows {
+    internal val rows = mutableListOf<Pair<Any?, @Composable () -> Unit>>()
+    fun row(key: Any? = null, content: @Composable () -> Unit) { rows += key to content }
 }
 
-/** A Settings row with a title, a short note and a switch; the whole row toggles it. */
+/** One iOS group: [header] above, the rows in one rounded card, [footer] notes below. */
 @Composable
-internal fun SwitchRow(title: String, note: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+internal fun SettingsSection(header: String? = null, footer: String? = null, separatorInset: Dp = 16.dp, choices: Boolean = false,
+    rows: SettingsRows.() -> Unit,
+) {
+    val colors = EvannaDesign.colorScheme
+    val separator = AppleColors.separator(LocalLookStyle.current.look.dark)
+    val content = SettingsRows().apply(rows).rows
+    Column(Modifier.fillMaxWidth()) {
+        if (header != null) Text(header, style = SectionHeaderStyle, color = colors.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 7.dp).semantics { heading() })
+        if (content.isNotEmpty()) Surface(Modifier.fillMaxWidth(), shape = SectionShape, color = colors.surfaceContainer) {
+            Column(if (choices) Modifier.selectableGroup() else Modifier) {
+                CompositionLocalProvider(LocalInSection provides true) {
+                    content.forEachIndexed { index, (rowKey, row) ->
+                        key(rowKey ?: "row $index") {
+                            if (index > 0) Box(Modifier.padding(start = separatorInset).fillMaxWidth().height(0.5.dp).background(separator))
+                            row()
+                        }
+                    }
+                }
+            }
+        }
+        if (footer != null) Text(footer, style = RowNoteStyle, color = colors.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 7.dp))
+    }
+}
+
+@Composable
+private fun rowPadding() = if (LocalInSection.current) 16.dp else 4.dp
+
+/** A row for anything that isn't a plain link, choice or switch: a status line, a slider, a segmented control. */
+@Composable
+internal fun SettingsCell(vertical: Dp = 10.dp, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = rowPadding(), vertical = vertical),
+        verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically), content = content)
+}
+
+@Composable
+private fun RowText(title: String, note: String?, enabled: Boolean, modifier: Modifier, extra: List<String> = emptyList()) {
     val muted = EvannaDesign.colorScheme.onSurfaceVariant
-    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
-        .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
-        .semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = EvannaDesign.typography.titleSmall, color = if (enabled) Color.Unspecified else muted)
-            Text(note, style = EvannaDesign.typography.bodySmall, color = muted)
-        }
-        Box(Modifier.padding(start = 12.dp).clearAndSetSemantics {}) { Switch(checked = checked, onCheckedChange = onChange, enabled = enabled) }
+    Column(modifier) {
+        Text(title, style = RowTitleStyle, color = if (enabled) EvannaDesign.colorScheme.onSurface else muted.copy(alpha = 0.6f))
+        for (line in listOfNotNull(note) + extra) Text(line, style = RowNoteStyle, color = muted)
     }
 }
 
-/** A rounded Settings section with a heading. */
+/** A 30 dp rounded tile with a white glyph, as in iOS Settings. */
 @Composable
-internal fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Surface(Modifier.fillMaxWidth(), shape = EvannaDesign.shapes.large, color = EvannaDesign.colorScheme.surfaceContainer) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, style = EvannaDesign.typography.titleMedium, color = EvannaDesign.colorScheme.onSurface,
-                fontWeight = FontWeight.SemiBold, modifier = Modifier.semantics { heading() })
-            content()
-        }
+private fun IconTile(icon: ImageVector, color: Color) {
+    Box(Modifier.size(30.dp).background(color, TileShape), contentAlignment = Alignment.Center) {
+        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(19.dp))
     }
 }
+private val TileShape = RoundedCornerShape(8.dp).continuous()
 
-/** A full-width row that opens another screen. */
+/**
+ * A row that opens another screen: an optional icon tile, the label (with an optional note under it), an optional
+ * [value] in gray and the chevron.
+ */
 @Composable
-internal fun SettingsLink(label: String, subtitle: String? = null, icon: ImageVector? = null, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(EvannaDesign.shapes.small).clickable(role = Role.Button, onClick = onClick)
-        .padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+internal fun SettingsLink(label: String, subtitle: String? = null, icon: ImageVector? = null, tile: Color? = null,
+    value: String? = null, onClick: () -> Unit,
+) {
+    val muted = EvannaDesign.colorScheme.onSurfaceVariant
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(role = Role.Button, onClick = onClick)
+        .padding(horizontal = rowPadding(), vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         if (icon != null) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = EvannaDesign.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.width(12.dp))
+            if (tile != null) IconTile(icon, tile)
+            else Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = muted)
+            Spacer(Modifier.width(14.dp))
         }
-        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
-            Text(label, style = EvannaDesign.typography.bodyLarge)
-            if (subtitle != null) Text(subtitle, style = EvannaDesign.typography.bodySmall, color = EvannaDesign.colorScheme.onSurfaceVariant)
+        RowText(label, subtitle, true, Modifier.weight(1f))
+        if (value != null) Text(value, style = RowTitleStyle, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 12.dp).widthIn(max = 160.dp))
+        Icon(PlayerIcons.ChevronRight, contentDescription = null, tint = EvannaDesign.colorScheme.onSurface.copy(alpha = 0.3f),
+            modifier = Modifier.padding(start = 8.dp).size(15.dp))
+    }
+}
+
+/** One option of a choice: the chosen row shows a checkmark at the end, as iOS lists do. */
+@Composable
+internal fun CheckRow(label: String, selected: Boolean, enabled: Boolean = true, note: String? = null, extra: List<String> = emptyList(),
+    onClick: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp)
+        .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+        .padding(horizontal = rowPadding(), vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        RowText(label, note, enabled, Modifier.weight(1f), extra)
+        Box(Modifier.padding(start = 12.dp).size(20.dp), contentAlignment = Alignment.Center) {
+            if (selected) Icon(PlayerIcons.Check, contentDescription = null, modifier = Modifier.size(18.dp),
+                tint = EvannaDesign.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.4f))
         }
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = EvannaDesign.colorScheme.onSurfaceVariant)
+    }
+}
+
+// iOS system colours for the Settings icon tiles.
+internal val TilePink = Color(0xFFFF2D55)
+internal val TileOrange = Color(0xFFFF9500)
+internal val TilePurple = Color(0xFFAF52DE)
+internal val TileBlue = Color(0xFF007AFF)
+internal val TileGray = Color(0xFF8E8E93)
+
+/** A slider row with its value at the end, in tabular figures. */
+@Composable
+internal fun SettingsSliderCell(value: Float, range: ClosedFloatingPointRange<Float>, valueText: String, description: String,
+    enabled: Boolean, onChange: (Float) -> Unit, onDone: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = rowPadding()), verticalAlignment = Alignment.CenterVertically) {
+        Slider(value = value, onValueChange = onChange, onValueChangeFinished = onDone, valueRange = range, enabled = enabled,
+            modifier = Modifier.weight(1f).semantics { contentDescription = description })
+        Text(valueText, style = RowTitleStyle.copy(fontFeatureSettings = "tnum", textAlign = androidx.compose.ui.text.style.TextAlign.End),
+            color = EvannaDesign.colorScheme.onSurfaceVariant, maxLines = 1, modifier = Modifier.padding(start = 12.dp).widthIn(min = 64.dp))
+    }
+}
+
+/** A row that does something: the label in the accent colour, or red when [destructive]. */
+@Composable
+internal fun ActionRow(label: String, enabled: Boolean = true, destructive: Boolean = false, onClick: () -> Unit) {
+    val ink = if (destructive) AppleColors.red(LocalLookStyle.current.look.dark) else EvannaDesign.colorScheme.primary
+    Box(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        .padding(horizontal = rowPadding(), vertical = 8.dp), contentAlignment = Alignment.CenterStart) {
+        Text(label, style = RowTitleStyle, color = if (enabled) ink else EvannaDesign.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+    }
+}
+
+/** A Settings row with a title, an optional short note and a switch; the whole row toggles it. */
+@Composable
+internal fun SwitchRow(title: String, note: String? = null, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp)
+        .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
+        .semantics(mergeDescendants = true) {}
+        .padding(horizontal = rowPadding(), vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        RowText(title, note, enabled, Modifier.weight(1f))
+        Box(Modifier.padding(start = 12.dp).clearAndSetSemantics {}) { Switch(checked = checked, onCheckedChange = onChange, enabled = enabled) }
     }
 }
 

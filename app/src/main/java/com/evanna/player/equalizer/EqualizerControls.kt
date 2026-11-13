@@ -1,6 +1,5 @@
 package com.evanna.player.equalizer
 
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -11,7 +10,6 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -46,7 +44,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -157,21 +154,10 @@ internal fun EqChip(label: String, selected: Boolean, enabled: Boolean, onClick:
     }
 }
 
-/** A 51 × 31 dp switch with a contrasting 27 dp knob. */
+/** The app's iOS switch, with a name for TalkBack. */
 @Composable
 internal fun AppleSwitch(checked: Boolean, enabled: Boolean, description: String, onChange: (Boolean) -> Unit) {
-    val p = eqPalette(); val dark = LocalLookStyle.current.look.dark
-    val knob by animateDpAsState(if (checked) 22.dp else 2.dp, label = "switch knob")
-    // The fade is a layer that always stays (see EqSegments); the knob moves in the layout step, without recomposing.
-    Box(Modifier.sizeIn(minWidth = 51.dp, minHeight = 48.dp)
-        .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onChange).semantics { contentDescription = description },
-        contentAlignment = Alignment.Center) {
-        Box(Modifier.size(51.dp, 31.dp).graphicsLayer { alpha = if (enabled) 1f else 0.5f }.clip(CircleShape)
-            .background(if (checked) p.fill else if (dark) Color(0xFF393939) else Color(0xFFE9E9E9))) {
-            Box(Modifier.offset { IntOffset(knob.roundToPx(), 2.dp.roundToPx()) }.size(27.dp).shadow(2.dp, CircleShape)
-                .background(if (checked) p.onFill else Color.White, CircleShape))
-        }
-    }
+    Switch(checked, onChange, Modifier.semantics { contentDescription = description }, enabled)
 }
 
 private fun DrawScope.thumb(p: EqPalette, center: Offset) {

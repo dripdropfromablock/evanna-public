@@ -1,8 +1,7 @@
 package com.evanna.player.ui
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,17 +19,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.evanna.player.EvannaDesign
 import com.evanna.player.EvannaMotion
+import com.evanna.player.LocalLookStyle
+import kotlin.math.roundToInt
 
 internal class ActionColors(val container: Color, val content: Color)
 
@@ -132,65 +139,42 @@ internal fun FilledIconButton(onClick: () -> Unit, modifier: Modifier = Modifier
     colors: ActionColors, content: @Composable () -> Unit,
 ) = IconButton(onClick, modifier, enabled, colors, content)
 
-internal class ChipColors(val container: Color, val label: Color)
-internal object FilterChipDefaults {
-    fun filterChipColors(containerColor: Color, labelColor: Color) = ChipColors(containerColor, labelColor)
+/** Apple's system colours where iOS uses them on controls: the switch green, the destructive red and the gray fills. */
+internal object AppleColors {
+    fun green(dark: Boolean) = if (dark) Color(0xFF30D158) else Color(0xFF34C759)
+    fun red(dark: Boolean) = if (dark) Color(0xFFFF453A) else Color(0xFFFF3B30)
+    /** tertiarySystemFill: search fields and segmented control tracks. */
+    fun fill(dark: Boolean) = Color(0xFF767680).copy(alpha = if (dark) 0.24f else 0.12f)
+    /** secondarySystemFill: an off switch, an empty slider track. */
+    fun strongFill(dark: Boolean) = Color(0xFF787880).copy(alpha = if (dark) 0.32f else 0.16f)
+    fun separator(dark: Boolean) = if (dark) Color(0xFF545458).copy(alpha = 0.6f) else Color(0xFF3C3C43).copy(alpha = 0.29f)
 }
 
-internal val LocalChipTouchHeight = staticCompositionLocalOf { 48.dp }
-
-@Composable
-internal fun FilterChip(selected: Boolean, onClick: () -> Unit, label: @Composable () -> Unit, enabled: Boolean = true,
-    shape: Shape = EvannaDesign.shapes.extraSmall, border: Boolean? = true, colors: ChipColors? = null,
-    leadingIcon: (@Composable () -> Unit)? = null,
-) {
-    val palette = EvannaDesign.colorScheme
-    val fill = if (selected) palette.secondaryContainer else colors?.container ?: Color.Transparent
-    val ink = when {
-        !enabled -> palette.onSurface.copy(alpha = 0.38f)
-        selected -> palette.onSecondaryContainer
-        else -> colors?.label ?: palette.onSurfaceVariant
-    }
-    Box(Modifier.heightIn(min = LocalChipTouchHeight.current)
-        .selectable(selected, enabled = enabled, role = Role.Checkbox, onClick = onClick), contentAlignment = Alignment.Center) {
-        Row(Modifier.heightIn(min = 32.dp).clip(shape).background(fill)
-            .then(if (border == true && !selected) Modifier.border(1.dp, palette.outlineVariant, shape) else Modifier)
-            .padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            CompositionLocalProvider(LocalContentColor provides ink) {
-                if (leadingIcon != null) { leadingIcon(); Spacer(Modifier.width(6.dp)) }
-                ProvideTextStyle(EvannaDesign.typography.labelLarge, label)
-            }
-        }
-    }
-}
-
-@Composable
-internal fun RadioButton(selected: Boolean, onClick: (() -> Unit)?, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    val palette = EvannaDesign.colorScheme
-    val ink = when {
-        !enabled -> palette.onSurface.copy(alpha = 0.38f)
-        selected -> palette.primary
-        else -> palette.onSurfaceVariant
-    }
-    Box(modifier.sizeIn(minWidth = if (onClick == null) 36.dp else 48.dp, minHeight = 48.dp)
-        .then(if (onClick == null) Modifier else Modifier.clip(CircleShape).selectable(selected, enabled, Role.RadioButton, onClick = onClick)),
-        contentAlignment = Alignment.Center) {
-        Box(Modifier.size(20.dp).border(2.dp, ink, CircleShape), contentAlignment = Alignment.Center) {
-            if (selected) Box(Modifier.size(10.dp).background(ink, CircleShape))
-        }
-    }
-}
-
+/**
+ * The iOS 26 switch: a 64 × 28 dp capsule, green when on, with a white oval knob that stretches while it is held.
+ * The 48 dp touch area stays.
+ */
 @Composable
 internal fun Switch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    val palette = EvannaDesign.colorScheme
-    val fill by animateColorAsState(if (checked && enabled) palette.primary else palette.surfaceContainerHighest, label = "switch fill")
-    val position by animateDpAsState(if (checked) 19.dp else 3.dp, label = "switch position")
-    val thumb = if (!enabled) palette.onSurface.copy(alpha = 0.38f) else if (checked) palette.onPrimary else palette.onSurfaceVariant
-    Box(modifier.sizeIn(minWidth = 52.dp, minHeight = 48.dp)
-        .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange), contentAlignment = Alignment.Center) {
-        Box(Modifier.size(46.dp, 30.dp).background(fill, CircleShape)) {
-            Box(Modifier.align(Alignment.CenterStart).offset(x = position).size(24.dp).background(thumb, CircleShape))
+    val dark = LocalLookStyle.current.look.dark
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val progress by animateFloatAsState(if (checked) 1f else 0f, spring(dampingRatio = 0.8f, stiffness = 520f), label = "switch")
+    val stretch by animateFloatAsState(if (pressed && enabled) 1f else 0f, spring(stiffness = 700f), label = "switch hold")
+    val on = AppleColors.green(dark)
+    val off = AppleColors.strongFill(dark)
+    Box(modifier.sizeIn(minWidth = 64.dp, minHeight = 48.dp)
+        .toggleable(checked, interaction, indication = null, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange),
+        contentAlignment = Alignment.Center) {
+        Box(Modifier.size(64.dp, 28.dp).graphicsLayer { alpha = if (enabled) 1f else 0.5f }
+            .drawBehind { drawRoundRect(lerp(off, on, progress), cornerRadius = CornerRadius(size.height / 2f)) }) {
+            Box(Modifier.offset { IntOffset((2.dp.toPx() + 22.dp.toPx() * progress).roundToInt(), 2.dp.roundToPx()) }
+                .graphicsLayer {
+                    // Held, the knob grows towards the middle from the side it rests on.
+                    transformOrigin = TransformOrigin(progress, 0.5f)
+                    scaleX = 1f + 0.18f * stretch
+                }
+                .size(38.dp, 24.dp).shadow(2.dp, CircleShape).background(Color.White, CircleShape))
         }
     }
 }
@@ -205,18 +189,42 @@ internal fun Modifier.slidingSelectionPill(count: Int, position: () -> Float, co
         cornerRadius = CornerRadius(minOf(width, size.height) / 2f))
 }
 
+/**
+ * The iOS 26 segmented control: a gray capsule track with a raised capsule on the choice (white in light, gray in dark)
+ * and no separators. It draws 36 dp tall inside a 48 dp touch row.
+ */
 @Composable
-internal fun SingleChoiceSegmentedButtonRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+internal fun SingleChoiceSegmentedButtonRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
     val colors = EvannaDesign.colorScheme
-    val position by animateFloatAsState(selected.toFloat(), EvannaMotion.enter, label = "segment selection")
-    Row(modifier.clip(CircleShape).background(colors.surfaceContainerHighest).padding(3.dp)
-        .slidingSelectionPill(options.size, { position }) { colors.onSurface.copy(alpha = SELECTION_PILL_ALPHA) }
+    val dark = LocalLookStyle.current.look.dark
+    val position by animateFloatAsState(selected.toFloat(), spring(dampingRatio = 0.85f, stiffness = 500f), label = "segment selection")
+    val track = AppleColors.fill(dark)
+    val thumb = if (dark) Color(0xFF636366) else Color.White
+    Row(modifier.fillMaxWidth().heightIn(min = 48.dp).height(IntrinsicSize.Min)
+        .graphicsLayer { alpha = if (enabled) 1f else 0.5f }
+        .drawBehind {
+            val inset = 6.dp.toPx()
+            val height = size.height - 2 * inset
+            drawRoundRect(track, Offset(0f, inset), Size(size.width, height), CornerRadius(height / 2f))
+            if (selected !in options.indices) return@drawBehind
+            val pad = 2.dp.toPx()
+            val width = (size.width - 2 * pad) / options.size
+            val slot = if (layoutDirection == LayoutDirection.Ltr) position else options.size - 1 - position
+            val knob = Size(width, height - 2 * pad)
+            val corner = CornerRadius(knob.height / 2f)
+            val at = Offset(pad + width * slot, inset + pad)
+            if (!dark) drawRoundRect(Color.Black.copy(alpha = 0.08f), at + Offset(0f, 1.dp.toPx()), knob, corner)
+            drawRoundRect(thumb, at, knob, corner)
+        }
         .selectableGroup()) {
         options.forEachIndexed { index, label ->
-            Box(Modifier.weight(1f).heightIn(min = 48.dp).clip(CircleShape)
-                .selectable(index == selected, role = Role.RadioButton, onClick = { onSelect(index) })
-                .padding(horizontal = 6.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
-                Text(label, style = EvannaDesign.typography.labelLarge, color = colors.onSurface)
+            Box(Modifier.weight(1f).fillMaxHeight()
+                .selectable(index == selected, enabled = enabled, role = Role.RadioButton, onClick = { onSelect(index) })
+                .padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
+                Text(label, style = EvannaDesign.typography.labelLarge, fontSize = 14.sp,
+                    fontWeight = if (index == selected) FontWeight.SemiBold else FontWeight.Medium, color = colors.onSurface, maxLines = 1)
             }
         }
     }

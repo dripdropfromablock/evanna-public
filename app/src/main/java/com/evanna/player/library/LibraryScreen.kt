@@ -15,12 +15,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.foundation.border
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.sp
 import com.evanna.player.EvannaType
@@ -406,16 +404,15 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                         if (albumHome) Icon(PlayerIcons.LibraryLayout, "Library view: ${albumLayout.label}")
                         else Icon(PlayerIcons.Sort, "Sort: ${selectedSort?.let(::sortName) ?: "loading"}, saved for this view")
                     }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, checkmarks = true) {
                         if (albumHome) {
                             DropdownChoices(AlbumLayout.entries, albumLayout, menuOpen, onSelect = { layout ->
                                 albumLayout = layout
                                 preferences.edit().putString("album-layout", layout.name).apply()
                                 menuOpen = false
                             }) { Text(it.label) }
-                            HorizontalDivider()
-                            Text("Sort by", style = EvannaDesign.typography.labelMedium, color = muted,
-                                modifier = Modifier.padding(start = 14.dp, top = 8.dp))
+                            MenuDivider()
+                            MenuSectionTitle("Sort by")
                         }
                         DropdownChoices(allowedLibrarySorts(sortScope), selectedSort, menuOpen, enabled = selectedSort != null && !sortSaving,
                             onSelect = { sort ->
@@ -460,17 +457,18 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
         }
         if (libraryHome || (searchMode && kind == null && !searchHome)) line {
             var collectionsOpen by remember { mutableStateOf(false) }
-            val shape = EvannaDesign.shapes.small
+            val shape = remember { SquirclePillShape() }
             Box(Modifier.fillMaxWidth()) {
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(shape)
-                    .border(1.dp, EvannaDesign.colorScheme.outlineVariant, shape)
+                // An iOS pop-up button: a filled capsule with the choice and up-down chevrons, no outline.
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
                     .clickable(enabled = !busy, role = Role.Button) { collectionsOpen = true }
-                    .padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    .clip(shape).background(AppleColors.fill(LocalLookStyle.current.look.dark))
+                    .padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (searchMode) "Search in ${view.label.lowercase()}" else view.label,
-                        style = EvannaDesign.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    Icon(Icons.Filled.ArrowDropDown, null, tint = muted)
+                        style = EvannaDesign.typography.bodyLarge, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                    Icon(PlayerIcons.ChevronUpDown, null, tint = muted, modifier = Modifier.size(18.dp))
                 }
-                DropdownMenu(expanded = collectionsOpen, onDismissRequest = { collectionsOpen = false }) {
+                DropdownMenu(expanded = collectionsOpen, onDismissRequest = { collectionsOpen = false }, checkmarks = true) {
                     val collections = if (libraryHome) listOf(LibraryView.ALBUMS, LibraryView.ARTISTS, LibraryView.TRACKS, LibraryView.FOLDERS)
                         else LibraryView.entries
                     DropdownChoices(collections, view, collectionsOpen, onSelect = { collection ->

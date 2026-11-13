@@ -1,6 +1,5 @@
 package com.evanna.player.library
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -9,18 +8,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -30,7 +25,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.evanna.player.EvannaDesign
-import com.evanna.player.LocalLookStyle
 import com.evanna.player.PlayerIcons
 import com.evanna.player.playbackTime
 import com.evanna.player.ui.*
@@ -40,7 +34,6 @@ import com.evanna.player.user.setFavorite
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 
-private val SongMenuShape = RoundedCornerShape(28.dp)
 private val SongMenuActionShape = RoundedCornerShape(20.dp)
 
 @Composable
@@ -88,7 +81,7 @@ internal fun LibrarySongRow(
         }
         Box {
             IconButton(onClick = ::openMenu, enabled = canAct, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Filled.MoreVert, "More options for ${song.title}")
+                Icon(PlayerIcons.More, "More options for ${song.title}")
             }
             LibrarySongMenu(expanded = menu && canAct, onDismiss = { menu = false }, favorite = favorite,
                 canOpenAlbum = onOpenAlbum != null,
@@ -129,16 +122,8 @@ private fun LibrarySongMenu(
     onAlbum: () -> Unit,
     onTrackInfo: () -> Unit,
 ) {
-    val palette = EvannaDesign.colorScheme
-    val dark = LocalLookStyle.current.look.dark
-    val rim = remember(dark) {
-        BorderStroke(1.dp, Brush.verticalGradient(if (dark) {
-            listOf(Color.White.copy(alpha = 0.28f), Color.White.copy(alpha = 0.09f))
-        } else {
-            listOf(Color.White.copy(alpha = 0.94f), Color.Black.copy(alpha = 0.13f))
-        }))
-    }
-    DropdownMenu(expanded, onDismiss, Modifier.width(272.dp), shape = SongMenuShape, border = rim) {
+    // iOS context menu: the three quick actions side by side on top, then rows with their icons at the end.
+    DropdownMenu(expanded, onDismiss, Modifier.width(272.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             SongMenuAction("Play next", PlayerIcons.Next, onPlayNext, Modifier.weight(1f))
@@ -147,14 +132,10 @@ private fun LibrarySongMenu(
                 onFavorite, Modifier.weight(1f), enabled = favorite != null, highlighted = favorite == true,
                 actionLabel = if (favorite == true) "Remove from favorites" else "Add to favorites")
         }
-        HorizontalDivider(Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-            color = palette.onSurface.copy(alpha = 0.14f))
-        DropdownMenuItem(text = { Text("Add to playlist") }, onClick = onPlaylist,
-            leadingIcon = { Icon(Icons.Filled.Add, null) })
-        DropdownMenuItem(text = { Text("Go to album") }, onClick = onAlbum, enabled = canOpenAlbum,
-            leadingIcon = { Icon(Icons.AutoMirrored.Outlined.List, null) })
-        DropdownMenuItem(text = { Text("Track info") }, onClick = onTrackInfo,
-            leadingIcon = { Icon(Icons.Outlined.Info, null) })
+        MenuDivider()
+        DropdownMenuItem(text = { Text("Add to playlist") }, onClick = onPlaylist, icon = PlayerIcons.Plus)
+        DropdownMenuItem(text = { Text("Go to album") }, onClick = onAlbum, enabled = canOpenAlbum, icon = PlayerIcons.Album)
+        DropdownMenuItem(text = { Text("Track info") }, onClick = onTrackInfo, icon = PlayerIcons.Info)
     }
 }
 

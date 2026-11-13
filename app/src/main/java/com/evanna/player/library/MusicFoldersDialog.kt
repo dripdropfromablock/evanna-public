@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
+import com.evanna.player.PlayerIcons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -118,10 +118,10 @@ internal fun FolderSourceActions(root: LibraryRoot, enabled: Boolean, onSubfolde
         Icon(Icons.Filled.Refresh, "Rescan ${root.name}")
     }
     Box {
-        IconButton(onClick = { menu = true }, enabled = enabled) { Icon(Icons.Filled.MoreVert, "Manage ${root.name}") }
+        IconButton(onClick = { menu = true }, enabled = enabled) { Icon(PlayerIcons.More, "Manage ${root.name}") }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(text = { Text("Manage subfolders") }, onClick = { menu = false; onSubfolders() })
-            DropdownMenuItem(text = { Text("Remove folder") }, onClick = { menu = false; onRemove() })
+            DropdownMenuItem(text = { Text("Remove folder") }, onClick = { menu = false; onRemove() }, destructive = true)
         }
     }
 }
