@@ -1,0 +1,4 @@
+Lcom/evanna/player/**;
+HSPLcom/evanna/player/**->**(**)**
+Lcom/truesample/usbaudio/**;
+HSPLcom/truesample/usbaudio/**->**(**)**
