@@ -665,6 +665,7 @@ internal class UsbPlaybackController(
         val sound = SoundEngine()
         var lastEqProcessed = false
         var lastEqPreampDb = 0f
+        var slowestEqNs = 0L
         try {
             val frames = (input.format.sampleRate / 100).coerceIn(1, 4096)
             val buffer = ByteBuffer.allocateDirect(frames * input.format.channels * 4).order(ByteOrder.LITTLE_ENDIAN)
@@ -693,7 +694,9 @@ internal class UsbPlaybackController(
                     val pcm = buffer.duplicate().apply { limit(count * input.format.channels * 4) }.slice().order(ByteOrder.LITTLE_ENDIAN)
                     // Every output gets the same EQ here, before the Android/Direct USB split.
                     if (input.format is TrackPcmFormat) {
+                        val started = System.nanoTime()
                         sound.process(pcm, count, input.format.channels, input.format.sampleRate, SoundSettings.config.value)
+                        slowestEqNs = maxOf(slowestEqNs, System.nanoTime() - started)
                         if (sound.active != lastEqProcessed || sound.gainDb != lastEqPreampDb) {
                             lastEqProcessed = sound.active; lastEqPreampDb = sound.gainDb
                             mutableSnapshot.update { if (it.generation == session) it.copy(eqProcessed = sound.active, eqPreampDb = sound.gainDb) else it }
@@ -718,6 +721,9 @@ internal class UsbPlaybackController(
             failure = UsbPlaybackFailure.OUTPUT_FAILED
         }
         if (failure == null && !ended) return
+        // runCatching: JVM tests run without Android's Log.
+        if (failure != null) runCatching { android.util.Log.w("UsbPlayback", "stopped: $failure, ${runCatching { owned.stats() }.getOrNull()}, " +
+            "eq ${if (sound.active) "on" else "off"}, slowest eq chunk ${slowestEqNs / 1000} us of 10000 us") }
         // Cleanup cannot be part of the writer job: pause/close joins it while holding commands.
         scope.launch {
             commands.withLock {

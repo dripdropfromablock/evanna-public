@@ -30,6 +30,7 @@ constexpr int kFeedbackTransfers = 2;
 constexpr int kFeedbackPackets = 4;
 constexpr uint32_t kTransferMillis = 10;   // audio per transfer
 constexpr uint32_t kRingMillis = 500;      // decoded audio buffered ahead of USB
+constexpr int kBadTransfersInARow = 3;     // transfers with dropped packets, back to back, before the stream stops
 constexpr auto kDrainTimeout = std::chrono::milliseconds(1500);
 // Diagnostic bounds proposed in the engineering guide; physical DAC timing remains to be measured.
 constexpr int64_t kFirstFeedbackMs = 1000;
@@ -260,6 +261,8 @@ bool UsbStreamer::start(uint32_t sampleRate, uint32_t sourceBits, uint32_t chann
     trailingUnderruns_ = 0;
     underruns_ = 0;
     transferErrors_ = 0;
+    badTransfersInARow_ = 0;
+    dropReports_ = 0;
     clippedSamples_ = 0;
     primed_ = false;
     feedbackRequired_ = f.syncType == uac::SyncType::Async;
@@ -659,6 +662,7 @@ void UsbStreamer::fillTransfer(libusb_transfer* t) {
             std::lock_guard<std::mutex> flow(flowMutex_);
             got = volumeVerified_ && (primed_ || inputEnded_) ? ring_->read(buf + offset, want) : 0;
             if (got < want && primed_ && volumeVerified_) {
+                if (underruns_ == 0) LOGE("underrun: wanted %zu bytes, ring had %zu, input ended %d", want, got, int(inputEnded_.load()));
                 ++underruns_;
                 ++trailingUnderruns_;
             }
@@ -681,31 +685,46 @@ void UsbStreamer::onTransferDone(libusb_transfer* t) {
     const uint64_t pcmFrames = known ? self->transferPcmFrames_[index] : 0;
     if (!known) self->failTransfer();
     else self->transferPcmFrames_[index] = 0;
-    if (self->streaming_ && self->feedbackRequired_ && self->feedbackExpired(monotonicMs())) self->failTransfer();
+    if (self->streaming_ && self->feedbackRequired_ && self->feedbackExpired(monotonicMs())) self->failTransfer("feedback stale");
     bool resubmit = false;
     bool completed = false;
     switch (t->status) {
-        case LIBUSB_TRANSFER_COMPLETED:
+        case LIBUSB_TRANSFER_COMPLETED: {
             completed = known;
+            int bad = 0;
+            int first = -1;
             for (int i = 0; i < t->num_iso_packets; ++i) {
                 const auto& packet = t->iso_packet_desc[i];
                 if (packet.status != LIBUSB_TRANSFER_COMPLETED || packet.actual_length != packet.length) {
-                    self->failTransfer();
+                    if (bad++ == 0) first = i;
+                }
+            }
+            if (bad == 0) {
+                self->badTransfersInARow_ = 0;
+            } else {
+                // Isochronous USB may drop a packet now and then (seen on a Xiaomi host: status 1, 0 bytes sent).
+                // One lost packet is a gap of one USB microframe, so play on; stop only when drops persist.
+                const auto& p = t->iso_packet_desc[first];
+                if (self->dropReports_++ < 20)
+                    LOGW("iso: %d of %d packets dropped (packet %d: status %d, sent %u of %u)", bad, t->num_iso_packets, first,
+                         int(p.status), p.actual_length, p.length);
+                if (bad > t->num_iso_packets / 4 || ++self->badTransfersInARow_ >= kBadTransfersInARow) {
+                    self->failTransfer("iso packets", bad);
                     completed = false;
-                    break;
                 }
             }
             resubmit = self->streaming_;
             break;
+        }
         case LIBUSB_TRANSFER_NO_DEVICE:
             self->disconnected_ = true;
             self->streaming_ = false;
             break;
         case LIBUSB_TRANSFER_CANCELLED:
-            if (self->streaming_) self->failTransfer();
+            if (self->streaming_) self->failTransfer("cancelled");
             break;
         default:
-            self->failTransfer();
+            self->failTransfer("transfer status", int(t->status));
             break;
     }
     if (resubmit) {
@@ -720,7 +739,7 @@ void UsbStreamer::onTransferDone(libusb_transfer* t) {
         }
         LOGE("resubmit failed: %s", libusb_error_name(rc));
         if (rc == LIBUSB_ERROR_NO_DEVICE) self->disconnected_ = true;
-        self->failTransfer();
+        self->failTransfer("resubmit", rc);
     }
     if (completed) self->framesCompleted_ += pcmFrames;
     --self->inFlight_;
@@ -740,8 +759,9 @@ void UsbStreamer::eventLoop() {
     eventThreadFinished_ = true;
 }
 
-void UsbStreamer::failTransfer() {
-    ++transferErrors_;
+void UsbStreamer::failTransfer(const char* why, int detail) {
+    // Only the first failure of a stream is logged; later ones follow from it.
+    if (transferErrors_.fetch_add(1) == 0) LOGE("transfer failed: %s (%d)", why, detail);
     streaming_ = false;
     spaceCv_.notify_all();
 }
@@ -877,7 +897,7 @@ bool UsbStreamer::drainHealthy() const {
 
 bool UsbStreamer::drainWorkAllowed() {
     if (inputEnded_ && std::chrono::steady_clock::now() >= drainDeadline_) {
-        failTransfer();
+        failTransfer("drain timeout");
         return false;
     }
     return true;

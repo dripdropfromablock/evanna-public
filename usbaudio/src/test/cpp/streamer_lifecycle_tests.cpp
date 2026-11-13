@@ -43,6 +43,7 @@ static auto feedbackDue = std::chrono::steady_clock::now();
 static int feedbackPacketStatus = LIBUSB_TRANSFER_COMPLETED;
 static unsigned feedbackLength = 3;
 static int dataFault = 0;
+static bool dataFaultSticky = false;  // the fault repeats on every data completion
 static int dataCredits = 0;
 static std::vector<uint8_t> completedAudio;
 static bool holdFeedback = false, feedbackHeld = false;
@@ -204,6 +205,11 @@ int libusb_handle_events_timeout_completed(libusb_context* ctx, timeval*, int*) 
         }
         if (dataFault == 1) transfer->iso_packet_desc[0].status = LIBUSB_TRANSFER_ERROR;
         if (dataFault == 2) --transfer->iso_packet_desc[0].actual_length;
+        // 5 and 6: every packet of the transfer fails or comes up short, which stops the stream at once.
+        for (int i = 0; i < transfer->num_iso_packets && (dataFault == 5 || dataFault == 6); ++i) {
+            if (dataFault == 5) transfer->iso_packet_desc[i].status = LIBUSB_TRANSFER_ERROR;
+            else if (transfer->iso_packet_desc[i].actual_length > 0) --transfer->iso_packet_desc[i].actual_length;
+        }
         if (dataFault == 3) transfer->status = LIBUSB_TRANSFER_NO_DEVICE;
         if (dataFault == 0 || dataFault == 4) {
             for (int i = 0; i < transfer->num_iso_packets; ++i) {
@@ -211,7 +217,7 @@ int libusb_handle_events_timeout_completed(libusb_context* ctx, timeval*, int*) 
                 completedAudio.insert(completedAudio.end(), bytes, bytes + transfer->iso_packet_desc[i].length);
             }
         }
-        dataFault = 0;
+        if (!dataFaultSticky) dataFault = 0;
     }
     const bool audioCompletion = transfer->status == LIBUSB_TRANSFER_COMPLETED && !(transfer->endpoint & 0x80);
     lock.unlock();
@@ -258,7 +264,7 @@ static void reset() {
     feedbackDue = std::chrono::steady_clock::now();
     feedbackPacketStatus = LIBUSB_TRANSFER_COMPLETED;
     feedbackLength = 3;
-    dataFault = 0;
+    dataFault = 0; dataFaultSticky = false;
     dataCredits = 0; completedAudio.clear();
     holdFeedback = feedbackHeld = false;
     volumes.clear(); volumeWrites.clear(); muteWrites = muteState = 0;
@@ -581,6 +587,25 @@ static void feedbackResubmitFailureStopsStream() {
     CHECK(output.close());
 }
 
+static void oneDroppedPacketPlaysOn() {
+    for (int fault : {1, 2}) {
+        reset();
+        UsbStreamer output;
+        CHECK(openAndStart(output));
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            dataCredits = 6; dataFault = fault; // the first completion drops one packet, the next five are clean
+            queueChanged.notify_all();
+        }
+        const auto until = std::chrono::steady_clock::now() + 3s;
+        while (audioCompletions < 6 && std::chrono::steady_clock::now() < until) std::this_thread::sleep_for(1ms);
+        CHECK(audioCompletions >= 6);
+        CHECK(output.stats().transferErrors == 0 && !output.stats().disconnected);
+        allowCallbacks();
+        CHECK(output.close());
+    }
+}
+
 static void packetFailuresStopStream() {
     for (int fault : {1, 2, 3}) {
         reset();
@@ -590,6 +615,7 @@ static void packetFailuresStopStream() {
         {
             std::lock_guard<std::mutex> lock(queueMutex);
             dataFault = fault;
+            dataFaultSticky = fault != 3; // drops must persist to stop the stream; removal stops it at once
             queueChanged.notify_all();
         }
         waitForTransportFailure(output);
@@ -1080,7 +1106,8 @@ static void drainFailureAndStopNeverClaimCompletion() {
             CHECK(pcmTransfer != pending.end());
             std::rotate(pending.begin(), pcmTransfer, pcmTransfer + 1);
         }
-        if (scenario >= 1 && scenario <= 3) giveData(1, scenario); // packet error, short packet, unplug
+        // Whole-transfer packet errors, whole-transfer short packets, unplug. A single dropped packet plays on.
+        if (scenario >= 1 && scenario <= 3) giveData(1, scenario == 1 ? 5 : scenario == 2 ? 6 : 3);
         if (scenario == 4) {
             std::lock_guard<std::mutex> lock(queueMutex);
             failSubmitAt = submits + 1; dataCredits = 1; queueChanged.notify_all();
@@ -1287,6 +1314,7 @@ int main() {
     unusableFeedbackCannotStart();
     staleFeedbackUnblocksWriter();
     feedbackResubmitFailureStopsStream();
+    oneDroppedPacketPlaysOn();
     packetFailuresStopStream();
     lateValidFeedbackCannotReviveStream();
     invalidFirstValueDoesNotPoisonFeedbackFormat();

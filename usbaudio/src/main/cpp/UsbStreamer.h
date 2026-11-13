@@ -129,7 +129,7 @@ private:
     void applyPendingCrossfeed();
     bool resampleAndPush(size_t frames, bool endOfInput);  // frames already in resampleIn_
     void eventLoop();
-    void failTransfer();
+    void failTransfer(const char* why = "unspecified", int detail = 0);
     bool feedbackExpired(int64_t nowMs) const;
     bool drainHealthy() const;
     bool drainWorkAllowed();
@@ -211,6 +211,8 @@ private:
     std::atomic<uint64_t> framesCompleted_{0};
     std::atomic<uint64_t> underruns_{0};
     std::atomic<uint64_t> transferErrors_{0};
+    int badTransfersInARow_ = 0;  // event thread only
+    int dropReports_ = 0;         // event thread only: caps the drop log lines per stream
     std::atomic<uint64_t> clippedSamples_{0};
     std::atomic<bool> disconnected_{false};
 };
