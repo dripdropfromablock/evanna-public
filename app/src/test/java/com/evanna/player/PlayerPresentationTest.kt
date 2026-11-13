@@ -1,9 +1,30 @@
 package com.evanna.player
 
+import androidx.compose.runtime.MonotonicFrameClock
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.Assert.*
 import org.junit.Test
 
 class PlayerPresentationTest {
+    @Test fun aPullThatEndsBeforeTheNextFrameStillSettles() = runBlocking {
+        val motion = PlayerSheetMotion(initiallyOpen = true).apply { travelPx = 1000 }
+        val released = motion.releases
+        // A short drag down on the open sheet, all handled before the next frame: dragging goes true and back to false unseen.
+        assertTrue(motion.beginPull(null))
+        motion.pull(200f)
+        motion.endPull()
+        assertFalse(motion.dragging)
+        assertEquals(released + 1, motion.releases)
+        assertEquals(0.8f, motion.progress, 0.001f)
+        var now = 0L
+        withContext(object : MonotonicFrameClock {
+            override suspend fun <R> withFrameNanos(onFrame: (Long) -> R): R { now += 16_000_000L; return onFrame(now) }
+        }) { motion.settle(open = true, track = null) }
+        assertEquals(1f, motion.progress, 0f)
+        assertEquals(0f, motion.chromeOffsetY, 0f)
+    }
+
     @Test fun playerPullUsesDistanceForSlowDragsAndDirectionForFlings() {
         assertFalse(playerPullTarget(startedOpen = false, progress = 0.24f, velocityDp = -399f))
         assertTrue(playerPullTarget(startedOpen = false, progress = 0.25f, velocityDp = 0f))

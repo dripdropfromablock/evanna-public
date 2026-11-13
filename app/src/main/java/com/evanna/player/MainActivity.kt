@@ -408,7 +408,7 @@ class MainActivity : ComponentActivity() {
                 val modalOpen = showOutput || pending != null
                 val focus = LocalFocusManager.current
                 val softwareKeyboard = LocalSoftwareKeyboardController.current
-                LaunchedEffect(wantedOpen, motion.dragging) { if (!motion.dragging) motion.settle(wantedOpen, track) }
+                LaunchedEffect(wantedOpen, motion.dragging, motion.releases) { if (!motion.dragging) motion.settle(wantedOpen, track) }
                 LaunchedEffect(look, playerVisible) { applySystemBars(look, playerVisible) }
                 LaunchedEffect(wantedOpen, playerVisible) {
                     if (playerVisible) focus.clearFocus(force = true)

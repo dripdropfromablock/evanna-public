@@ -13,6 +13,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -64,6 +65,9 @@ internal class PlayerSheetMotion(initiallyOpen: Boolean) {
     private var flightTrack by mutableStateOf<String?>(null)
     var dragging by mutableStateOf(false)
         private set
+    /** Counts finished pulls. A quick pull can start and end between two frames, so [dragging] alone may never look changed. */
+    var releases by mutableIntStateOf(0)
+        private set
     private var settlingPull by mutableStateOf(false)
     var travelPx = 0
     var miniCover by mutableStateOf<LayoutCoordinates?>(null)
@@ -90,6 +94,7 @@ internal class PlayerSheetMotion(initiallyOpen: Boolean) {
         if (!dragging) return
         releaseVelocity = if (travelPx > 0) -velocityY / travelPx else 0f
         dragging = false
+        releases++
     }
 
     suspend fun settle(open: Boolean, track: String?) {
