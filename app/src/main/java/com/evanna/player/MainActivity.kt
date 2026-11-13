@@ -443,7 +443,8 @@ class MainActivity : ComponentActivity() {
                 }
                 val pushed = pushedScreen(navigation)
                 val dockTab = selectedTab(navigation)
-                var dockNavigationHidden by remember(dockTab, pushed, playerUi.hasSong) { mutableStateOf(false) }
+                // Scrolling a tab down folds the dock into one row; scrolling up, a new tab or a new screen opens it again.
+                var dockFolded by remember(dockTab, pushed, playerUi.hasSong) { mutableStateOf(false) }
                 val dockThreshold = with(LocalDensity.current) { 32.dp.toPx() }
                 val dockScroll = remember(dockTab, pushed, playerUi.hasSong, dockThreshold) {
                     object : NestedScrollConnection {
@@ -456,8 +457,8 @@ class MainActivity : ComponentActivity() {
                             if (distance * dy < 0f) distance = 0f
                             distance += dy
                             when {
-                                distance <= -dockThreshold -> { dockNavigationHidden = true; distance = 0f }
-                                distance >= dockThreshold -> { dockNavigationHidden = false; distance = 0f }
+                                distance <= -dockThreshold -> { dockFolded = true; distance = 0f }
+                                distance >= dockThreshold -> { dockFolded = false; distance = 0f }
                             }
                             return Offset.Zero
                         }
@@ -486,7 +487,7 @@ class MainActivity : ComponentActivity() {
                                 // Covered tabs stay silent to screen readers and Back, and never receive touches:
                                 // empty gutters on a pushed screen or the sheet must not tap through to the tabs.
                                 Box(Modifier.fillMaxSize().then(if (covered) Modifier.clearAndSetSemantics {}.blockTouches()
-                                    else if (dockTab == PlayerScreen.LIBRARY && playerUi.hasSong) Modifier.nestedScroll(dockScroll) else Modifier)) {
+                                    else Modifier.nestedScroll(dockScroll))) {
                                     // The Carousel tab owns its horizontal drags.
                                     TabPager(baseTab(navigation), ::selectTab) { tab ->
                                         val insets = if (tab == PlayerScreen.OUTPUT)
@@ -529,14 +530,14 @@ class MainActivity : ComponentActivity() {
                             listOf(Triple(PlayerScreen.CAROUSEL, "Carousel", PlayerIcons.AlbumCarousel),
                                 Triple(PlayerScreen.LIBRARY, "Library", musicNote),
                                 Triple(PlayerScreen.OUTPUT, "Settings", Icons.Filled.Settings)),
-                            Icons.Filled.Search, playerUi.hasSong, dockNavigationHidden,
+                            Icons.Filled.Search, playerUi.hasSong, dockFolded, { dockFolded = false },
                             Modifier.align(Alignment.BottomCenter).onSizeChanged { dockHeight = it.height }
                                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
-                                .padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
+                                .padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) { compact ->
                             MiniPlayer(playerUi, cover, { setPlayerOpen(true) }, ::togglePlayback,
                                 onPrevious = { mediaController?.seekToPreviousMediaItem() },
                                 onNext = { mediaController?.seekToNextMediaItem() },
-                                onOutput = { openOutput(null) }, motion = motion, flying = flying, onOpenChange = setPlayerOpen)
+                                onOutput = { openOutput(null) }, motion = motion, flying = flying, onOpenChange = setPlayerOpen, compact = compact)
                         } }
                     }
                     if (playerVisible) {

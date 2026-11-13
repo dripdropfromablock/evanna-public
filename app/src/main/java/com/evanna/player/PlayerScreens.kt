@@ -5,7 +5,12 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
+import kotlin.math.roundToInt
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -159,6 +164,8 @@ internal fun SettingsLink(label: String, subtitle: String? = null, icon: ImageVe
 internal fun MiniPlayer(state: PlayerPresentation, cover: Bitmap?, onOpen: () -> Unit, onPlayPause: () -> Unit,
     onPrevious: () -> Unit, onNext: () -> Unit, onOutput: () -> Unit,
     motion: PlayerSheetMotion, flying: Boolean, onOpenChange: (Boolean) -> Unit,
+    /** In the folded dock: narrower, so Next goes; swiping sideways still skips. */
+    compact: Boolean = false,
 ) {
     if (!state.hasSong) return
     val look = LocalLookStyle.current.look
@@ -213,7 +220,7 @@ internal fun MiniPlayer(state: PlayerPresentation, cover: Bitmap?, onOpen: () ->
                     modifier = Modifier.size(48.dp).semantics { contentDescription = if (state.playing) "Pause playback" else "Play playback" }) {
                     Icon(if (state.playing) PlayerIcons.Pause else Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(26.dp))
                 }
-                IconButton(onClick = onNext, enabled = canNext,
+                if (!compact) IconButton(onClick = onNext, enabled = canNext,
                     modifier = Modifier.size(48.dp).semantics { contentDescription = "Next" }) {
                     Icon(PlayerIcons.Next, contentDescription = null, modifier = Modifier.size(26.dp))
                 }
@@ -222,27 +229,55 @@ internal fun MiniPlayer(state: PlayerPresentation, cover: Bitmap?, onOpen: () ->
     }
 }
 
+/** The open dock's row height and the Search circle's size; the folded dock is one row of it. */
+private val DockBar = 56.dp
+private val DockGap = 8.dp
+
+/** How far into the fold [part] is, for a part that runs from [start] to [end] of it, eased in and out. */
+internal fun foldPart(fold: Float, start: Float, end: Float): Float {
+    val t = ((fold - start) / (end - start)).coerceIn(0f, 1f)
+    return t * t * (3 - 2 * t)
+}
+
+/**
+ * The fold's timing. The tab bar shrinks over the first 60%; the mini player narrows and slides clear of it (30-75%)
+ * before it drops into the row (55-100%). Opening runs the same path backwards, so the mini player rises before it
+ * spreads back over where the tabs were, and it never crosses the round tab on the way.
+ */
+internal fun dockTabsFold(fold: Float) = foldPart(fold, 0f, 0.6f)
+internal fun dockMiniSlide(fold: Float) = foldPart(fold, 0.3f, 0.75f)
+internal fun dockMiniDrop(fold: Float) = foldPart(fold, 0.55f, 1f)
+
+private fun lerpPx(open: Int, folded: Int, t: Float) = (open + (folded - open) * t).roundToInt()
+
+/**
+ * The floating dock (docs/ui-plan-liquid-glass.md, phase 2): open, the mini player sits over the tab bar and the Search
+ * circle. Scrolling down folds it into one row, as iOS 26 does: the tab bar narrows to the current tab, the mini player
+ * drops into the gap, and Search stays at the end. Tapping the folded tab opens it again; so does scrolling back up.
+ * One layout places all three pieces, so the fold is a single movement rather than separate bars appearing and going.
+ */
 @Composable
 internal fun PlayerDock(selected: PlayerScreen, onSelect: (PlayerScreen) -> Unit,
     tabs: List<Triple<PlayerScreen, String, ImageVector>>, searchIcon: ImageVector, hasSong: Boolean,
-    hideNavigation: Boolean, modifier: Modifier = Modifier, miniPlayer: @Composable () -> Unit,
+    folded: Boolean, onUnfold: () -> Unit, modifier: Modifier = Modifier, miniPlayer: @Composable (compact: Boolean) -> Unit,
 ) {
     val colors = EvannaDesign.colorScheme
     val surface = if (LocalLookStyle.current.look.dark) colors.surfaceContainerLow.copy(alpha = 0.94f) else colors.surfaceContainer
     val border = evannaHairline(0.62f)
-    Column(modifier.fillMaxWidth()) {
-        if (hasSong) miniPlayer()
-        // The dock is bottom-aligned, so collapsing this space lowers the mini player with the navigation row.
-        AnimatedVisibility(visible = !hideNavigation,
-            enter = expandVertically(tween(EvannaMotion.enter.durationMillis, easing = EvannaMotion.enter.easing), expandFrom = Alignment.Top),
-            exit = shrinkVertically(tween(EvannaMotion.exit.durationMillis, easing = EvannaMotion.exit.easing), shrinkTowards = Alignment.Top),
-        ) {
-            Row(Modifier.fillMaxWidth().padding(top = if (hasSong) 8.dp else 0.dp).selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                GlassSurface(Modifier.weight(1f), CircleShape, solidColor = surface, border = border, shadowElevation = 6.dp) {
-                    DockTabs(selected, onSelect, tabs)
+    val foldState = animateFloatAsState(if (folded) 1f else 0f, spring(dampingRatio = 0.86f, stiffness = 420f), label = "dock fold")
+    val fold = { foldState.value }
+    val compact by remember { derivedStateOf { foldState.value > 0.5f } }
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val tabsOpenWidth = maxWidth - DockBar - DockGap
+        Layout(contents = listOf(
+            { if (hasSong) miniPlayer(compact) },
+            {
+                GlassSurface(Modifier, CircleShape, solidColor = surface, border = border, shadowElevation = 6.dp) {
+                    DockTabs(selected, onSelect, tabs, tabsOpenWidth, fold, compact, onUnfold)
                 }
-                GlassSurface(Modifier.size(56.dp), CircleShape, solidColor = surface, border = border, shadowElevation = 6.dp) {
+            },
+            {
+                GlassSurface(Modifier.size(DockBar), CircleShape, solidColor = surface, border = border, shadowElevation = 6.dp) {
                     val searchSelected = selected == PlayerScreen.SEARCH
                     val interaction = remember { MutableInteractionSource() }
                     val searchOpacity by animateFloatAsState(if (searchSelected) 1f else 0f, EvannaMotion.enter, label = "search selection opacity")
@@ -255,18 +290,47 @@ internal fun PlayerDock(selected: PlayerScreen, onSelect: (PlayerScreen) -> Unit
                             tint = if (searchSelected) colors.primary else colors.onSurfaceVariant)
                     }
                 }
+            },
+        ), Modifier.fillMaxWidth().selectableGroup()) { (mini, tabsPill, search), constraints ->
+            val width = constraints.maxWidth
+            val bar = DockBar.roundToPx()
+            val gap = DockGap.roundToPx()
+            val tabsT = dockTabsFold(foldState.value)
+            val slideT = dockMiniSlide(foldState.value)
+            val dropT = dockMiniDrop(foldState.value)
+            val searchPlaced = search.first().measure(Constraints.fixed(bar, bar))
+            val tabsWidth = lerpPx(width - bar - gap, bar, tabsT)
+            val tabsPlaced = tabsPill.first().measure(Constraints(tabsWidth, tabsWidth, 0, constraints.maxHeight))
+            val row = maxOf(tabsPlaced.height, searchPlaced.height)
+            val miniWidth = lerpPx(width, (width - 2 * bar - 2 * gap).coerceAtLeast(bar), slideT)
+            val miniPlaced = mini.firstOrNull()?.measure(Constraints(miniWidth, miniWidth, 0, constraints.maxHeight))
+            val miniHeight = miniPlaced?.height ?: 0
+            val openHeight = if (miniPlaced != null) miniHeight + gap + row else row
+            val height = lerpPx(openHeight, maxOf(row, miniHeight), dropT)
+            layout(width, height) {
+                val rowY = height - row
+                tabsPlaced.place(0, rowY + (row - tabsPlaced.height) / 2)
+                searchPlaced.place(width - bar, rowY + (row - searchPlaced.height) / 2)
+                // Drawn last, so any brief touch at the corners is the mini player over the tab bar, not under it.
+                miniPlaced?.place(lerpPx(0, bar + gap, slideT), lerpPx(0, height - miniHeight, dropT))
             }
         }
     }
 }
 
+/**
+ * The tab bar's three tabs, laid out at the open bar's [openWidth] whatever width the bar has. Folding, the other tabs
+ * and the labels fade, the row slides so the current tab sits in the middle of the narrowed bar, and the bar becomes
+ * one button that opens the dock again ([onUnfold]).
+ */
 @Composable
 private fun DockTabs(selected: PlayerScreen, onSelect: (PlayerScreen) -> Unit,
-    tabs: List<Triple<PlayerScreen, String, ImageVector>>,
+    tabs: List<Triple<PlayerScreen, String, ImageVector>>, openWidth: Dp, fold: () -> Float, compact: Boolean, onUnfold: () -> Unit,
 ) {
     val colors = EvannaDesign.colorScheme
     val tabShape = RoundedCornerShape(50)
     val selectedIndex = tabs.indexOfFirst { it.first == selected }
+    val shownIndex = selectedIndex.coerceAtLeast(0)  // on Search, the folded bar shows the first tab
     val searchSelected = selected == PlayerScreen.SEARCH
     var draggedMarker by remember(selected) { mutableStateOf<Float?>(null) }
     val select by rememberUpdatedState(onSelect)
@@ -275,7 +339,21 @@ private fun DockTabs(selected: PlayerScreen, onSelect: (PlayerScreen) -> Unit,
         if (draggedMarker != null) snap() else EvannaMotion.enter, label = "dock selection position")
     val markerOpacity by animateFloatAsState(if (searchSelected && draggedMarker == null) 0f else 1f,
         EvannaMotion.exit, label = "dock selection opacity")
-    Row(Modifier.fillMaxWidth().padding(4.dp).pointerInput(selectedIndex, tabs, layout) {
+    val unfoldPress = remember { MutableInteractionSource() }
+    Box(Modifier.clip(CircleShape)) {
+    Row(Modifier.wrapContentWidth(Alignment.Start, unbounded = true).requiredWidth(openWidth)
+        .graphicsLayer {
+            // Slide the current tab's slot to the middle of the narrowed bar.
+            val t = dockTabsFold(fold())
+            val inset = 4.dp.toPx()
+            val slot = (size.width - 2 * inset) / tabs.size
+            val center = inset + (shownIndex + 0.5f) * slot
+            val target = DockBar.toPx() / 2
+            translationX = (if (layout == LayoutDirection.Ltr) target - center else center - target) * t
+        }
+        .then(if (compact) Modifier.clearAndSetSemantics {} else Modifier)
+        .padding(4.dp).pointerInput(selectedIndex, tabs, layout, compact) {
+        if (compact) return@pointerInput
         val direction = if (layout == LayoutDirection.Ltr) 1 else -1
         var start = 0
         var distance = 0f
@@ -303,22 +381,35 @@ private fun DockTabs(selected: PlayerScreen, onSelect: (PlayerScreen) -> Unit,
                 draggedMarker = (start + distance / slotWidth).coerceIn(0f, tabs.lastIndex.toFloat())
             },
         )
-    }.slidingSelectionPill(tabs.size, { markerPosition }, { colors.onSurface.copy(alpha = SELECTION_PILL_ALPHA * markerOpacity) })) {
-        for ((tab, label, icon) in tabs) {
+    }.slidingSelectionPill(tabs.size, { markerPosition },
+        { colors.onSurface.copy(alpha = SELECTION_PILL_ALPHA * markerOpacity * (1 - dockTabsFold(fold()))) })) {
+        tabs.forEachIndexed { index, (tab, label, icon) ->
             val on = tab == selected
+            val shown = index == shownIndex
             val tint = if (on) colors.onSurface else colors.onSurfaceVariant
             val interaction = remember(tab) { MutableInteractionSource() }
-            Column(Modifier.weight(1f).heightIn(min = 48.dp).clip(tabShape)
+            Column(Modifier.weight(1f).heightIn(min = 48.dp)
+                .graphicsLayer { if (!shown) alpha = 1 - dockTabsFold(fold()) }
+                .clip(tabShape)
                 .controlFocus(interaction, tabShape)
-                .selectable(selected = on, interactionSource = interaction, indication = null,
+                .selectable(selected = on, interactionSource = interaction, indication = null, enabled = !compact,
                     role = Role.Tab, onClick = { onSelect(tab) }).padding(vertical = 3.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Icon(icon, contentDescription = null, tint = if (on) colors.primary else tint, modifier = Modifier.size(24.dp).pressScale(interaction))
+                // Folded, the label goes and the icon moves down to the middle of the round.
+                Icon(icon, contentDescription = null, tint = if (on) colors.primary else tint, modifier = Modifier.size(24.dp)
+                    .graphicsLayer { translationY = 8.dp.toPx() * dockTabsFold(fold()) }.pressScale(interaction))
                 Spacer(Modifier.height(3.dp))
                 Text(label, style = EvannaDesign.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 13.sp),
-                    fontWeight = FontWeight.Medium, color = tint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    fontWeight = FontWeight.Medium, color = tint, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.graphicsLayer { alpha = 1 - dockTabsFold(fold()) })
             }
         }
+    }
+    // Folded, the whole round is one button that opens the dock again.
+    if (compact) Box(Modifier.matchParentSize().pressScale(unfoldPress)
+        .controlFocus(unfoldPress, CircleShape)
+        .clickable(unfoldPress, indication = null, role = Role.Button, onClickLabel = "Show all tabs", onClick = onUnfold)
+        .semantics { contentDescription = "${tabs[shownIndex].second}. Show all tabs" })
     }
 }
 
