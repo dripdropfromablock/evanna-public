@@ -47,7 +47,6 @@ internal fun AudioOutputSheet(
     usbOutputs: @Composable () -> Unit,
 ) {
     var showPipeline by rememberSaveable { mutableStateOf(false) }
-    var advanced by rememberSaveable { mutableStateOf(false) }
     val colors = EvannaDesign.colorScheme
     val rowShape = if (LocalLookStyle.current.look.apple) RoundedCornerShape(14.dp) else EvannaDesign.shapes.small
     val android = state.route == "ANDROID"
@@ -83,7 +82,8 @@ internal fun AudioOutputSheet(
             OutputRow("Audio Pipeline", signal?.let(::shortSourceQuality) ?: "View audio signal path", PlayerIcons.Pipeline,
                 onClick = { showPipeline = true })
         }
-        if (showPipeline) AudioQualityWindow(state, advanced, { advanced = it }, { showPipeline = false })
+        // The output list is right under this sheet, so "Pick another output" just closes it.
+        if (showPipeline) SoundPathSheet(state.soundPath, { showPipeline = false }, { showPipeline = false })
     }
 }
 

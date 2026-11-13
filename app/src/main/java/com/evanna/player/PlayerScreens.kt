@@ -77,7 +77,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.evanna.player.library.ArtworkImage
 import com.evanna.player.library.Lyrics
-import com.evanna.player.playback.SignalStage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -333,30 +332,4 @@ internal fun BoxScope.UsbVolumeIndicator(db: Float?) {
         Text("USB volume ${db.toString().removeSuffix(".0")} dB", style = EvannaType.technical,
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
     }
-}
-
-/** The quality badge's window: a toggle between a few plain lines (Minimal) and the full signal path (Advanced). */
-@Composable
-internal fun AudioQualityWindow(state: PlayerPresentation, advanced: Boolean, onAdvanced: (Boolean) -> Unit, onClose: () -> Unit) {
-    val colors = EvannaDesign.colorScheme
-    // Minimal starts with the badge's own text, so the window agrees with what was tapped.
-    val rows = if (advanced) state.signalStages.filter { !it.brief }
-        else listOfNotNull(state.sourceQuality.takeIf { it.isNotBlank() }?.let { SignalStage("Source", it) }) + state.signalStages.filter { it.brief }
-    AlertDialog(onDismissRequest = onClose,
-        title = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Audio quality", modifier = Modifier.semantics { heading() })
-                SingleChoiceSegmentedButtonRow(listOf("Minimal", "Advanced"), if (advanced) 1 else 0,
-                    { onAdvanced(it == 1) }, Modifier.fillMaxWidth())
-            }
-        },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                for (stage in rows) Column {
-                    if (stage.label.isNotEmpty()) Text(stage.label, style = EvannaDesign.typography.titleSmall)
-                    Text(stage.value, style = EvannaDesign.typography.bodyMedium.copy(fontFeatureSettings = "tnum"), color = if (stage.changed) colors.primary else colors.onSurfaceVariant)
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onClose) { Text("Close") } })
 }

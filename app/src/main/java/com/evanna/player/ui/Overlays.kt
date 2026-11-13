@@ -255,7 +255,7 @@ internal fun AlertDialog(onDismissRequest: () -> Unit, title: @Composable () -> 
 
 @Composable
 internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: Shape, containerColor: Color, scrimColor: Color,
-    dragHandle: @Composable () -> Unit, content: @Composable ColumnScope.() -> Unit,
+    dragHandle: @Composable () -> Unit, title: String = "Audio output", content: @Composable ColumnScope.() -> Unit,
 ) {
     var closing by remember { mutableStateOf(false) }
     val close = { closing = true }
@@ -299,7 +299,7 @@ internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: S
         }
         Box(Modifier.fillMaxSize()) {
             Box(Modifier.matchParentSize().graphicsLayer { alpha = progress.value }
-                .background(scrimColor).clickable(onClick = close).semantics { contentDescription = "Dismiss audio output" })
+                .background(scrimColor).clickable(onClick = close).semantics { contentDescription = "Dismiss ${title.lowercase()}" })
             Box(Modifier.align(Alignment.BottomCenter).statusBarsPadding().onGloballyPositioned {
                 val center = it.localToScreen(Offset(it.size.width / 2f, it.size.height / 2f))
                 sheetCenter = center.takeIf { it.isFinite }
@@ -314,7 +314,7 @@ internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: S
                     scaleY = 0.10f + 0.90f * shown
                     alpha = shown
                 }.nestedScroll(scroll).then(if (closing) Modifier.clearAndSetSemantics {} else Modifier
-                    .semantics { paneTitle = "Audio output"; dismiss { close(); true } }),
+                    .semantics { paneTitle = title; dismiss { close(); true } }),
                     shape = shape, color = containerColor, border = evannaHairline(0.6f)) {
                     Column(Modifier.navigationBarsPadding().imePadding()) {
                         Box(Modifier.fillMaxWidth().draggable(rememberDraggableState { delta -> offset = (offset + delta).coerceAtLeast(0f) },

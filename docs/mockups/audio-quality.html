@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Evanna · Audio quality, three options</title>
+<style>
+:root {
+  /* Evanna's player scheme (AppleDarkColors / EvannaColors) tinted by the cover, as Now Playing does. */
+  --page: #0b0b0c;
+  --ink: #f0f0f0;
+  --ink-2: rgba(240, 240, 240, .72);
+  --ink-3: rgba(240, 240, 240, .5);
+  --hair: rgba(255, 255, 255, .1);
+  --rail: rgba(255, 255, 255, .16);
+  --sheet: rgba(30, 27, 25, .82);
+  --sheet-solid: #1e1b19;
+  --cell: rgba(255, 255, 255, .06);
+  --cell-press: rgba(255, 255, 255, .1);
+  --accent: #e9b88f;         /* light tint of the "Bad" cover's brown */
+  --accent-ink: #2a1a10;
+  --warn: #f2b44c;
+  --warn-ink: #2b1d05;
+  --cover-a: #6b4a37;
+  --cover-b: #2b1f1a;
+  --font: system-ui, Roboto, "Segoe UI", sans-serif;
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { color-scheme: dark; }
+body {
+  background: var(--page); color: var(--ink); font-family: var(--font);
+  font-size: 15px; line-height: 1.4; -webkit-font-smoothing: antialiased;
+  padding: 28px 24px 56px;
+}
+::selection { background: rgba(233, 184, 143, .35); color: var(--ink); }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 10px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* Page chrome: only what is needed to compare the options. */
+.top { max-width: 1180px; margin: 0 auto 26px; display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: end; justify-content: space-between; }
+.top h1 { font-size: 22px; font-weight: 650; letter-spacing: -.2px; }
+.top p { color: var(--ink-2); font-size: 14px; max-width: 56ch; margin-top: 4px; }
+.picker { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: flex; padding: 3px; border-radius: 999px; background: rgba(255,255,255,.07); }
+.seg button { min-height: 36px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 560; color: var(--ink-2); }
+.seg button[aria-pressed="true"] { background: rgba(255,255,255,.16); color: var(--ink); }
+.toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); min-height: 36px; padding: 0 6px; }
+.toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+
+.frames { display: flex; flex-wrap: wrap; gap: 36px; justify-content: center; }
+figure { display: grid; gap: 14px; justify-items: center; }
+figcaption { text-align: center; }
+figcaption b { display: block; font-size: 15px; font-weight: 650; }
+figcaption span { color: var(--ink-2); font-size: 13px; }
+
+/* Phone and the Now Playing screen behind the sheet. */
+.phone {
+  width: 360px; height: 780px; border-radius: 46px; position: relative; overflow: hidden; isolation: isolate;
+  background: radial-gradient(120% 70% at 50% 18%, var(--cover-a), var(--cover-b) 62%, #120d0b);
+  box-shadow: 0 30px 70px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.08);
+}
+.np { position: absolute; inset: 0; padding: 52px 28px; opacity: .55; filter: blur(1.5px); }
+.np .art { width: 220px; height: 220px; margin: 18px auto 22px; border-radius: 14px;
+  background: linear-gradient(160deg, #1d1d1d, #3b3b3b 40%, #0e0e0e); box-shadow: 0 18px 40px rgba(0,0,0,.45); }
+.np h3 { font-size: 22px; font-weight: 650; }
+.np p { color: var(--ink-2); }
+.status { position: absolute; top: 14px; left: 28px; right: 24px; display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; z-index: 3; }
+
+.sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; top: 54px; z-index: 2;
+  border-radius: 30px 30px 0 0; background: var(--sheet);
+  -webkit-backdrop-filter: blur(30px) saturate(1.25); backdrop-filter: blur(30px) saturate(1.25);
+  box-shadow: 0 -12px 40px rgba(0,0,0,.35); display: flex; flex-direction: column; overflow: hidden;
+}
+.grab { width: 38px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.28); margin: 8px auto 0; flex: none; }
+.head { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px 0 22px; flex: none; }
+.head h2 { font-size: 17px; font-weight: 650; }
+.icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 22px; color: var(--ink-2); }
+.icon-btn:hover { background: var(--cell); }
+.scroll { flex: 1; overflow-y: auto; padding: 6px 22px 28px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; }
+.scroll::-webkit-scrollbar { width: 6px; }
+.scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 3px; }
+
+.verdict { padding: 10px 0 18px; }
+.verdict h3 { font-size: 24px; line-height: 1.15; font-weight: 680; letter-spacing: -.3px; text-wrap: balance; }
+.verdict p { color: var(--ink-2); margin-top: 6px; font-size: 14.5px; text-wrap: pretty; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 12px; font-size: 12px; font-weight: 640; margin-bottom: 10px; }
+.chip.live { background: rgba(255,255,255,.09); color: var(--ink-2); }
+.chip.live i { width: 6px; height: 6px; border-radius: 3px; background: var(--accent); }
+.chip.paused i { background: var(--ink-3); }
+
+.tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .2px; padding: 2px 7px; border-radius: 6px; margin-left: 6px; vertical-align: 2px; }
+.tag.changed { background: rgba(233,184,143,.18); color: var(--accent); }
+.tag.problem { background: rgba(242,180,76,.2); color: var(--warn); }
+
+.stopA > .action { margin: -4px 0 12px; }
+.action { display: inline-flex; align-items: center; margin-top: 10px; min-height: 40px; padding: 0 16px; border-radius: 20px; background: var(--warn); color: var(--warn-ink); font-weight: 650; font-size: 14px; }
+
+dl.details { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; padding: 10px 0 4px; }
+dl.details dt { color: var(--ink-3); }
+dl.details dd { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* ---------- Option A: open path line, details open in place ---------- */
+.path { position: relative; }
+.path .seg-line { position: absolute; left: 19px; width: 2px; border-radius: 1px; background: var(--rail); }
+.path .seg-line.after-change { background: rgba(233,184,143,.55); }
+.path .seg-line.after-problem { background: repeating-linear-gradient(to bottom, rgba(242,180,76,.7) 0 6px, transparent 6px 11px); }
+.pulse { position: absolute; left: 14px; width: 12px; height: 70px; border-radius: 6px; pointer-events: none; opacity: 0;
+  background: linear-gradient(to bottom, transparent, var(--pc, #fff) 70%, transparent); filter: drop-shadow(0 0 6px var(--pc, #fff)); }
+.stopA { position: relative; padding-left: 54px; }
+.stopA .disc { position: absolute; left: 0; top: 12px; width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center;
+  background: var(--sheet-solid); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.28); color: var(--ink); transition: transform .25s var(--ease-out), box-shadow .25s var(--ease-out); }
+.stopA.changed .disc { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+.stopA.problem .disc { background: var(--warn); color: var(--warn-ink); box-shadow: none; }
+.stopA.end .disc { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.16); color: var(--ink-2); }
+.stopA.lit .disc { transform: scale(1.1); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.5), 0 0 0 7px rgba(255,255,255,.07); }
+.stopA.changed.lit .disc, .stopA.problem.lit .disc { box-shadow: 0 0 0 7px rgba(233,184,143,.16); }
+.stopA > .row { width: 100%; text-align: left; padding: 12px 0 14px; min-height: 64px; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: start; border-radius: 12px; }
+.stopA .t { font-size: 16px; font-weight: 640; }
+.stopA .v { grid-column: 1; color: var(--ink-2); font-size: 14px; text-wrap: pretty; }
+.stopA .chev { grid-row: 1 / span 2; grid-column: 2; align-self: center; color: var(--ink-3); transition: transform .25s var(--ease-out); }
+.stopA[data-open="true"] .chev { transform: rotate(180deg); }
+.stopA .more { display: none; padding-bottom: 8px; }
+.stopA[data-open="true"] .more { display: block; }
+
+/* ---------- Option B: grouped cells, details on their own page ---------- */
+.panes { position: relative; flex: 1; overflow: hidden; }
+.pane { position: absolute; inset: 0; overflow-y: auto; padding: 6px 16px 28px; transition: transform .32s var(--ease-out), opacity .2s; scrollbar-width: none; }
+.pane.detail { transform: translateX(100%); }
+.panes[data-detail="true"] .pane.main { transform: translateX(-28%); opacity: 0; pointer-events: none; }
+.panes[data-detail="true"] .pane.detail { transform: none; }
+.card { border-radius: 22px; background: var(--cell); padding: 16px 18px; margin: 4px 0 18px; }
+.card h3 { font-size: 21px; line-height: 1.2; font-weight: 680; letter-spacing: -.2px; text-wrap: balance; }
+.card p { color: var(--ink-2); font-size: 14px; margin-top: 4px; }
+.group-title { font-size: 13px; color: var(--ink-3); font-weight: 560; padding: 0 18px 8px; }
+.group { position: relative; border-radius: 22px; background: var(--cell); overflow: hidden; }
+.group .gline { position: absolute; left: 33px; width: 2px; background: var(--rail); }
+.group .gline.after-change { background: rgba(233,184,143,.55); }
+.group .gline.after-problem { background: repeating-linear-gradient(to bottom, rgba(242,180,76,.7) 0 6px, transparent 6px 11px); }
+.group .pulse { left: 28px; }
+.rowB { position: relative; width: 100%; text-align: left; display: grid; grid-template-columns: 34px 1fr auto; gap: 0 14px; align-items: center; padding: 12px 14px 12px 16px; min-height: 64px; border-radius: 0; }
+.rowB:hover { background: var(--cell-press); }
+.rowB + .rowB::before { content: ""; position: absolute; top: 0; left: 64px; right: 0; height: 1px; background: var(--hair); }
+.rowB .tile { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: #34302d; color: var(--ink); position: relative; z-index: 1; transition: transform .25s var(--ease-out), box-shadow .25s; }
+.rowB.changed .tile { background: var(--accent); color: var(--accent-ink); }
+.rowB.problem .tile { background: var(--warn); color: var(--warn-ink); }
+.rowB.lit .tile { transform: scale(1.08); box-shadow: 0 0 0 5px rgba(255,255,255,.08); }
+.rowB .t { font-size: 16px; font-weight: 600; }
+.rowB .v { color: var(--ink-2); font-size: 13.5px; margin-top: 1px; text-wrap: pretty; }
+.rowB .chev { color: var(--ink-3); }
+.rowB.end { cursor: default; }
+.back { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; color: var(--accent); font-weight: 600; padding-right: 10px; }
+.detail h3 { font-size: 22px; font-weight: 680; margin: 4px 2px 4px; }
+.detail .lead { color: var(--ink-2); margin: 0 2px 16px; }
+.detail .group { padding: 4px 18px; }
+.detail .kv { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; font-size: 15px; }
+.detail .kv + .kv { border-top: 1px solid var(--hair); }
+.detail .kv span:last-child { color: var(--ink-2); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- Option C: the sound itself flows down as a wave ---------- */
+.river { position: relative; }
+.wave { position: absolute; left: 6px; width: 28px; background-repeat: repeat-y; background-size: 28px 36px;
+  animation: flow 1.1s linear infinite; }
+.wave.same { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='36'%3E%3Cpath d='M14 0 C 26 9, 26 9, 14 18 S 2 27, 14 36' fill='none' stroke='%23f0f0f0' stroke-opacity='.75' stroke-width='2'/%3E%3C/svg%3E"); }
+.wave.changed { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='36'%3E%3Cpath d='M14 0 C 23 9, 23 9, 14 18 S 5 27, 14 36' fill='none' stroke='%23e9b88f' stroke-width='2'/%3E%3C/svg%3E"); }
+.wave.problem { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='36'%3E%3Cpath d='M14 0 C 23 9, 23 9, 14 18 S 5 27, 14 36' fill='none' stroke='%23f2b44c' stroke-width='2' stroke-dasharray='14 6'/%3E%3C/svg%3E"); }
+.river[data-still="true"] .wave { animation-play-state: paused; opacity: .55; }
+@keyframes flow { from { background-position: 0 0; } to { background-position: 0 36px; } }
+.stopC { position: relative; padding: 10px 0 34px 54px; }
+.stopC .dot { position: absolute; left: 10px; top: 13px; width: 20px; height: 20px; border-radius: 10px; background: var(--sheet-solid); box-shadow: inset 0 0 0 2px rgba(255,255,255,.55); }
+.stopC.changed .dot { background: var(--accent); box-shadow: none; }
+.stopC.problem .dot { background: var(--warn); box-shadow: none; }
+.stopC .t { font-size: 16px; font-weight: 640; display: flex; align-items: center; gap: 8px; }
+.stopC .t svg { color: var(--ink-2); }
+.stopC .v { color: var(--ink-2); font-size: 14px; margin-top: 2px; text-wrap: pretty; }
+.stopC:last-child { padding-bottom: 6px; }
+.disclose { width: 100%; display: flex; justify-content: space-between; align-items: center; min-height: 48px; margin-top: 16px; padding: 0 16px; border-radius: 16px; background: var(--cell); font-weight: 600; }
+.disclose svg { transition: transform .25s var(--ease-out); color: var(--ink-3); }
+.disclose[aria-expanded="true"] svg { transform: rotate(180deg); }
+.techC { display: none; padding: 6px 4px 0; }
+.techC[data-open="true"] { display: block; }
+.techC h4 { font-size: 13px; color: var(--ink-3); font-weight: 600; margin-top: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wave { animation: none; }
+  .pane, .disc, .tile, .chev { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="top">
+  <div>
+    <h1>Audio quality: three options</h1>
+    <p>Same facts as today's window, in plain words. Each one shows the sound moving from your song file down to your headphones. Tap the stops to see the details.</p>
+  </div>
+  <div class="picker">
+    <div class="seg" role="group" aria-label="Situation" id="scenarios"></div>
+    <label class="toggle"><input type="checkbox" id="reduce"> Reduce motion</label>
+  </div>
+</div>
+
+<div class="frames">
+  <figure>
+    <div class="phone" id="A"></div>
+    <figcaption><b>A · Path line</b><span>Open layout. Details open under a stop.</span></figcaption>
+  </figure>
+  <figure>
+    <div class="phone" id="B"></div>
+    <figcaption><b>B · Grouped list</b><span>iOS-style cells. Details get their own page.</span></figcaption>
+  </figure>
+  <figure>
+    <div class="phone" id="C"></div>
+    <figcaption><b>C · Sound wave</b><span>The wave changes where the sound changes.</span></figcaption>
+  </figure>
+</div>
+
+<script>
+const ICONS = {
+  file: '<path d="M7 2.5h7l5 5V20a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 6 20V4a1.5 1.5 0 0 1 1-1.5z"/><path d="M14 2.5V8h5"/><circle cx="10" cy="17" r="1.6"/><path d="M11.6 17v-5.2l3.4-.8"/>',
+  evanna: '<path d="M5 20V12M5 8V4M12 20v-6M12 10V4M19 20v-4M19 12V4"/><path d="M3 10h4M10 12h4M17 14h4"/>',
+  usb: '<path d="M9.5 2.5v3M14.5 2.5v3"/><rect x="7" y="5.5" width="10" height="7" rx="2"/><path d="M12 12.5V16a4.5 4.5 0 0 1-4.5 4.5H5"/>',
+  dac: '<rect x="3.5" y="6.5" width="17" height="11" rx="3"/><circle cx="15.5" cy="12" r="2"/><path d="M8 10.5v3"/>',
+  headphones: '<path d="M4 15v-2.5a8 8 0 0 1 16 0V15"/><rect x="3" y="14" width="4.5" height="6.5" rx="1.6"/><rect x="16.5" y="14" width="4.5" height="6.5" rx="1.6"/>',
+  phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.6"/><path d="M11 18.5h2"/>',
+  chevR: '<path d="M9.5 6l6 6-6 6"/>',
+  chevL: '<path d="M14.5 6l-6 6 6 6"/>',
+  chevD: '<path d="M6 9.5l6 6 6-6"/>',
+  close: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+};
+const icon = (name, size = 20, w = 1.7) =>
+  `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+
+const file96 = { id: 'file', icon: 'file', title: 'Song file', value: 'Lossless · 24-bit · 96 kHz', state: 'same',
+  details: [['Format', 'ALAC, lossless'], ['Bits', '24'], ['Rate', '96,000 Hz'], ['Channels', '2']] };
+const usbClean = { id: 'usb', icon: 'usb', title: 'USB cable', value: 'Straight to your DAC, skipping Android', state: 'same',
+  details: [['Route', 'Direct USB'], ['Lost packets', '0'], ['Ran short', '0 times'], ['Cut-off peaks', '0'], ['Clock', 'Set by Evanna'], ['Connection', 'Interface 2 · alt 2 · endpoint 4']] };
+const ears = { id: 'ears', icon: 'headphones', title: 'Your headphones', value: 'Where you hear it', state: 'end', details: [] };
+const converted = { id: 'evanna', icon: 'evanna', title: 'Evanna', tag: 'Changed', state: 'changed',
+  value: 'Turned into 48 kHz, and 2 dB quieter so loud parts don’t crack',
+  details: [['Rate', '96,000 → 48,000 Hz'], ['Why', 'Max rate for this DAC is 48 kHz'], ['Headroom', '−2 dB'], ['Bits', '24 → 24'], ['EQ', 'Off'], ['Crossfeed', 'Off'], ['Leveling', 'Off']] };
+const jd1 = (rate, vol) => ({ id: 'dac', icon: 'dac', title: 'FiiO JD1', state: 'same', value: `Plays ${rate} at ${vol} volume`,
+  details: [['Plays', rate], ['Volume', `${vol}, set on the DAC`], ['Volume check', 'Confirmed']] });
+
+const SCENARIOS = {
+  changed: { label: 'Converted', playing: true,
+    verdict: 'Changed once on the way',
+    why: 'Your DAC is set to 48 kHz at most, so Evanna converts this 96 kHz song.',
+    stops: [file96, converted, usbClean, jd1('24-bit · 48 kHz', '−1 dB'), ears] },
+  exact: { label: 'Exact copy', playing: true,
+    verdict: 'An exact copy of your file',
+    why: 'Every bit of this song reaches your DAC unchanged.',
+    stops: [
+      { ...file96, value: 'Lossless · 16-bit · 44.1 kHz', details: [['Format', 'FLAC, lossless'], ['Bits', '16'], ['Rate', '44,100 Hz'], ['Channels', '2']] },
+      { id: 'evanna', icon: 'evanna', title: 'Evanna', state: 'same', value: 'Left untouched. EQ, crossfeed and leveling are off.',
+        details: [['Rate', '44,100 Hz, no change'], ['Bits', '16, no change'], ['EQ', 'Off'], ['Crossfeed', 'Off'], ['Leveling', 'Off']] },
+      usbClean, jd1('16-bit · 44.1 kHz', '−8 dB'), ears] },
+  problem: { label: 'Problem', playing: true,
+    verdict: '1 problem: lost sound',
+    why: 'This phone’s USB dropped 13 tiny bits of sound. You may hear a faint crackle.',
+    stops: [file96, converted,
+      { id: 'usb', icon: 'usb', title: 'USB cable', tag: 'Problem', state: 'problem', action: 'Try Android audio',
+        value: 'Lost 13 tiny bits of sound. The phone’s USB drops them, not the file.',
+        details: [['Route', 'Direct USB'], ['Lost packets', '13 since you plugged in'], ['Ran short', '0 times'], ['Cut-off peaks', '0'], ['Clock', 'Set by Evanna']] },
+      jd1('24-bit · 48 kHz', '−1 dB'), ears] },
+  android: { label: 'Android audio', playing: true,
+    verdict: 'Android may change the sound',
+    why: 'Android mixes it with other sounds and picks the rate. Here it uses 384 kHz.',
+    stops: [file96,
+      { id: 'evanna', icon: 'evanna', title: 'Evanna', state: 'same', value: 'Left untouched. EQ is off.', details: [['EQ', 'Off'], ['Sends', '96,000 Hz, as the file']] },
+      { id: 'android', icon: 'phone', title: 'Android', tag: 'Changed', state: 'changed', value: 'Mixed and turned into 384 kHz. Uses the phone’s volume.',
+        details: [['Rate', '96,000 → 384,000 Hz'], ['Volume', 'Phone volume'], ['Exact copy', 'Not possible on this phone']] },
+      { id: 'dac', icon: 'dac', title: 'FiiO JD1', state: 'same', value: 'Plays what Android sends', details: [['Plays', '32-bit · 384 kHz']] },
+      ears] },
+  paused: { label: 'Paused', playing: false,
+    verdict: 'Changed once on the way',
+    why: 'Your DAC is set to 48 kHz at most, so Evanna converts this 96 kHz song.',
+    stops: [file96, converted, usbClean, jd1('24-bit · 48 kHz', '−1 dB'), ears] },
+};
+
+let scenario = 'changed';
+let reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const open = { A: new Set(), B: null, C: false };
+
+const status = '<div class="status num"><span>8:59</span><span>76%</span></div>';
+const behind = '<div class="np" aria-hidden="true"><div class="art"></div><h3>Liberian Girl</h3><p>Michael Jackson</p></div>';
+const chip = s => s.playing ? '<span class="chip live"><i></i>Playing now</span>' : '<span class="chip live paused"><i></i>Paused · last song</span>';
+const head = '<div class="grab"></div><div class="head"><h2>Sound path</h2><button class="icon-btn" aria-label="Close">' + icon('close', 20) + '</button></div>';
+const dl = rows => '<dl class="details">' + rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl>';
+const tag = st => st.tag ? `<span class="tag ${st.state}">${st.tag}</span>` : '';
+
+function renderA() {
+  const s = SCENARIOS[scenario];
+  const stops = s.stops.map(st => {
+    const canOpen = st.details.length > 0;
+    const isOpen = open.A.has(st.id);
+    return `<div class="stopA ${st.state}" data-id="${st.id}" data-open="${isOpen}">
+      <div class="disc">${icon(st.icon, 20)}</div>
+      <button class="row" ${canOpen ? `aria-expanded="${isOpen}"` : 'disabled style="cursor:default"'} data-toggle="${st.id}">
+        <span class="t">${st.title}${tag(st)}</span>
+        ${canOpen ? `<span class="chev">${icon('chevD', 18)}</span>` : ''}
+        <span class="v">${st.value}</span>
+      </button>
+      ${st.action ? `<button class="action">${st.action}</button>` : ''}
+      <div class="more">${dl(st.details)}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('A').innerHTML = status + behind + `<section class="sheet" aria-label="Sound path">${head}
+    <div class="scroll"><div class="verdict">${chip(s)}<h3>${s.verdict}</h3><p>${s.why}</p></div>
+    <div class="path" data-rail><div class="pulse"></div>${stops}</div></div></section>`;
+}
+
+function renderB() {
+  const s = SCENARIOS[scenario];
+  const detail = s.stops.find(st => st.id === open.B);
+  const rows = s.stops.map(st => `<button class="rowB ${st.state}" data-id="${st.id}" ${st.details.length ? `data-drill="${st.id}"` : 'tabindex="-1"'}>
+      <span class="tile">${icon(st.icon, 19)}</span>
+      <span><span class="t">${st.title}${tag(st)}</span><span class="v" style="display:block">${st.value}</span></span>
+      ${st.details.length ? `<span class="chev">${icon('chevR', 18)}</span>` : '<span></span>'}
+    </button>`).join('');
+  const detailPane = detail ? `<button class="back" data-back>${icon('chevL', 20)}Sound path</button>
+      <h3>${detail.title}</h3><p class="lead">${detail.value}</p>
+      ${detail.action ? `<button class="action" style="margin:0 2px 16px">${detail.action}</button>` : ''}
+      <div class="group">${detail.details.map(([k, v]) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`).join('')}</div>` : '';
+  document.getElementById('B').innerHTML = status + behind + `<section class="sheet" aria-label="Sound path">${head}
+    <div class="panes" data-detail="${!!detail}">
+      <div class="pane main"><div class="card">${chip(s)}<h3>${s.verdict}</h3><p>${s.why}</p></div>
+        <p class="group-title">From your file to your ears</p>
+        <div class="group" data-rail><div class="pulse"></div>${rows}</div></div>
+      <div class="pane detail">${detailPane}</div>
+    </div></section>`;
+}
+
+function renderC() {
+  const s = SCENARIOS[scenario];
+  const stops = s.stops.map(st => `<div class="stopC ${st.state}" data-id="${st.id}"><span class="dot"></span>
+      <div class="t">${st.title}${tag(st)}</div><div class="v">${st.value}</div>
+      ${st.action ? `<button class="action">${st.action}</button>` : ''}</div>`).join('');
+  const tech = s.stops.filter(st => st.details.length).map(st => `<h4>${st.title}</h4>${dl(st.details)}`).join('');
+  document.getElementById('C').innerHTML = status + behind + `<section class="sheet" aria-label="Sound path">${head}
+    <div class="scroll"><div class="verdict">${chip(s)}<h3>${s.verdict}</h3><p>${s.why}</p></div>
+    <div class="river" data-still="${!s.playing || reduce}">${stops}</div>
+    <button class="disclose" aria-expanded="${open.C}" data-tech>Details${icon('chevD', 18)}</button>
+    <div class="techC" data-open="${open.C}">${tech}</div></div></section>`;
+}
+
+/* Rail segments between stop centers. A segment after a changed stop takes the accent; after a problem it breaks up. */
+function layoutRails() {
+  for (const [id, sel, cls, x] of [['A', '.stopA', 'seg-line', '.disc'], ['B', '.rowB', 'gline', '.tile']]) {
+    const host = document.querySelector(`#${id} [data-rail]`);
+    if (!host) continue;
+    host.querySelectorAll('.' + cls).forEach(n => n.remove());
+    const box = host.getBoundingClientRect();
+    const centers = [...host.querySelectorAll(sel)].map(el => {
+      const r = el.querySelector(x).getBoundingClientRect();
+      return { y: r.top - box.top + r.height / 2, h: r.height, state: el.classList.contains('changed') ? 'changed' : el.classList.contains('problem') ? 'problem' : 'same' };
+    });
+    let tainted = 'same';
+    for (let i = 0; i < centers.length - 1; i++) {
+      if (centers[i].state !== 'same') tainted = centers[i].state;
+      const seg = document.createElement('div');
+      seg.className = cls + (tainted === 'changed' ? ' after-change' : tainted === 'problem' ? ' after-problem' : '');
+      seg.style.top = centers[i].y + 'px';
+      seg.style.height = (centers[i + 1].y - centers[i].y) + 'px';
+      host.prepend(seg);
+    }
+    host._centers = centers;
+  }
+  const river = document.querySelector('#C .river');
+  if (river) {
+    river.querySelectorAll('.wave').forEach(n => n.remove());
+    const box = river.getBoundingClientRect();
+    const stops = [...river.querySelectorAll('.stopC')];
+    let tainted = 'same';
+    stops.forEach((el, i) => {
+      if (i === stops.length - 1) return;
+      if (!el.classList.contains('same') && !el.classList.contains('end')) tainted = el.classList.contains('problem') ? 'problem' : 'changed';
+      const a = el.querySelector('.dot').getBoundingClientRect(), b = stops[i + 1].querySelector('.dot').getBoundingClientRect();
+      const w = document.createElement('div');
+      w.className = 'wave ' + tainted;
+      w.style.top = (a.bottom - box.top + 4) + 'px';
+      w.style.height = (b.top - a.bottom - 8) + 'px';
+      river.prepend(w);
+    });
+  }
+}
+
+/* One pulse runs down the path while music plays: white until it passes a change, then the accent; it flickers past a problem. */
+function tick(now) {
+  const s = SCENARIOS[scenario];
+  for (const [id, sel] of [['A', '.stopA'], ['B', '.rowB']]) {
+    const host = document.querySelector(`#${id} [data-rail]`);
+    const pulse = host?.querySelector('.pulse');
+    if (!host || !pulse || !host._centers) continue;
+    const els = [...host.querySelectorAll(sel)];
+    if (!s.playing || reduce || (id === 'B' && open.B)) { pulse.style.opacity = 0; els.forEach(e => e.classList.remove('lit')); continue; }
+    const c = host._centers, first = c[0].y, last = c[c.length - 1].y;
+    const period = 3600, travel = 2800, t = freeze ?? (now % period) / travel;
+    if (t > 1) { pulse.style.opacity = 0; els.forEach(e => e.classList.remove('lit')); continue; }
+    const eased = t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const y = first + (last - first) * eased;
+    let color = '#ffffff', flicker = 1;
+    c.forEach((p, i) => {
+      if (y > p.y + 4 && p.state === 'changed') color = 'var(--accent)';
+      if (p.state === 'problem' && y > p.y && y < p.y + 60) flicker = (Math.floor(now / 70) % 2) ? .25 : 1;
+      if (p.state === 'problem' && y > p.y + 4) color = 'var(--warn)';
+      els[i].classList.toggle('lit', Math.abs(y - p.y) < 18);
+    });
+    pulse.style.setProperty('--pc', color);
+    pulse.style.top = (y - 52) + 'px';
+    pulse.style.opacity = Math.min(1, t * 8, (1 - t) * 8) * flicker;
+  }
+  requestAnimationFrame(tick);
+}
+
+function renderAll() {
+  renderA(); renderB(); renderC();
+  requestAnimationFrame(layoutRails);
+}
+
+const seg = document.getElementById('scenarios');
+seg.innerHTML = Object.entries(SCENARIOS).map(([k, v]) => `<button data-scenario="${k}" aria-pressed="${k === scenario}">${v.label}</button>`).join('');
+document.getElementById('reduce').checked = reduce;
+document.getElementById('reduce').addEventListener('change', e => { reduce = e.target.checked; renderAll(); });
+document.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.scenario) {
+    scenario = b.dataset.scenario; open.B = null;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    renderAll(); return;
+  }
+  if (b.dataset.toggle) { const id = b.dataset.toggle; open.A.has(id) ? open.A.delete(id) : open.A.add(id); renderA(); requestAnimationFrame(layoutRails); return; }
+  if (b.dataset.drill) { open.B = b.dataset.drill; renderB(); return; }
+  if ('back' in b.dataset) { open.B = null; renderB(); requestAnimationFrame(layoutRails); return; }
+  if ('tech' in b.dataset) { open.C = !open.C; renderC(); requestAnimationFrame(layoutRails); return; }
+});
+addEventListener('resize', () => requestAnimationFrame(layoutRails));
+const params = new URLSearchParams(location.search);
+if (params.get('motion') === '1') { reduce = false; document.getElementById('reduce').checked = false; }
+/* ?freeze=0..1 holds the pulse and waves at one point of their run, for still captures of the motion. */
+const freeze = params.has('freeze') ? Number(params.get('freeze')) : null;
+if (freeze != null) document.head.insertAdjacentHTML('beforeend',
+  `<style>.wave { animation-play-state: paused !important; animation-delay: -${(freeze * 2.8) % 1.1}s !important; }</style>`);
+if (params.get('s') && SCENARIOS[params.get('s')]) { scenario = params.get('s'); seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x.dataset.scenario === scenario)); }
+if (params.get('openA')) params.get('openA').split(',').forEach(id => open.A.add(id));
+if (params.get('openB')) open.B = params.get('openB');
+renderAll();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

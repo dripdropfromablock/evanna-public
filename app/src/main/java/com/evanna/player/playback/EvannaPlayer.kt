@@ -95,6 +95,10 @@ internal class EvannaPlayer(private val owner: UsbSessionOwner) : SimpleBasePlay
             putStringArrayList(SIGNAL_VALUES,ArrayList(stages.map {it.value}))
             putBooleanArray(SIGNAL_CHANGED,stages.map {it.changed}.toBooleanArray())
             putBooleanArray(SIGNAL_BRIEF,stages.map {it.brief}.toBooleanArray())
+            val path=soundPath(snapshot)
+            putString(SOUND_VERDICT,path.verdict);putString(SOUND_WHY,path.why)
+            putBoolean(SOUND_PLAYING,path.playing);putBoolean(SOUND_OFFER_OUTPUT,path.offerOtherOutput)
+            putStringArrayList(SOUND_STOPS,ArrayList(path.stops.map(::encodeStop)))
             putLong(USB_GENERATION,snapshot.generation)
             snapshot.usbVolume?.let {
                 putFloat(USB_VOLUME,it.currentDb);putFloat(USB_VOLUME_MIN,it.minDb)
@@ -278,6 +282,11 @@ internal class EvannaPlayer(private val owner: UsbSessionOwner) : SimpleBasePlay
         const val SLEEP_LABEL="com.evanna.player.SLEEP_LABEL"
         const val FAVORITE_AVAILABLE="com.evanna.player.FAVORITE_AVAILABLE"
         const val FAVORITE="com.evanna.player.FAVORITE"
+        const val SOUND_VERDICT="com.evanna.player.SOUND_VERDICT"
+        const val SOUND_WHY="com.evanna.player.SOUND_WHY"
+        const val SOUND_PLAYING="com.evanna.player.SOUND_PLAYING"
+        const val SOUND_OFFER_OUTPUT="com.evanna.player.SOUND_OFFER_OUTPUT"
+        const val SOUND_STOPS="com.evanna.player.SOUND_STOPS"
         const val SIGNAL_LABELS="com.evanna.player.SIGNAL_LABELS"
         const val SIGNAL_VALUES="com.evanna.player.SIGNAL_VALUES"
         const val SIGNAL_CHANGED="com.evanna.player.SIGNAL_CHANGED"

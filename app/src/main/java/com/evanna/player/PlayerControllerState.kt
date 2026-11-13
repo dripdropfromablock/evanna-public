@@ -42,6 +42,14 @@ internal fun playerPresentation(player: Player): PlayerPresentation {
                 labels.all {it.length<=200} && values.all {it.length<=2048})
                 labels.indices.map {com.evanna.player.playback.SignalStage(labels[it],values[it],changed[it],brief[it])} else emptyList()
         } ?: emptyList(),
+        soundPath=extras?.let {bundle ->
+            val verdict=bundle.getString(EvannaPlayer.SOUND_VERDICT)?.takeIf {it.length<=200}
+            val why=bundle.getString(EvannaPlayer.SOUND_WHY)?.takeIf {it.length<=1000}
+            val stops=bundle.getStringArrayList(EvannaPlayer.SOUND_STOPS)?.takeIf {it.size<=12}?.map {com.evanna.player.playback.decodeStop(it)}
+            if(verdict==null || why==null || stops==null || stops.any {it==null}) null
+            else com.evanna.player.playback.SoundPath(verdict,why,bundle.getBoolean(EvannaPlayer.SOUND_PLAYING),stops.filterNotNull(),
+                bundle.getBoolean(EvannaPlayer.SOUND_OFFER_OUTPUT))
+        },
         usbVolume=if(extras?.containsKey(EvannaPlayer.USB_VOLUME)==true)com.truesample.usbaudio.VolumeRange(
             extras.getFloat(EvannaPlayer.USB_VOLUME_MIN),extras.getFloat(EvannaPlayer.USB_VOLUME_MAX),
             extras.getFloat(EvannaPlayer.USB_VOLUME_STEP),extras.getFloat(EvannaPlayer.USB_VOLUME)) else null)

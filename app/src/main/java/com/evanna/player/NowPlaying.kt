@@ -135,10 +135,9 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
     var page by rememberSaveable { mutableStateOf(PlayerPage.SONG) }
     var lyricsTrack by rememberSaveable { mutableStateOf<String?>(null) }
     var showSignal by rememberSaveable { mutableStateOf(false) }
-    var advancedSignal by rememberSaveable { mutableStateOf(false) }
     var showSleep by rememberSaveable { mutableStateOf(false) }
     if (showSleep) SleepDialog(state, onSleep) { showSleep = false }
-    if (showSignal) AudioQualityWindow(state, advancedSignal, { advancedSignal = it }, { showSignal = false })
+    if (showSignal) SoundPathSheet(state.soundPath, { showSignal = false; onOutput(null) }, { showSignal = false })
     BackHandler { if (wantedOpen && page != PlayerPage.SONG) page = PlayerPage.SONG else onBack() }
     // The preview and full view share one load, and never show the preceding track's words.
     val lyrics by key(state.id) {

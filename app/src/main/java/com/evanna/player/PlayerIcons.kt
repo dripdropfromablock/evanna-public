@@ -155,6 +155,34 @@ internal object PlayerIcons {
             arcToRelative(9f, 9f, 0f, false, false, -9f, -9f); close()
         }
     }
+    /** A page with a folded corner and a note: the song file, first stop of the sound path. */
+    val SongFile = icon("Song file") {
+        line {
+            moveTo(7f, 2.5f); horizontalLineTo(14f); lineTo(19f, 7.5f); verticalLineTo(20f); quadTo(19f, 21.5f, 17.5f, 21.5f)
+            horizontalLineTo(7.5f); quadTo(6f, 21.5f, 6f, 20f); verticalLineTo(4f); quadTo(6f, 2.5f, 7f, 2.5f); close()
+        }
+        line { moveTo(14f, 2.5f); verticalLineTo(8f); horizontalLineTo(19f) }
+        line { moveTo(11.6f, 17f); verticalLineTo(11.8f); lineTo(15f, 11f) }
+        path(fill = ink) { moveTo(8.4f, 17f); arcToRelative(1.6f, 1.6f, 0f, false, true, 3.2f, 0f); arcToRelative(1.6f, 1.6f, 0f, false, true, -3.2f, 0f); close() }
+    }
+    /** Three sliders: Evanna's own processing stop. */
+    val Sliders = icon("Sliders") {
+        line { moveTo(5f, 20f); verticalLineTo(12f); moveTo(5f, 8f); verticalLineTo(4f) }
+        line { moveTo(12f, 20f); verticalLineTo(14f); moveTo(12f, 10f); verticalLineTo(4f) }
+        line { moveTo(19f, 20f); verticalLineTo(16f); moveTo(19f, 12f); verticalLineTo(4f) }
+        line { moveTo(3f, 10f); horizontalLineTo(7f); moveTo(10f, 12f); horizontalLineTo(14f); moveTo(17f, 14f); horizontalLineTo(21f) }
+    }
+    /** A small box with a headphone jack: a USB DAC. */
+    val Dac = icon("DAC") {
+        line {
+            moveTo(6.5f, 6.5f); horizontalLineTo(17.5f); quadTo(20.5f, 6.5f, 20.5f, 9.5f); verticalLineTo(14.5f)
+            quadTo(20.5f, 17.5f, 17.5f, 17.5f); horizontalLineTo(6.5f); quadTo(3.5f, 17.5f, 3.5f, 14.5f); verticalLineTo(9.5f)
+            quadTo(3.5f, 6.5f, 6.5f, 6.5f); close()
+        }
+        line { moveTo(13.5f, 12f); arcToRelative(2f, 2f, 0f, false, true, 4f, 0f); arcToRelative(2f, 2f, 0f, false, true, -4f, 0f); close() }
+        line { moveTo(8f, 10.5f); verticalLineTo(13.5f) }
+    }
+    val Bluetooth = icon("Bluetooth") { line { moveTo(7f, 7f); lineTo(17f, 17f); lineTo(12f, 22f); verticalLineTo(2f); lineTo(17f, 7f); lineTo(7f, 17f) } }
     val Repeat = icon("Repeat") { loop() }
     val RepeatOne = icon("RepeatOne") { loop(); line { moveTo(10.75f, 10.5f); lineTo(12.25f, 9.5f); verticalLineTo(14.5f) } }
     val VolumeDown = icon("VolumeDown") { speaker(); line { moveTo(15.5f, 9f); quadTo(17.5f, 12f, 15.5f, 15f) } }

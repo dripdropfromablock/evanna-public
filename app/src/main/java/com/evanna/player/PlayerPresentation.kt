@@ -21,6 +21,8 @@ internal data class PlayerPresentation(
     val route: String = "NONE", val sourceQuality: String = "", val error: String? = null, val queueWarning: String? = null,
     val usbGeneration:Long=0, val usbVolume:com.truesample.usbaudio.VolumeRange?=null,
     val signalStages:List<com.evanna.player.playback.SignalStage> = emptyList(),
+    /** The Audio quality sheet's plain-word path; null before the session sends one. */
+    val soundPath:com.evanna.player.playback.SoundPath?=null,
     val sleepLabel:String="",
     val favorite:Boolean?=null,
 ) {
