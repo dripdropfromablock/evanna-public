@@ -26,12 +26,17 @@ import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.delay
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 /**
- * Now Playing's moving backdrop (plan task U2): three blurred, saturated copies of the cover turning slowly, drawn on a
- * tiny buffer and stretched to fill the sheet. Android 11 has no RenderEffect, so the blur runs on the CPU. Turn times
- * and directions follow the UI spec; sizes and offsets follow the mockup. A cover-dependent scrim keeps white text
- * readable (DESIGN.md contrast floor).
+ * Now Playing's backdrop (plan task U2): three blurred, saturated copies of the cover, drawn on a tiny buffer and
+ * stretched to fill the sheet. Android 11 has no RenderEffect, so the blur runs on the CPU. Turn directions follow the
+ * UI spec; sizes and offsets follow the mockup. A cover-dependent scrim keeps white text readable (DESIGN.md contrast floor).
+ *
+ * The layers drift when there is a reason to (the sheet opening, a new cover) and then come to rest, rather than turning
+ * for as long as the sheet is open (docs/ui-plan-liquid-glass.md, phase 0). Turning forever re-blurred the buffer and
+ * redrew the sheet 24 times a second, which was most of what the M30s spent while Now Playing sat open. Once settled
+ * no more frames are drawn at all; the still frame looks the same.
  */
 @Composable
 internal fun PlayerBackdrop(cover: Bitmap?, lightLook: Boolean, modifier: Modifier = Modifier) {
@@ -44,7 +49,6 @@ internal fun PlayerBackdrop(cover: Bitmap?, lightLook: Boolean, modifier: Modifi
         var outgoing by remember { mutableStateOf<ImageBitmap?>(null) }
         var fade by remember { mutableFloatStateOf(1f) }
         var fadeElapsedMs by remember(renderer) { mutableDoubleStateOf(0.0) }
-        var phaseMs by remember(renderer) { mutableDoubleStateOf(0.0) }
         var frame by remember { mutableIntStateOf(0) }
         // A new cover fades in over the last frame of the old one.
         DisposableEffect(renderer) { onDispose { outgoing = renderer?.snapshot(); fade = 0f } }
@@ -53,26 +57,33 @@ internal fun PlayerBackdrop(cover: Bitmap?, lightLook: Boolean, modifier: Modifi
                 outgoing = null
                 return@LaunchedEffect
             }
-            val powerScale = if (context.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true) 2.1f else 1f
+            // Battery saver skips the drift: the rest pose is drawn once.
+            val powerSave = context.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true
             val guard = BackdropFrameGuard()
             var previousFrame = SystemClock.uptimeMillis()
-            // Frames stop by themselves while the sheet is closed, the app is in the background or the screen is off.
+            var driftMs = if (powerSave) BACKDROP_DRIFT_MS.toDouble() else 0.0
+            var drawnPhase = 0L  // the renderer drew phase 0 when it was made
+            // Frames stop once the drift has settled and any cross-fade is done; the sheet's content leaves composition
+            // while it is closed, so opening it again starts a new drift.
             while (true) {
                 val now = withFrameMillis { SystemClock.uptimeMillis() }
                 val elapsed = (now - previousFrame).toDouble() / durationScale
                 previousFrame = now
-                phaseMs += elapsed / powerScale
+                driftMs = minOf(BACKDROP_DRIFT_MS.toDouble(), driftMs + elapsed)
                 if (outgoing != null) {
                     fadeElapsedMs += elapsed
                     fade = backdropFade(fadeElapsedMs.toLong())
                     if (fade >= 1f) outgoing = null
                 }
-                if (!guard.holding(now)) {
+                val phase = backdropDriftPhase(driftMs.toLong())
+                if (phase != drawnPhase && !guard.holding(now)) {
                     val began = SystemClock.currentThreadTimeMillis()  // CPU time, so other apps' work does not count
-                    renderer.render(phaseMs.toLong())
+                    renderer.render(phase)
                     guard.record(SystemClock.currentThreadTimeMillis() - began, now)
+                    drawnPhase = phase
                     frame++
                 }
+                if (backdropSettled(driftMs.toLong()) && phase == drawnPhase && outgoing == null) break
                 when {
                     outgoing != null -> Unit               // the cross-fade moves every frame
                     guard.holding(now) -> delay(1_000)     // a slow phone: hold still, then try again
@@ -100,6 +111,23 @@ internal fun backdropBufferSize(widthPx: Int, heightPx: Int, densityDpi: Int): I
     val scale = if (densityDpi >= 420) 24f else 16f
     return IntSize(max(1, (widthPx * 1.3f / scale).roundToInt()), max(1, (heightPx * 1.3f / scale).roundToInt()))
 }
+
+/** How long the layers drift after the sheet opens or the cover changes, before they come to rest. */
+internal const val BACKDROP_DRIFT_MS = 6_000L
+
+/**
+ * How far along their turns the layers are [elapsedMs] into a drift, in the old always-turning clock's milliseconds.
+ * Eased out (cubic), starting at three times the old turning speed and slowing to a stop at [BACKDROP_DRIFT_MS], by
+ * which point the fastest layer has turned about 31 degrees and the slowest about 18.
+ */
+internal fun backdropDriftPhase(elapsedMs: Long): Long {
+    val t = (elapsedMs.toDouble() / BACKDROP_DRIFT_MS).coerceIn(0.0, 1.0)
+    val eased = 1 - (1 - t) * (1 - t) * (1 - t)
+    return (BACKDROP_DRIFT_MS * eased).roundToLong()
+}
+
+/** The drift is over: no more frames are needed. */
+internal fun backdropSettled(elapsedMs: Long) = elapsedMs >= BACKDROP_DRIFT_MS
 
 /** One full turn takes [periodMs]; a negative [direction] turns anticlockwise. */
 internal fun backdropAngle(elapsedMs: Long, periodMs: Long, direction: Int) = direction * 360f * ((elapsedMs % periodMs).toFloat() / periodMs)

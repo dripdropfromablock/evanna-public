@@ -16,6 +16,20 @@ class PlayerBackdropTest {
         assertEquals(180f, backdropAngle(45_000, 90_000, 1), 1e-3f)
         assertEquals(36f, backdropAngle(77_000, 70_000, 1), 1e-3f)  // wraps after a full turn
     }
+    @Test fun theLayersDriftFastAtFirstThenComeToRest() {
+        assertEquals(0L, backdropDriftPhase(0))
+        assertEquals(BACKDROP_DRIFT_MS, backdropDriftPhase(BACKDROP_DRIFT_MS))
+        assertEquals(BACKDROP_DRIFT_MS, backdropDriftPhase(60_000))  // stays at rest
+        // Starts at about three times the old turning speed, and is nearly still by the end.
+        assertEquals(30L, backdropDriftPhase(10))
+        assertTrue(backdropDriftPhase(BACKDROP_DRIFT_MS) - backdropDriftPhase(BACKDROP_DRIFT_MS - 100) <= 1)
+        assertTrue(backdropDriftPhase(1_000) > BACKDROP_DRIFT_MS / 3)
+        assertFalse(backdropSettled(BACKDROP_DRIFT_MS - 1))
+        assertTrue(backdropSettled(BACKDROP_DRIFT_MS))
+        // At rest the fastest layer has turned about 31 degrees and the slowest about 18.
+        assertEquals(30.9f, backdropAngle(backdropDriftPhase(BACKDROP_DRIFT_MS), 70_000, 1), 0.1f)
+        assertEquals(-18f, backdropAngle(backdropDriftPhase(BACKDROP_DRIFT_MS), 120_000, -1), 0.1f)
+    }
     @Test fun songChangesCrossFadeOverOneSecond() {
         assertEquals(0f, backdropFade(0), 0f)
         assertEquals(1f, backdropFade(1_000), 1e-4f)
