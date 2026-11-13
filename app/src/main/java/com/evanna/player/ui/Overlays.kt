@@ -93,8 +93,9 @@ private fun SurfaceBox(modifier: Modifier, shape: Shape, color: Color, border: B
         palette.secondaryContainer -> palette.onSecondaryContainer
         else -> LocalContentColor.current
     }
-    Box(modifier.shadow(elevation, shape).clip(shape).background(color)
-        .then(if (border == null) Modifier else Modifier.border(border, shape)).then(interaction), propagateMinConstraints = true) {
+    // A clickable surface's press feedback wraps its fill and border, so the whole surface sinks (PressIndication).
+    Box(modifier.shadow(elevation, shape).then(interaction).clip(shape).background(color)
+        .then(if (border == null) Modifier else Modifier.border(border, shape)), propagateMinConstraints = true) {
         CompositionLocalProvider(LocalContentColor provides ink, content = content)
     }
 }

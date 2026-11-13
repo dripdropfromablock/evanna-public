@@ -119,9 +119,9 @@ internal fun OutputRow(title: String, subtitle: String, icon: ImageVector, selec
     val colors = EvannaDesign.colorScheme
     val apple = LocalLookStyle.current.look.apple
     val shape = if (apple) RoundedCornerShape(14.dp) else EvannaDesign.shapes.small
-    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(shape)
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+        .clickable(enabled = enabled, role = Role.Button, onClick = onClick).clip(shape)
         .background((if (selected) colors.surfaceContainerHighest else colors.surfaceContainerHigh).copy(alpha = 0.72f))
-        .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { this.selected = selected }
         .padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(36.dp).background(

@@ -253,7 +253,9 @@ internal fun EvannaTheme(look: EvannaLook = EvannaLook.EVANNA, artwork: Color? =
         groupedBackground = if (look == EvannaLook.APPLE_LIGHT) LightGroupedBackground else colors.background)
     val typography = if (look.apple) AppleTypography else DefaultTypography
     CompositionLocalProvider(LocalLookStyle provides style, LocalTypography provides typography,
-        LocalShapes provides if (look.apple) AppleShapes else DefaultShapes) {
+        LocalShapes provides if (look.apple) AppleShapes else DefaultShapes,
+        // Every clickable without its own feedback sinks on press instead of drawing a tinted box.
+        androidx.compose.foundation.LocalIndication provides com.evanna.player.ui.PressIndication) {
         ProvideEvannaColors(colors) { ProvideTextStyle(typography.bodyLarge, content) }
     }
 }

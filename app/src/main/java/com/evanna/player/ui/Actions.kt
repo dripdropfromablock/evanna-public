@@ -52,9 +52,11 @@ private fun Action(
     val ink = if (enabled) colors.content else palette.onSurface.copy(alpha = 0.38f)
     val fill = if (enabled || colors.container == Color.Transparent) colors.container else palette.onSurface.copy(alpha = 0.10f)
     Row(
-        modifier.heightIn(min = 48.dp).padding(vertical = 4.dp).widthIn(min = 56.dp).clip(CircleShape).background(fill)
+        // The click comes before the pill's shape and fill, so the whole pill sinks on press (PressIndication).
+        modifier.heightIn(min = 48.dp).padding(vertical = 4.dp).widthIn(min = 56.dp)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick).clip(CircleShape).background(fill)
             .then(if (outlined) Modifier.border(1.dp, if (enabled) palette.outline else palette.outlineVariant, CircleShape) else Modifier)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
     ) {
         CompositionLocalProvider(LocalContentColor provides ink) {
