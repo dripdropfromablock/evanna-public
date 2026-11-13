@@ -105,6 +105,17 @@ import com.evanna.player.usb.UsbPermissionSession
 import com.evanna.player.usb.DacIdentity
 import com.evanna.player.usb.DacConnection
 import com.evanna.player.usb.AUTO_CONNECT_DAC_PREFERENCE
+import com.evanna.player.ui.glass.GLASS_PREFERENCE
+import com.evanna.player.ui.glass.GlassContext
+import com.evanna.player.ui.glass.GlassTier
+import com.evanna.player.ui.glass.LocalGlass
+import com.evanna.player.ui.glass.REDUCE_TRANSPARENCY_PREFERENCE
+import com.evanna.player.ui.glass.backdrop.backdrops.layerBackdrop
+import com.evanna.player.ui.glass.backdrop.backdrops.rememberLayerBackdrop
+import com.evanna.player.ui.glass.floorBrush
+import com.evanna.player.ui.glass.glassTier
+import com.evanna.player.ui.glass.samplesBackdrop
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import com.evanna.player.usb.KEEP_DIRECT_USB_PREFERENCE
 import com.evanna.player.usb.latestUsbDrops
 import com.evanna.player.usb.suggestAndroidAudio
@@ -140,6 +151,9 @@ class MainActivity : ComponentActivity() {
     private var autoConnectEnabled by mutableStateOf(true)
     /** The saved layout and brightness. The selected song supplies the accent. */
     private var look by mutableStateOf(EvannaLook.EVANNA)
+    /** Liquid glass on the floating controls, in the Apple looks; Reduce transparency keeps it frosted and dense. */
+    private var liquidGlass by mutableStateOf(true)
+    private var reduceTransparency by mutableStateOf(false)
     private var foreground by mutableStateOf(false)
     private var startPage by mutableStateOf(PlayerScreen.LIBRARY)
     private val motionScale = AppMotionScale()
@@ -296,6 +310,8 @@ class MainActivity : ComponentActivity() {
         navigation = savedInstanceState?.getStringArrayList("playerScreens")?.mapNotNull { value -> PlayerScreen.entries.firstOrNull { it.name == value } }
             ?.takeIf { it.firstOrNull() in startPages && it.size == it.distinct().size } ?: listOf(startPage)
         look = storedLook(uiPreferences[LOOK_PREFERENCE])
+        liquidGlass = uiPreferences[GLASS_PREFERENCE] as? Boolean ?: true
+        reduceTransparency = uiPreferences[REDUCE_TRANSPARENCY_PREFERENCE] as? Boolean ?: false
         motionScale.speed = storedAnimationSpeed(uiPreferences[ANIMATION_SPEED_PREFERENCE])
         fun readSystemMotionScale() = AndroidSettings.Global.getFloat(
             contentResolver, AndroidSettings.Global.ANIMATOR_DURATION_SCALE, 1f)
@@ -447,12 +463,22 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                // The page content is recorded for the floating dock's glass to blur and bend; only the live tiers read it.
+                val glassTier = glassTier(Build.VERSION.SDK_INT, look.apple && liquidGlass, reduceTransparency)
+                val pageColor = EvannaDesign.colorScheme.background
+                // The recording starts from the page colour: a transparent gap would blur to black.
+                val recordPage = remember(pageColor) { val draw: ContentDrawScope.() -> Unit = { drawRect(pageColor); drawContent() }; draw }
+                val pageBackdrop = rememberLayerBackdrop(onDraw = recordPage)
+                val glass = remember(glassTier, pageBackdrop, reduceTransparency) {
+                    GlassContext(glassTier, pageBackdrop.takeIf { glassTier.samplesBackdrop }, reduceTransparency)
+                }
                 Surface(Modifier.fillMaxSize(), color = EvannaDesign.colorScheme.background) {
                 Box(Modifier.fillMaxSize().onSizeChanged { motion.travelPx = it.height }) {
                     // The app under the sheet is never taken apart, so closing Now Playing finds the tab exactly as it was.
                     // While the sheet is open its contents are hidden from screen readers.
                     Box(Modifier.fillMaxSize().playerFocusScope(blocked = playerVisible)) {
                         Box(Modifier.fillMaxSize()
+                            .then(if (glassTier.samplesBackdrop) Modifier.layerBackdrop(pageBackdrop) else Modifier)
                             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                             .imePadding()) {
                             val covered = playerVisible || pushed != null
@@ -496,7 +522,10 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
-                        if (!keyboard) PlayerDock(dockTab, ::selectTab,
+                        // Under see-through controls, lists fade into the page colour instead of running out from under them.
+                        if (!keyboard && glassTier != GlassTier.SOLID && dockHeight > 0)
+                            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(dockInset + 28.dp).background(floorBrush(pageColor)))
+                        if (!keyboard) CompositionLocalProvider(LocalGlass provides glass) { PlayerDock(dockTab, ::selectTab,
                             listOf(Triple(PlayerScreen.CAROUSEL, "Carousel", PlayerIcons.AlbumCarousel),
                                 Triple(PlayerScreen.LIBRARY, "Library", musicNote),
                                 Triple(PlayerScreen.OUTPUT, "Settings", Icons.Filled.Settings)),
@@ -508,7 +537,7 @@ class MainActivity : ComponentActivity() {
                                 onPrevious = { mediaController?.seekToPreviousMediaItem() },
                                 onNext = { mediaController?.seekToNextMediaItem() },
                                 onOutput = { openOutput(null) }, motion = motion, flying = flying, onOpenChange = setPlayerOpen)
-                        }
+                        } }
                     }
                     if (playerVisible) {
                         PlayerSheet(motion, cover, flying, wantedOpen && settledOpen, track, setPlayerOpen) {
@@ -1425,6 +1454,26 @@ class MainActivity : ComponentActivity() {
                 }
                 Text("Sets the app's colours and shapes.",
                     style = EvannaDesign.typography.bodySmall, color = muted)
+            } }
+            if (page == PlayerScreen.APPEARANCE) item { SettingsCard("Liquid glass") {
+                val tier = glassTier(Build.VERSION.SDK_INT, look.apple && liquidGlass, reduceTransparency)
+                SwitchRow("Liquid glass", "See-through tab bar and mini player in the Dark and Light looks.", liquidGlass,
+                    enabled = look.apple) { on ->
+                    liquidGlass = on
+                    getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putBoolean(GLASS_PREFERENCE, on).apply()
+                }
+                SwitchRow("Reduce transparency", "Keeps the glass frosted and solid behind text.", reduceTransparency,
+                    enabled = look.apple && liquidGlass) { on ->
+                    reduceTransparency = on
+                    getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putBoolean(REDUCE_TRANSPARENCY_PREFERENCE, on).apply()
+                }
+                Text(when {
+                    !look.apple -> "Pick the Dark or Light look to use glass."
+                    tier == GlassTier.FULL -> "This phone shows full glass: blur and a bent edge."
+                    tier == GlassTier.BLUR -> "This phone shows blurred glass. The bent edge needs Android 13."
+                    tier == GlassTier.FROSTED && !reduceTransparency && liquidGlass -> "This phone shows frosted glass. Live blur needs Android 12."
+                    else -> "Controls are drawn solid."
+                }, style = EvannaDesign.typography.bodySmall, color = muted)
             } }
             if (page == PlayerScreen.APPEARANCE) item { SettingsCard("Start page") {
                 Column(Modifier.selectableGroup()) {

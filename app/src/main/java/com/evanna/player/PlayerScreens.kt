@@ -15,6 +15,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -77,6 +78,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.evanna.player.library.ArtworkImage
 import com.evanna.player.library.Lyrics
+import com.evanna.player.ui.glass.GlassSurface
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -117,6 +119,21 @@ internal fun LookChip(selected: Boolean, onClick: () -> Unit, label: String, ena
     else FilterChip(selected = selected, onClick = onClick, enabled = enabled, label = { Text(label) }, shape = shape, border = null,
         colors = FilterChipDefaults.filterChipColors(containerColor = if (style.look.dark) EvannaDesign.colorScheme.surfaceContainerHigh
             else EvannaDesign.colorScheme.surfaceContainerHighest, labelColor = EvannaDesign.colorScheme.onSurface))
+}
+
+/** A Settings row with a title, a short note and a switch; the whole row toggles it. */
+@Composable
+internal fun SwitchRow(title: String, note: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+    val muted = EvannaDesign.colorScheme.onSurfaceVariant
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+        .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
+        .semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = EvannaDesign.typography.titleSmall, color = if (enabled) Color.Unspecified else muted)
+            Text(note, style = EvannaDesign.typography.bodySmall, color = muted)
+        }
+        Box(Modifier.padding(start = 12.dp).clearAndSetSemantics {}) { Switch(checked = checked, onCheckedChange = onChange, enabled = enabled) }
+    }
 }
 
 /** A rounded Settings section with a heading. */
@@ -171,8 +188,8 @@ internal fun MiniPlayer(state: PlayerPresentation, cover: Bitmap?, onOpen: () ->
     val canNext = state.connected && state.canNext
     val previous by rememberUpdatedState(onPrevious)
     val next by rememberUpdatedState(onNext)
-    Surface(Modifier.fillMaxWidth(),
-        shape = shape, color = if (look.dark) colors.surfaceContainerLow.copy(alpha = 0.94f) else colors.surfaceContainerHigh,
+    GlassSurface(Modifier.fillMaxWidth(), shape,
+        solidColor = if (look.dark) colors.surfaceContainerLow.copy(alpha = 0.94f) else colors.surfaceContainerHigh,
         border = border, shadowElevation = 6.dp) {
         val rowHeight = 56.dp
         Row(Modifier.heightIn(min = rowHeight).padding(end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -240,10 +257,10 @@ internal fun PlayerDock(selected: PlayerScreen, onSelect: (PlayerScreen) -> Unit
         ) {
             Row(Modifier.fillMaxWidth().padding(top = if (hasSong) 8.dp else 0.dp).selectableGroup(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Surface(Modifier.weight(1f), shape = CircleShape, color = surface, border = border, shadowElevation = 6.dp) {
+                GlassSurface(Modifier.weight(1f), CircleShape, solidColor = surface, border = border, shadowElevation = 6.dp) {
                     DockTabs(selected, onSelect, tabs)
                 }
-                Surface(Modifier.size(56.dp), shape = CircleShape, color = surface, border = border, shadowElevation = 6.dp) {
+                GlassSurface(Modifier.size(56.dp), CircleShape, solidColor = surface, border = border, shadowElevation = 6.dp) {
                     val searchSelected = selected == PlayerScreen.SEARCH
                     val interaction = remember { MutableInteractionSource() }
                     val searchOpacity by animateFloatAsState(if (searchSelected) 1f else 0f, EvannaMotion.enter, label = "search selection opacity")

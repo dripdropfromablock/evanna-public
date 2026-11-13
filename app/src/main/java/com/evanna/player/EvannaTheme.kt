@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.evanna.player.ui.LocalContentColor
 import com.evanna.player.ui.ProvideTextStyle
+import com.evanna.player.ui.SquirclePillShape
+import com.evanna.player.ui.continuous
 
 internal data class EvannaPalette(
     val primary: Color, val onPrimary: Color, val primaryContainer: Color, val onPrimaryContainer: Color,
@@ -78,13 +80,16 @@ internal val AppleLightColors = EvannaPalette(
     outline = Color(0xFF8E8E8E), outlineVariant = Color(0xFFC6C6C6), error = Color.Black,
 )
 
-/** Apple's corner radii from the spec: thumbnails 5 and 7, grouped cells 10, the mini player 14. */
+/**
+ * Apple's corner radii from the spec: thumbnails 5 and 7, grouped cells 10, the mini player 14. Cut as Apple's continuous
+ * corners (curvature eases into each edge) rather than circular arcs (docs/ui-plan-liquid-glass.md, phase 1).
+ */
 private val AppleShapes = EvannaShapes(
-    extraSmall = RoundedCornerShape(5.dp),
-    small = RoundedCornerShape(7.dp),
-    medium = RoundedCornerShape(10.dp),
-    large = RoundedCornerShape(10.dp),
-    extraLarge = RoundedCornerShape(14.dp),
+    extraSmall = RoundedCornerShape(5.dp).continuous(),
+    small = RoundedCornerShape(7.dp).continuous(),
+    medium = RoundedCornerShape(10.dp).continuous(),
+    large = RoundedCornerShape(10.dp).continuous(),
+    extraLarge = RoundedCornerShape(14.dp).continuous(),
 )
 
 /** Keep the stored IDs so upgrades preserve the selected layout and brightness. */
@@ -249,7 +254,7 @@ internal fun ProvideEvannaColors(colors: EvannaPalette, content: @Composable () 
 @Composable
 internal fun EvannaTheme(look: EvannaLook = EvannaLook.EVANNA, artwork: Color? = null, content: @Composable () -> Unit) {
     val colors = remember(look, artwork) { look.colors.withArtwork(artwork, look.dark, filledChips = look.apple) }
-    val style = LookStyle(look, hairlineCards = !look.apple, chipShape = if (look.apple) CircleShape else null,
+    val style = LookStyle(look, hairlineCards = !look.apple, chipShape = if (look.apple) SquirclePillShape() else null,
         groupedBackground = if (look == EvannaLook.APPLE_LIGHT) LightGroupedBackground else colors.background)
     val typography = if (look.apple) AppleTypography else DefaultTypography
     CompositionLocalProvider(LocalLookStyle provides style, LocalTypography provides typography,

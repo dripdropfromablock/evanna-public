@@ -29,6 +29,20 @@ Copyright (c) 2012-2016, Erik de Castro Lopo <erikd@mega-nerd.com>
 License: BSD 2-Clause (licenses/libsamplerate-BSD-2-Clause.txt)
 Linked into the USB audio module.
 
+Backdrop 2.0.0 (Liquid Glass effects)
+Copyright 2025 Kyant0.
+Source: https://github.com/Kyant0/AndroidLiquidGlass
+License: Apache License 2.0 (licenses/Apache-2.0.txt)
+Vendored as source in com.evanna.player.ui.glass.backdrop, by way of BitChord
+(below), which added a backdrop resolution scale. Only the package was renamed.
+
+BitChord
+Copyright the BitChord contributors.
+Source: https://github.com/kushagrasinghx/BitChord
+License: GNU General Public License 3.0 (licenses/Evanna-GPL-3.0.txt)
+The continuous-corner and squircle-pill shapes and the vendored Backdrop copy
+come from BitChord; the glass settings values follow its measurements.
+
 AndroidX Activity and Jetpack Compose
 Source: https://android.googlesource.com/platform/frameworks/support/
 License: Apache License 2.0 (licenses/Apache-2.0.txt)
