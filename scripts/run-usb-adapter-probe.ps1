@@ -4,7 +4,7 @@ param(
     [switch]$TransportSilence,
     [switch]$AllModes,
     [switch]$Disconnect,
-    [ValidateSet('Usb', 'UsbMusic', 'VolumeSettings', 'VolumeSettingsRestore', 'VolumeKeys', 'VolumeKeysUsb', 'SessionMetadata', 'DacProfiles', 'Playlists', 'Favorites', 'History', 'RecentlyAdded', 'LibrarySort', 'LibraryPaging', 'ArtistLibrary', 'GenreComposer', 'FolderManagement', 'Loudness', 'LoudnessStore', 'EqualizerStore', 'CrossfeedStore', 'Android', 'PlayerUi', 'PlayerFlow', 'Artwork', 'ArtworkLibrary', 'Lyrics', 'Tags', 'Cue', 'LibraryMigration', 'AlbumLibrary', 'AlbumUi', 'LibraryContext', 'ContextUi', 'LibraryState', 'Gapless', 'GaplessAndroid', 'AudioEndurance', 'AudioRouteLoss', 'Modes', 'Queue', 'QueueLibrary', 'Shuffle', 'ShuffleStore', 'ShuffleSeed', 'ShuffleCheck', 'ShuffleClear', 'RestoreStore', 'RestoreSeed', 'RestoreCheck', 'RestoreMissing', 'RestoreResume', 'RestoreEmpty', 'RestoreDirectSeed', 'RestoreDirectCheck', 'Library', 'LibraryBrowse', 'LibraryBrowseUi', 'LibraryGrant', 'LibraryRevoke', 'Session', 'SessionUsb', 'Diagnostics', 'DiagnosticsCrash', 'DiagnosticsHistory', 'Decoder', 'FileGrant', 'Picker')][string]$Probe = 'Usb'
+    [ValidateSet('Usb', 'UsbMusic', 'VolumeSettings', 'VolumeSettingsRestore', 'VolumeKeys', 'VolumeKeysUsb', 'SessionMetadata', 'DacProfiles', 'Playlists', 'Favorites', 'History', 'RecentlyAdded', 'LibrarySort', 'LibraryPaging', 'ArtistLibrary', 'GenreComposer', 'FolderManagement', 'Loudness', 'LoudnessStore', 'CrossfeedStore', 'Android', 'PlayerUi', 'PlayerFlow', 'Artwork', 'ArtworkLibrary', 'Lyrics', 'Tags', 'Cue', 'LibraryMigration', 'AlbumLibrary', 'AlbumUi', 'LibraryContext', 'ContextUi', 'LibraryState', 'Gapless', 'GaplessAndroid', 'AudioEndurance', 'AudioRouteLoss', 'Modes', 'Queue', 'QueueLibrary', 'Shuffle', 'ShuffleStore', 'ShuffleSeed', 'ShuffleCheck', 'ShuffleClear', 'RestoreStore', 'RestoreSeed', 'RestoreCheck', 'RestoreMissing', 'RestoreResume', 'RestoreEmpty', 'RestoreDirectSeed', 'RestoreDirectCheck', 'Library', 'LibraryBrowse', 'LibraryBrowseUi', 'LibraryGrant', 'LibraryRevoke', 'Session', 'SessionUsb', 'Diagnostics', 'DiagnosticsCrash', 'DiagnosticsHistory', 'Decoder', 'FileGrant', 'Picker')][string]$Probe = 'Usb'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -61,7 +61,6 @@ if ($Probe -ne 'Usb') {
         'FolderManagement' { 'folder-management' }
         'Loudness' { 'loudness' }
         'LoudnessStore' { 'loudness-store' }
-        'EqualizerStore' { 'equalizer-store' }
         'CrossfeedStore' { 'crossfeed-store' }
         'VolumeSettings' { 'volume-settings' }
         'VolumeSettingsRestore' { 'volume-settings-restore' }

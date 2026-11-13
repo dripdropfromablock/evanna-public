@@ -15,14 +15,11 @@ import org.junit.Test
 class UsbPlaybackControllerTest {
     private val fixture = PcmFixture(44100, 24, 2)
     private fun processingProfile() = com.evanna.player.user.DacProfile(com.evanna.player.usb.dacIdentity(1, 2, "DAC"),
-        levelingMode = com.evanna.player.loudness.LevelingMode.TRACK, eqEnabled = true,
-        equalizer = com.evanna.player.equalizer.EqualizerPreset(1, "Fixture", com.evanna.player.equalizer.EqualizerConfig(), 1),
+        levelingMode = com.evanna.player.loudness.LevelingMode.TRACK,
         crossfeed = com.evanna.player.equalizer.Crossfeed.LIGHT)
     private fun assertProcessing(profile: com.evanna.player.user.DacProfile, state: UsbPlaybackSnapshot) {
         assertEquals(profile.identity.key, state.dacProfileKey)
         assertEquals(profile.levelingMode, state.levelingMode)
-        assertEquals(profile.eqEnabled, state.eqEnabled)
-        assertEquals(profile.equalizer, state.equalizer)
         assertEquals(profile.crossfeed, state.crossfeed)
     }
 
@@ -68,10 +65,6 @@ class UsbPlaybackControllerTest {
         val releaseWrite = CountDownLatch(1)
         var pcm: ByteArray? = null
         override fun plan(source: PcmFormat): PlaybackPlan? { calls += "plan"; return proposed }
-        override fun setEqualizer(bands: List<EqBand>, preampDb: Float) {
-            check(bands.isEmpty() && preampDb == 0f)
-            calls += "clear-processing"
-        }
         override fun prepareVolume(): Boolean { calls += "volume"; return volumePrepared }
         override fun start(source: PcmFormat): StreamInfo {
             calls += "start"
@@ -126,7 +119,7 @@ class UsbPlaybackControllerTest {
             assertTrue(controller.open(7))
             assertTrue(controller.start(fixture))
             assertTrue(output.wrote.await(5, TimeUnit.SECONDS))
-            assertEquals(listOf("clear-processing", "plan", "volume", "start", "readiness"), output.calls.take(5))
+            assertEquals(listOf("plan", "volume", "start", "readiness"), output.calls.take(4))
             assertArrayEquals(byteArrayOf(0, 0, 0, -128, 0, -1, -1, 127, 0, 1, 0, 0, 0, -1, -1, -1), output.pcm!!.take(16).toByteArray())
         } finally { controller.close() }
     }

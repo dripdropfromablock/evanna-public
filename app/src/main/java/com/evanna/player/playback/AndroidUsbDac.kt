@@ -31,7 +31,6 @@ private class AndroidUsbDac(private val output: UsbAudioOutput) : UsbDacConnecti
     override val formats get() = output.formats
     override val outputModes get() = output.outputModes
     override val volumeRange get() = output.volumeRange
-    override fun setEqualizer(bands: List<EqBand>, preampDb: Float) = output.setEqualizer(bands, preampDb)
     override fun setCrossfeed(cutHz:Int,feedDb:Float) = output.setCrossfeed(cutHz,feedDb)
     override fun plan(source: PcmFormat, mode: OutputMode?) =
         output.plan(source.sampleRate, source.significantBits, source.channels, mode)

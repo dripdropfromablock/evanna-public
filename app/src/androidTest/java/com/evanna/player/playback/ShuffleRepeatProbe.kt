@@ -174,7 +174,6 @@ internal object ShuffleRepeatProbe {
         override val description="Synthetic shuffle output"
         var starts=0;var holdAt=Int.MAX_VALUE;private var stopped=CountDownLatch(1)
         val samples=java.util.Collections.synchronizedList(mutableListOf<Int>())
-        override fun setEqualizer(bands:List<EqBand>,preampDb:Float)=Unit
         override fun plan(source:PcmFormat)=PlaybackPlan(48000,16,false,true)
         override fun prepareVolume()=true
         override fun start(source:PcmFormat):StreamInfo{starts++;stopped=CountDownLatch(1);return StreamInfo(48000,16,2,DacFormat(1,1,1,2,2,16,DacFormat.SyncType.SYNC,512,listOf(48000),48000,48000),48000,48000,true,false)}

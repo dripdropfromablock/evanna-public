@@ -135,7 +135,6 @@ internal object PlaybackSessionProbe {
         val wrote = CountDownLatch(1)
         private val stopped = CountDownLatch(1)
         var starts = 0
-        override fun setEqualizer(bands: List<EqBand>, preampDb: Float) = Unit
         override fun plan(source: PcmFormat) = PlaybackPlan(48000, 16, false, true)
         override fun prepareVolume() = true
         override fun start(source: PcmFormat): StreamInfo {

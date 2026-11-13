@@ -63,9 +63,6 @@ class UsbAdapterProbe : Instrumentation() {
             if(probe=="loudness-store") {
                 result.putString("report",LoudnessStoreProbe.run(this));finish(Activity.RESULT_OK,result);return
             }
-            if(probe=="equalizer-store") {
-                result.putString("report",EqualizerStoreProbe.run(this));finish(Activity.RESULT_OK,result);return
-            }
             if(probe=="crossfeed-store") {
                 result.putString("report",CrossfeedStoreProbe.run(this));finish(Activity.RESULT_OK,result);return
             }

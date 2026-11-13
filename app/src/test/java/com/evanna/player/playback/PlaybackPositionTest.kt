@@ -35,7 +35,6 @@ class PlaybackPositionTest {
         override val description = "position sink"
         var completed = 0L
         var starts = 0
-        override fun setEqualizer(bands: List<EqBand>, preampDb: Float) = Unit
         override fun plan(source: PcmFormat) = PlaybackPlan(96000, 16, true, false)
         override fun prepareVolume() = true
         override fun start(source: PcmFormat): StreamInfo {

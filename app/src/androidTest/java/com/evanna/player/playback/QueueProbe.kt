@@ -138,7 +138,6 @@ internal object QueueProbe {
         override val description="Synthetic queue output"
         var starts=0;var block=false;var stopped=CountDownLatch(1);var writing=CountDownLatch(1)
         val samples=java.util.Collections.synchronizedList(mutableListOf<Int>())
-        override fun setEqualizer(bands:List<EqBand>,preampDb:Float)=Unit
         override fun plan(source:PcmFormat)=PlaybackPlan(48000,16,false,true)
         override fun prepareVolume()=true
         override fun start(source:PcmFormat):StreamInfo{starts++;stopped=CountDownLatch(1);writing=CountDownLatch(1);return StreamInfo(48000,16,2,DacFormat(1,1,1,2,2,16,DacFormat.SyncType.SYNC,192,listOf(48000),48000,48000),48000,48000,true,false)}

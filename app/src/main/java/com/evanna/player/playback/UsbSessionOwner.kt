@@ -238,10 +238,6 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
     suspend fun adjustUsbVolume(direction:Int,generation:Long):Boolean = volumeChange { controller.adjustUsbVolume(direction,generation) }
 
     suspend fun setUsbVolume(db:Float,generation:Long):Boolean = volumeChange { controller.setUsbVolume(db,generation) }
-    suspend fun setEqualizer(expectedKey:String?,expectedId:Long?,expectedRevision:Long?,config:com.evanna.player.equalizer.EqualizerConfig,
-        enabled:Boolean,persist:()->com.evanna.player.equalizer.EqualizerPreset?):Boolean=volumeChange {
-        controller.setEqualizer(expectedKey,expectedId,expectedRevision,config,enabled,persist)
-    }
     suspend fun setVolumeLimit(db:Float,expectedProfileKey:String?=null):Boolean = volumeChange {controller.setVolumeLimit(db,expectedProfileKey)}
     suspend fun setUsbKeyStep(db:Float,expectedProfileKey:String?=null):Boolean = command {controller.setUsbKeyStep(db,expectedProfileKey)}
     suspend fun setLevelingMode(mode:com.evanna.player.loudness.LevelingMode,expectedProfileKey:String?):Boolean=command(interruptSelection=true) {

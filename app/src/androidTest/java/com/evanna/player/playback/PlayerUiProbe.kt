@@ -685,7 +685,6 @@ internal object PlayerUiProbe {
             val gain=usbMusicVolume(VolumeRange(-60f,0f,1f,previous),previous,limitDb=volumeLimitDb) ?: return false
             usbVolume=gain.copy(currentDb=gain.snapDown(db) ?: return false);return true
         }
-        override fun setEqualizer(bands: List<EqBand>, preampDb: Float) = Unit
         override fun plan(source: PcmFormat) = PlaybackPlan(source.sampleRate, source.significantBits, false, true)
         override fun prepareVolume() = true
         override fun start(source: PcmFormat): StreamInfo {

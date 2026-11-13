@@ -266,6 +266,7 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalLayoutApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.evanna.player.equalizer.SoundSettings.load(this)
         LocalLibrary.syncOnLaunch(this)
         playlistAddIds=savedInstanceState?.getStringArrayList("playlistAddIds")?.filter {it.matches(Regex("[0-9a-f]{64}"))}?.take(1000).orEmpty()
         playlistSaveQueue=savedInstanceState?.getBoolean("playlistSaveQueue")==true
@@ -384,9 +385,7 @@ class MainActivity : ComponentActivity() {
                     PlayerScreen.OUTPUT, PlayerScreen.AUDIO_OUTPUT, PlayerScreen.LIBRARY_SETTINGS,
                     PlayerScreen.APPEARANCE, PlayerScreen.SETTINGS_TOOLS -> SettingsScreen(shown, ::back, dockInset, openNotices)
                     PlayerScreen.DECODE -> LocalDecodeScreen(onBack = ::back)
-                    PlayerScreen.EQUALIZER -> key(dacProfileKey) {
-                        com.evanna.player.equalizer.EqualizerScreen(dacProfileKey,::back,::chooseEqualizer,dockInset)
-                    }
+                    PlayerScreen.EQUALIZER -> com.evanna.player.equalizer.EqualizerScreen(::back,dockInset)
                     PlayerScreen.DIAGNOSTICS -> CrashReportsScreen(onBack = ::back)
                     PlayerScreen.NOTICES -> Column(Modifier.fillMaxSize()) {
                         val entry = licenseIndex?.let(licenseFiles::get)
@@ -1073,16 +1072,6 @@ class MainActivity : ComponentActivity() {
         },mainExecutor)
     }
 
-    private fun chooseEqualizer(args:Bundle,complete:(Boolean)->Unit) {
-        val controller=mediaController ?: return complete(false)
-        val result=controller.sendCustomCommand(SessionCommand(PlaybackService.SET_EQUALIZER,Bundle.EMPTY),args)
-        result.addListener({
-            val success=runCatching {result.get().resultCode==SessionResult.RESULT_SUCCESS}.getOrDefault(false)
-            if(mediaController===controller)refreshPlayback(controller)
-            complete(success)
-        },mainExecutor)
-    }
-
     private fun selectAndroidOutput() = selectAndroidOutput(false)
 
     private fun selectAndroidOutput(bitPerfect: Boolean, onlyIfUnselected: Boolean = false) {
@@ -1219,7 +1208,7 @@ class MainActivity : ComponentActivity() {
                 val sections = listOf(
                     "Audio" to listOf(
                         Triple("Audio output and USB", routeLabel(outputRoute), PlayerScreen.AUDIO_OUTPUT),
-                        Triple("Equalizer", "Graphic, parametric and AutoEq", PlayerScreen.EQUALIZER),
+                        Triple("Equalizer", "Graphic and parametric, on every output", PlayerScreen.EQUALIZER),
                     ),
                     "App" to listOf(
                         Triple("Library settings", "Manage folders and open files", PlayerScreen.LIBRARY_SETTINGS),

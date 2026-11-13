@@ -6,7 +6,7 @@ import org.junit.Test
 
 class PlaybackSignalStatusTest {
     @Test fun eqProcessingIsReportedAndCannotClaimAnUnchangedUsbSamplePath() {
-        val processed=clean.copy(eqEnabled=true,eqProcessed=true,eqPreampDb=-6.3f,stream=stream.copy(bitPerfect=false,processed=true))
+        val processed=clean.copy(eqProcessed=true,eqPreampDb=-6.3f,stream=stream.copy(bitPerfect=false,processed=true))
         val status=playbackSignalStatus(processed)
         assertTrue(status.contains("EQ on") && status.contains("preamp -6.3 dB"));assertFalse(processed.usbSamplePathEligible())
         assertFalse(processed.copy(stream=stream.copy(bitPerfect=true,processed=true)).usbSamplePathEligible())

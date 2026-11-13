@@ -5,6 +5,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
@@ -198,25 +200,53 @@ private fun DrawScope.thumb(p: EqPalette, center: Offset) {
 
 /**
  * The response curve (the mockup's plot): ±15 dB on a log axis from 20 Hz to 24 kHz at 48 kHz, one point per 2 dp,
- * tinted down to 0 dB, with frequency labels under it. Parametric screens add a handle per band; the chosen one is a ring.
+ * tinted down to 0 dB, with frequency labels under it. Each parametric band has a handle; the chosen one is a ring.
+ * With the callbacks, a drag near a handle moves that band and a tap elsewhere adds one there.
  */
 @Composable
-internal fun EqCurve(config: EqualizerConfig, plotHeight: Dp, handles: List<Pair<Float, Float>> = emptyList(), selected: Int = -1) {
+internal fun EqCurve(config: SoundConfig, plotHeight: Dp, handles: List<Pair<Float, Float>> = emptyList(), selected: Int = -1,
+    onSelect: ((Int) -> Unit)? = null, onHandle: ((Int, Float, Float) -> Unit)? = null, onAdd: ((Float, Float) -> Unit)? = null) {
     val p = eqPalette()
     val measurer = rememberTextMeasurer()
     val edge = eqText(10.sp, 12.sp).copy(color = p.muted)
     val axis = eqText(10.5.sp, 14.sp).copy(color = p.muted)
-    val split = config.bands.any { it.channels != 0 }
+    val latestHandles by rememberUpdatedState(handles)
+    val move by rememberUpdatedState(onHandle)
+    val add by rememberUpdatedState(onAdd)
+    val select by rememberUpdatedState(onSelect)
     // The axis labels get one line under the plot: 18 dp at the normal font size, more at large ones.
     val labels = plotHeight + 4.dp + with(LocalDensity.current) { 14.sp.toDp() }
+    val l0 = log10(20f); val l1 = log10(24000f)
     BoxWithConstraints(Modifier.fillMaxWidth().semantics { contentDescription = "EQ curve, plus and minus 15 dB" }) {
         val count = max(2, (maxWidth.value / 2f).toInt() + 1)
-        val frequencies = remember(count) { curveFrequencies(count) }
-        val left = remember(config, count) { equalizerCurveDb(config, frequencies, channel = 0) }
-        val right = remember(config, count, split) { if (split) equalizerCurveDb(config, frequencies, channel = 1) else null }
-        Canvas(Modifier.fillMaxWidth().height(labels)) {
+        val frequencies = remember(count) { DoubleArray(count) { 10.0.pow(log10(20.0) + (log10(24000.0) - log10(20.0)) * it / (count - 1)) } }
+        val left = remember(config, count) { soundCurveDb(config, frequencies) }
+        Canvas(Modifier.fillMaxWidth().height(labels)
+            .pointerInput(onHandle != null) {
+                if (onHandle == null) return@pointerInput
+                val h = plotHeight.toPx()
+                fun hz(px: Float) = 10f.pow(l0 + (px / size.width).coerceIn(0f, 1f) * (l1 - l0))
+                fun db(py: Float) = ((h / 2 - py) * 30f / h).coerceIn(-15f, 15f)
+                fun nearest(at: Offset): Int? = latestHandles.indices.minByOrNull { (handlePoint(latestHandles[it], size.width.toFloat(), h) - at).getDistance() }
+                    ?.takeIf { (handlePoint(latestHandles[it], size.width.toFloat(), h) - at).getDistance() <= 28.dp.toPx() }
+                var dragging: Int? = null
+                detectDragGestures(onDragStart = { at -> dragging = nearest(at)?.also { select?.invoke(it) } },
+                    onDragEnd = { dragging = null }, onDragCancel = { dragging = null }) { change, _ ->
+                    val i = dragging ?: return@detectDragGestures
+                    change.consume(); move?.invoke(i, hz(change.position.x), db(change.position.y))
+                }
+            }
+            .pointerInput(onAdd != null) {
+                if (onAdd == null) return@pointerInput
+                val h = plotHeight.toPx()
+                detectTapGestures { at ->
+                    if (at.y > h) return@detectTapGestures
+                    val hit = latestHandles.indexOfFirst { (handlePoint(it, size.width.toFloat(), h) - at).getDistance() <= 28.dp.toPx() }
+                    if (hit >= 0) select?.invoke(hit)
+                    else add?.invoke(10f.pow(l0 + (at.x / size.width).coerceIn(0f, 1f) * (l1 - l0)), ((h / 2 - at.y) * 30f / h).coerceIn(-15f, 15f))
+                }
+            }) {
             val w = size.width; val h = plotHeight.toPx(); val hair = 1.dp.toPx()
-            val l0 = log10(20f); val l1 = log10(24000f)
             fun x(f: Float) = (log10(f) - l0) / (l1 - l0) * w
             fun y(db: Float) = h / 2 - db * (h / 30f)
             for (db in listOf(-10f, -5f, 5f, 10f)) drawLine(p.grid, Offset(0f, y(db)), Offset(w, y(db)), hair)
@@ -230,7 +260,6 @@ internal fun EqCurve(config: EqualizerConfig, plotHeight: Dp, handles: List<Pair
             }
             val curve = path(left)
             drawPath(Path().apply { addPath(curve); lineTo(w, y(0f)); lineTo(0f, y(0f)); close() }, p.accentSoft)
-            right?.let { drawPath(path(it), p.accent.copy(alpha = 0.5f), style = Stroke(1.5.dp.toPx(), join = StrokeJoin.Round)) }
             drawPath(curve, p.accent, style = Stroke(2.2.dp.toPx(), join = StrokeJoin.Round))
             handles.forEachIndexed { i, (f, db) ->
                 val c = Offset(x(f.coerceIn(20f, 24000f)), y(db.coerceIn(-15f, 15f)))
@@ -252,6 +281,12 @@ internal fun EqCurve(config: EqualizerConfig, plotHeight: Dp, handles: List<Pair
             }
         }
     }
+}
+
+/** Where a (frequency, gain) handle sits on a plot [width] wide and [height] tall (20 Hz to 24 kHz, ±15 dB). */
+private fun handlePoint(handle: Pair<Float, Float>, width: Float, height: Float): Offset {
+    val l0 = log10(20f); val l1 = log10(24000f)
+    return Offset((log10(handle.first.coerceIn(20f, 24000f)) - l0) / (l1 - l0) * width, height / 2 - handle.second.coerceIn(-15f, 15f) * (height / 30f))
 }
 
 /** One graphic band: its gain above, a 116 dp track from −15 to +15 dB filled from 0, and its frequency below. Drag up or down. */

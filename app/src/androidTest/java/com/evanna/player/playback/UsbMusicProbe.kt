@@ -11,7 +11,6 @@ import com.evanna.player.usb.dacIdentity
 import com.evanna.player.user.DacProfile
 import com.evanna.player.loudness.*
 import com.evanna.player.equalizer.*
-import com.truesample.usbaudio.EqBand
 
 /** Real USB and hardware gain, generated digital silence only; never replaces the saved user queue. */
 internal object UsbMusicProbe {
@@ -88,20 +87,20 @@ internal object UsbMusicProbe {
                 check(end.state==UsbPlaybackState.ENDED && end.stats?.framesCompleted==192000L)
                 observations+="$mode hardware offset/base/applied readback and unchanged sample-path status with zero PCM"
             }
-            val eq=EqualizerPreset(1,"Silent EQ probe",EqualizerConfig(listOf(EqBand(EqBand.Type.PEAK,1000f,6f,1f))),1)
-            check(owner.setEqualizer(profile.identity.key,null,null,eq.config,true){eq})
-            check(!owner.play() && owner.snapshot.value.failure==UsbPlaybackFailure.CONVERSION_REQUIRED)
-            check(owner.play(true))
-            check(owner.snapshot.value.stream?.let {it.processed && !it.bitPerfect}==true)
-            val processedEnd=withTimeout(15000){owner.snapshot.first {it.state in listOf(UsbPlaybackState.ENDED,UsbPlaybackState.ERROR)}}
-            check(processedEnd.state==UsbPlaybackState.ENDED && processedEnd.stats?.clippedSamples==0L)
-            check(processedEnd.stats?.let {it.transferErrors==0L && it.framesQueued==192000L}==true)
-            val flat=EqualizerPreset(0,"Flat",EqualizerConfig(),1)
-            check(owner.setEqualizer(profile.identity.key,eq.id,eq.revision,flat.config,true){flat})
-            check(owner.play() && owner.snapshot.value.stream?.let {!it.processed && it.bitPerfect}==true)
-            val flatEnd=withTimeout(15000){owner.snapshot.first {it.state in listOf(UsbPlaybackState.ENDED,UsbPlaybackState.ERROR)}}
-            check(flatEnd.state==UsbPlaybackState.ENDED && flatEnd.stats?.clippedSamples==0L)
-            observations+="EQ Strict refusal, converted zero-PCM processing flags/zero clips and enabled Flat exact bypass; physical sound unmeasured"
+            // The built-in EQ runs before the output, so Strict plays it; the owner's own EQ setting comes back afterwards.
+            val ownerEq=SoundSettings.config.value
+            try {
+                SoundSettings.update {SoundConfig(enabled=true,bands=listOf(Band(FilterType.PEAK,1000f,6f,1f)))}
+                check(owner.play())
+                val processedEnd=withTimeout(15000){owner.snapshot.first {it.state in listOf(UsbPlaybackState.ENDED,UsbPlaybackState.ERROR)}}
+                check(processedEnd.state==UsbPlaybackState.ENDED && processedEnd.eqProcessed && processedEnd.eqPreampDb<0f && !processedEnd.usbSamplePathEligible())
+                check(processedEnd.stats?.let {it.clippedSamples==0L && it.transferErrors==0L && it.framesQueued==192000L}==true)
+                SoundSettings.update {SoundConfig(enabled=true)}
+                check(owner.play() && owner.snapshot.value.stream?.let {!it.processed && it.bitPerfect}==true)
+                val flatEnd=withTimeout(15000){owner.snapshot.first {it.state in listOf(UsbPlaybackState.ENDED,UsbPlaybackState.ERROR)}}
+                check(flatEnd.state==UsbPlaybackState.ENDED && !flatEnd.eqProcessed && flatEnd.stats?.clippedSamples==0L)
+            } finally {SoundSettings.update {ownerEq}}
+            observations+="Built-in EQ plays in Strict with processed status and zero clips, and on-but-flat stays an exact bypass; physical sound unmeasured"
             check(owner.setCrossfeed(Crossfeed.STRONG,profile.identity.key))
             check(!owner.play() && owner.snapshot.value.failure==UsbPlaybackFailure.CONVERSION_REQUIRED)
             check(owner.play(true) && owner.snapshot.value.stream?.let {it.processed && !it.bitPerfect}==true)

@@ -19,7 +19,6 @@ internal enum class UsbPlaybackFailure {
     NOT_OPEN, UNSUPPORTED_FORMAT, CONVERSION_REQUIRED, STREAM_MISMATCH, CLOCK_MISMATCH,
     CLOCK_UNVERIFIED, FEEDBACK_UNVERIFIED, VOLUME_UNVERIFIED, DISCONNECTED, TRANSFER_FAILED,
     WRITE_FAILED, STOP_FAILED, CLOSE_FAILED, OUTPUT_FAILED, SOURCE_OPEN_FAILED, SOURCE_READ_FAILED, SOURCE_CLOSE_FAILED, SOURCE_SEEK_FAILED, DRAIN_UNVERIFIED, ROUTE_CHANGED,
-    EQ_HEADROOM_REQUIRED,
 }
 
 internal data class UsbPlaybackReadiness(
@@ -59,7 +58,8 @@ internal data class UsbPlaybackSnapshot(
     val usbKeyStepDb: Float = USB_KEY_STEP_DEFAULT_DB,
     val historyStream:Long=0,val historyPlayId:String?=null,val historyQueueId:String?=null,
     val levelingMode:LevelingMode=LevelingMode.OFF,val leveling:LevelingDecision=LevelingDecision(),val appliedGainDb:Float?=null,
-    val eqEnabled:Boolean=false,val equalizer:EqualizerPreset?=null,val eqProcessed:Boolean=false,val eqPreampDb:Float=0f,
+    /** The built-in EQ changed this stream's samples, at [eqPreampDb] (preamp plus auto headroom). */
+    val eqProcessed:Boolean=false,val eqPreampDb:Float=0f,
     val crossfeed:Crossfeed=Crossfeed.OFF,val crossfeedProcessed:Boolean=false,
 )
 
@@ -69,7 +69,6 @@ internal interface UsbPlaybackOutput : PlaybackOutput {
     val profileIdentityKey:String? get()=null
     override val route get() = PlaybackRoute.DIRECT_USB
     override val description: String
-    fun setEqualizer(bands: List<EqBand>, preampDb: Float)
     /** Synthetic outputs may ignore it; plan/stream processing evidence then disagrees and playback fails closed. */
     fun setCrossfeed(level:Crossfeed) {}
     fun plan(source: PcmFormat): PlaybackPlan?
@@ -140,8 +139,6 @@ internal class UsbPlaybackController(
     private var volumeLimitDb = validVolumeLimit(initialVolumeLimitDb) ?: USB_VOLUME_LIMIT_DEFAULT_DB
     private var usbKeyStepDb = validUsbKeyStep(initialUsbKeyStepDb) ?: USB_KEY_STEP_DEFAULT_DB
     private var levelingMode=LevelingMode.OFF
-    private var equalizer:EqualizerPreset?=null
-    private var eqEnabled=false
     private var crossfeed=Crossfeed.OFF
     private val mutableSnapshot = MutableStateFlow(UsbPlaybackSnapshot(usbPolicy = initialUsbPolicy, followSongRate = initialFollowSongRate,
         startVolumeDb = startVolumeDb, volumeLimitDb = volumeLimitDb, usbKeyStepDb = usbKeyStepDb))
@@ -170,14 +167,14 @@ internal class UsbPlaybackController(
             maxUsbRate=profile.maxRate;startVolumeDb=profile.startVolumeDb;volumeLimitDb=profile.volumeLimitDb;usbKeyStepDb=profile.keyStepDb
             dacProfileKey=profile.identity.key;dacProfileName=profile.identity.displayName
             levelingMode=profile.levelingMode
-            equalizer=profile.equalizer;eqEnabled=profile.eqEnabled;crossfeed=profile.crossfeed
+            crossfeed=profile.crossfeed
         }
         val previous = mutableSnapshot.value
         val position = if (replay) 0 else previous.positionUs
         mutableSnapshot.value = UsbPlaybackSnapshot(generation, UsbPlaybackState.PREPARING, deviceId,
             source = previous.source, trackId = previous.trackId, positionUs = position, startPositionUs = position, route = route, usbPolicy = usbPolicy,
             followSongRate = followSongRate, queueId=previous.queueId, startVolumeDb = startVolumeDb, volumeLimitDb = volumeLimitDb, usbKeyStepDb = usbKeyStepDb,
-            maxUsbRate=maxUsbRate,dacProfileKey=dacProfileKey,dacProfileName=dacProfileName,levelingMode=levelingMode,eqEnabled=eqEnabled,equalizer=equalizer,crossfeed=crossfeed)
+            maxUsbRate=maxUsbRate,dacProfileKey=dacProfileKey,dacProfileName=dacProfileName,levelingMode=levelingMode,crossfeed=crossfeed)
         try {
             currentCoroutineContext().ensureActive()
             output = create()
@@ -234,30 +231,15 @@ internal class UsbPlaybackController(
             if (owned.route == PlaybackRoute.DIRECT_USB) {
                 check(usb != null)
                 if(!usb.setLevelingOffsetDb(streamLeveling.offsetDb))return@prepareCommand fail(UsbPlaybackFailure.VOLUME_UNVERIFIED)
-                val eq=if(eqEnabled && source is TrackPcmFormat)checkNotNull(equalizer).config else EqualizerConfig()
-                usb.setEqualizer(eq.bands,eq.preampDb)
                 val feed=if(source is TrackPcmFormat)crossfeed else Crossfeed.OFF
                 usb.setCrossfeed(feed)
-                // Its sine gain never exceeds 0 dB (native tests), so EQ headroom alone stays sufficient.
+                // Its sine gain never exceeds 0 dB (native tests), and the EQ's limiter runs before it.
                 val crossfed=feed!=Crossfeed.OFF && source.channels==2
                 val cap=maxUsbRate
                 plan = if (cap==null) usb.plan(source) else usb.plan(source,cap)
-                mutableSnapshot.update {it.copy(plan=plan)}
+                mutableSnapshot.update {it.copy(plan=plan,crossfeedProcessed=plan!=null && crossfed)}
                 planFailure(source,plan,true,maxUsbRate)?.let {return@prepareCommand fail(it)}
-                if(plan!=null) {
-                    val safe=if(eq.bands.isEmpty() && eq.preampDb==0f)EqualizerHeadroom(0f,0.0,false)
-                        else {
-                            if(plan.outputRate !in 8000..768000)return@prepareCommand fail(UsbPlaybackFailure.UNSUPPORTED_FORMAT)
-                            equalizerHeadroom(eq,plan.outputRate)
-                        }
-                    val preamp=safe.preampDb ?: return@prepareCommand fail(UsbPlaybackFailure.EQ_HEADROOM_REQUIRED)
-                    if(preamp!=eq.preampDb) {
-                        usb.setEqualizer(eq.bands,preamp)
-                        plan=if(cap==null)usb.plan(source)else usb.plan(source,cap)
-                    }
-                    mutableSnapshot.update {it.copy(eqProcessed=safe.processed,eqPreampDb=preamp,crossfeedProcessed=crossfed)}
-                    if(plan!=null && plan.processed!=(safe.processed || crossfed))return@prepareCommand fail(UsbPlaybackFailure.STREAM_MISMATCH)
-                }
+                if(plan!=null && plan.processed!=crossfed)return@prepareCommand fail(UsbPlaybackFailure.STREAM_MISMATCH)
                 mutableSnapshot.value = mutableSnapshot.value.copy(plan = plan)
                 planFailure(source, plan, allowConversion || usbPolicy == UsbPlaybackPolicy.COMPATIBILITY,maxUsbRate)?.let { return@prepareCommand fail(it) }
                 usb.startVolumeDb = startVolumeDb
@@ -553,36 +535,6 @@ internal class UsbPlaybackController(
         }
     }
 
-    /** A live edit owns one PCM boundary, but never the owner's Pause/Stop command lane. */
-    suspend fun setEqualizer(expectedKey:String?,expectedId:Long?,expectedRevision:Long?,config:EqualizerConfig,
-        enabled:Boolean,persist:()->EqualizerPreset?):Boolean=withContext(Dispatchers.IO) {
-        pcmBlocks.withLock {commands.withLock command@{
-            if(expectedKey==null || dacProfileKey!=expectedKey || quarantined ||
-                equalizer?.id!=expectedId || equalizer?.revision!=expectedRevision)return@command false
-            val before=mutableSnapshot.value
-            val live=before.route==PlaybackRoute.DIRECT_USB && before.state in listOf(UsbPlaybackState.PLAYING,UsbPlaybackState.DRAINING)
-            val requested=if(enabled)config else EqualizerConfig()
-            val headroom=before.stream?.takeIf {before.route==PlaybackRoute.DIRECT_USB}?.let {
-                if(requested==EqualizerConfig())EqualizerHeadroom(0f,0.0,false)else equalizerHeadroom(requested,it.outputRate)
-            }
-            if(headroom!=null && headroom.preampDb==null)return@command false
-            val updateLive=live && before.eqProcessed && headroom?.processed==true
-            val nextStart=before.state==UsbPlaybackState.ENDED && headroom?.processed==before.eqProcessed
-            withContext(NonCancellable) {
-                if(!updateLive && !nextStart && !pauseDirectUsbForSetting())return@withContext false
-                val saved=try {persist()?.takeIf {it.config==config}}catch(_:Exception){null} ?: return@withContext false
-                equalizer=saved;eqEnabled=enabled
-                mutableSnapshot.update {it.copy(equalizer=saved,eqEnabled=enabled,
-                    eqProcessed=if(nextStart)it.eqProcessed else updateLive,
-                    eqPreampDb=if(nextStart)it.eqPreampDb else if(updateLive)headroom!!.preampDb!! else 0f)}
-                if(updateLive)try {(output as UsbPlaybackOutput).setEqualizer(requested.bands,headroom!!.preampDb!!)}catch(_:Exception) {
-                    invalidate();return@withContext if(stopWriter())fail(UsbPlaybackFailure.OUTPUT_FAILED)else false
-                }
-                true
-            }
-        }}
-    }
-
     private suspend fun pauseDirectUsbForSetting(): Boolean {
         if (mutableSnapshot.value.route != PlaybackRoute.DIRECT_USB) return true
         val ended = mutableSnapshot.value.state == UsbPlaybackState.ENDED
@@ -610,8 +562,7 @@ internal class UsbPlaybackController(
 
     private fun closedSnapshot() = UsbPlaybackSnapshot(generation, usbPolicy = usbPolicy, followSongRate = followSongRate,
         startVolumeDb = startVolumeDb, volumeLimitDb = volumeLimitDb, usbKeyStepDb = usbKeyStepDb, maxUsbRate = maxUsbRate,
-        dacProfileKey = dacProfileKey, dacProfileName = dacProfileName, levelingMode = levelingMode,
-        eqEnabled = eqEnabled, equalizer = equalizer, crossfeed = crossfeed)
+        dacProfileKey = dacProfileKey, dacProfileName = dacProfileName, levelingMode = levelingMode, crossfeed = crossfeed)
 
     private fun invalidate() {
         mutableSnapshot.value = mutableSnapshot.value.copy(generation = ++generation,
@@ -711,6 +662,9 @@ internal class UsbPlaybackController(
     private suspend fun writeSource(owned: PlaybackOutput, input: PcmReader, session: Long) {
         var failure: UsbPlaybackFailure? = null
         var ended = false
+        val sound = SoundEngine()
+        var lastEqProcessed = false
+        var lastEqPreampDb = 0f
         try {
             val frames = (input.format.sampleRate / 100).coerceIn(1, 4096)
             val buffer = ByteBuffer.allocateDirect(frames * input.format.channels * 4).order(ByteOrder.LITTLE_ENDIAN)
@@ -737,6 +691,14 @@ internal class UsbPlaybackController(
                     currentCoroutineContext().ensureActive()
                     if(failure!=null)return@withLock false
                     val pcm = buffer.duplicate().apply { limit(count * input.format.channels * 4) }.slice().order(ByteOrder.LITTLE_ENDIAN)
+                    // Every output gets the same EQ here, before the Android/Direct USB split.
+                    if (input.format is TrackPcmFormat) {
+                        sound.process(pcm, count, input.format.channels, input.format.sampleRate, SoundSettings.config.value)
+                        if (sound.active != lastEqProcessed || sound.gainDb != lastEqPreampDb) {
+                            lastEqProcessed = sound.active; lastEqPreampDb = sound.gainDb
+                            mutableSnapshot.update { if (it.generation == session) it.copy(eqProcessed = sound.active, eqPreampDb = sound.gainDb) else it }
+                        }
+                    }
                     val written = owned.write(pcm, count)
                     currentCoroutineContext().ensureActive()
                     if (written != count) {

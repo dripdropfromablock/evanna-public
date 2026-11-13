@@ -2,6 +2,7 @@
 // Modified for Evanna (2026-11-03): two-transfer start buffer before PCM and underrun counting.
 // Modified for Evanna (2026-11-04): planned/observed processing and pre-conversion clipping statistics.
 // Modified for Evanna (2026-11-05): stereo crossfeed after the equalizer.
+// Modified for Evanna (2026-11-13): equalizer removed; the app's sound engine processes PCM before write().
 // Owns the libusb handle for one USB Audio Class 1 DAC and streams PCM to it
 // with isochronous transfers, bypassing Android's audio stack.
 #pragma once
@@ -17,7 +18,6 @@
 #include <vector>
 
 #include "uac/Crossfeed.h"
-#include "uac/Equalizer.h"
 #include "uac/Pcm.h"
 #include "uac/UacDescriptors.h"
 
@@ -102,11 +102,8 @@ public:
     bool stop();
     bool close();
 
-    // Equalizer, applied after any resampling. An empty band list with 0 dB preamp turns it off.
+    // Stereo crossfeed after any resampling (bs2b cut Hz / feed dB); cutHz 0 turns it off.
     // Safe to call from any thread; takes effect at the next written chunk.
-    void setEqualizer(const std::vector<uac::EqBand>& bands, double preampDb);
-    bool equalizerActive() const;
-    // Stereo crossfeed after the equalizer (bs2b cut Hz / feed dB); cutHz 0 turns it off. Same timing as the EQ.
     void setCrossfeed(double cutHz, double feedDb);
 
     VolumeRange volumeRange();
@@ -129,7 +126,7 @@ private:
     void fillTransfer(libusb_transfer* transfer);
     bool push(const int32_t* interleaved, size_t frames, bool dither);  // dither, pack, queue for USB
     bool pushProcessedFloat(const float* interleaved, size_t frames);
-    void applyPendingEqualizer();
+    void applyPendingCrossfeed();
     bool resampleAndPush(size_t frames, bool endOfInput);  // frames already in resampleIn_
     void eventLoop();
     void failTransfer();
@@ -185,15 +182,11 @@ private:
     uint32_t outputRate_ = 0;
     bool ditherIntegerPath_ = false;
 
-    // Equalizer: settings written by any thread, filters owned by the writing thread.
-    uac::Equalizer eq_;
-    mutable std::mutex eqMutex_;
-    std::vector<uac::EqBand> eqBands_;
-    double eqPreampDb_ = 0;
-    uac::Crossfeed cf_;  // shares the EQ settings lock and dirty flag
+    // Crossfeed: settings written by any thread, filter owned by the writing thread.
+    uac::Crossfeed cf_;
+    mutable std::mutex cfMutex_;
     double cfCutHz_ = 0, cfFeedDb_ = 0;
-    std::atomic<bool> eqDirty_{false};
-    std::atomic<bool> eqActiveFlag_{false};
+    std::atomic<bool> cfDirty_{false};
 
     std::thread eventThread_;
     std::mutex eventMutex_; // Hold callbacks until all startup state and initial transfers are ready.

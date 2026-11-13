@@ -41,9 +41,8 @@ internal object CrossfeedStoreProbe {
             check(blocker.delete() && backup.delete())
             UserDatabase(context,name).use {store ->
                 val profile=checkNotNull(store.profile(identity.key))
-                check(profile.crossfeed==Crossfeed.OFF && profile.eqEnabled && profile.equalizer?.id==5L)
+                check(profile.crossfeed==Crossfeed.OFF)
                 check(profile.levelingMode==LevelingMode.ALBUM && profile.maxRate==96000 && profile.volumeLimitDb==-10f)
-                check(store.equalizerPresets().map {it.id}==listOf(0L,5L))
                 check(store.isFavorite(id));check(store.playlist(1)?.name=="Retained")
                 check(store.loudness(id,version)?.measurement==LoudnessMeasurement(-23.0,0.2,1_000_000))
                 SQLiteDatabase.openDatabase(backup.path,null,SQLiteDatabase.OPEN_READONLY).use {copy ->
@@ -61,8 +60,6 @@ internal object CrossfeedStoreProbe {
             UserDatabase(context,name).use {store ->
                 check(store.readableDatabase.version==USER_DB_VERSION)
                 check(store.profile(identity.key)?.crossfeed==Crossfeed.STRONG)
-                // The v8 graphic flag defaults off, and four-key bands from before per-band channels play on both channels.
-                check(store.equalizerPreset(5)?.config?.let {!it.graphic && it.bands.single().channels==0}==true)
                 store.writableDatabase.execSQL("UPDATE dac_profiles SET crossfeed='unknown'")
                 check(store.profile(identity.key)?.crossfeed==Crossfeed.OFF)
             }

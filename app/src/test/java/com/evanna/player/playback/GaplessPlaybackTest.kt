@@ -131,7 +131,6 @@ class GaplessPlaybackTest {
         val levelingOffsets=mutableListOf<Float>()
         var writeAction: () -> Unit = {}
         override fun setLevelingOffsetDb(db:Float):Boolean {levelingOffsets+=db;return true}
-        override fun setEqualizer(bands:List<EqBand>,preampDb:Float)=Unit
         override fun plan(source:PcmFormat)=PlaybackPlan(source.sampleRate,dacBits,false,dacBits>=source.significantBits)
         override fun prepareVolume()=true
         override fun start(source:PcmFormat):StreamInfo{starts++;sent=0;stopped=CountDownLatch(1);return StreamInfo(source.sampleRate,source.significantBits,2,DacFormat(1,1,1,2,(dacBits+7)/8,dacBits,DacFormat.SyncType.SYNC,512,listOf(source.sampleRate),source.sampleRate,source.sampleRate),source.sampleRate,source.sampleRate,dacBits>=source.significantBits,false)}

@@ -3,7 +3,7 @@ package com.evanna.player.playback
 internal fun UsbPlaybackSnapshot.usbSamplePathEligible(): Boolean =
     route == PlaybackRoute.DIRECT_USB && state in listOf(UsbPlaybackState.PLAYING, UsbPlaybackState.DRAINING) &&
         failure == null && readiness.clockConfigured && readiness.feedbackReady && readiness.volumeVerified &&
-        source?.strictEligible == true && stream?.bitPerfect == true && stream.processed==false &&
+        source?.strictEligible == true && stream?.bitPerfect == true && stream.processed==false && !eqProcessed &&
         stats?.let { !it.disconnected && it.underruns == 0L && it.transferErrors == 0L && it.clippedSamples == 0L } != false
 
 /** [brief] rows are the plain lines of the quality window's Minimal view; the rest are its Advanced rows. */
@@ -17,6 +17,9 @@ private fun UsbPlaybackSnapshot.usbConversions(source: PcmFormat, rate: Int, bit
     if(eqProcessed)add("EQ · preamp $eqPreampDb dB")
     if(crossfeedProcessed)add("crossfeed ${crossfeed.label.lowercase()}")
 }
+
+/** The built-in EQ runs before every output, so each route reports it the same way. */
+private fun UsbPlaybackSnapshot.eqStatus(): String = if (eqProcessed) "On · preamp $eqPreampDb dB" else "Off"
 
 private fun UsbPlaybackSnapshot.usbUnhealthy(): Boolean =
     failure != null || stats?.let { it.disconnected || it.underruns > 0 || it.transferErrors > 0 || it.clippedSamples > 0 } == true
@@ -37,9 +40,9 @@ internal fun signalStages(snapshot: UsbPlaybackSnapshot): List<SignalStage> = bu
         PlaybackRoute.ANDROID -> if (snapshot.androidStream?.bitPerfect == true) {
             val stream = snapshot.androidStream
             stage("$observed Android output","${stream.sampleRate} Hz · ${stream.bits}-bit integer · ${stream.channels} channels")
-            stage("Processing","Android reports its bit-perfect USB mixer for this stream; Evanna sends unchanged samples. Not verified on hardware by Evanna.")
+            stage("Processing","Android reports its bit-perfect USB mixer for this stream; Evanna sends ${if(snapshot.eqProcessed)"EQ-processed" else "unchanged"} samples. Not verified on hardware by Evanna.",snapshot.eqProcessed)
             stage("Volume","Android does not scale samples on this route; DAC volume behavior is unverified.")
-            stage("Equalizer","Off on this route.")
+            stage("Equalizer",snapshot.eqStatus(),snapshot.eqProcessed)
             stage("Crossfeed","Off on this route.")
         } else {
             snapshot.androidStream?.let { stage("$observed Android output","${it.sampleRate} Hz · PCM float · ${it.channels} channels",true) }
@@ -47,7 +50,7 @@ internal fun signalStages(snapshot: UsbPlaybackSnapshot): List<SignalStage> = bu
             stage("Processing","S32 → float; device rate/precision and mixer processing unknown.",true)
             stage("Volume","Android system volume. No USB sample-path guarantee.")
             stage("Leveling","Off on Android audio.")
-            stage("Equalizer","Off on Android audio.")
+            stage("Equalizer",snapshot.eqStatus(),snapshot.eqProcessed)
             stage("Crossfeed","Off on Android audio.")
         }
         PlaybackRoute.DIRECT_USB -> {
@@ -75,12 +78,7 @@ internal fun signalStages(snapshot: UsbPlaybackSnapshot): List<SignalStage> = bu
                 waiting -> "crossfeed ${feed.label.lowercase()} · waiting for the next playback start"
                 else -> "crossfeed ${feed.label.lowercase()} · bypassed: stereo songs only"
             }
-            stage("Processing controls",when {
-                !snapshot.eqEnabled -> "EQ off · $crossfeed"
-                waiting -> "EQ enabled · ${snapshot.equalizer?.name ?: "Flat"} · waiting for the next playback start · $crossfeed"
-                snapshot.eqProcessed -> "EQ on · ${snapshot.equalizer?.name ?: "Flat"} · preamp ${snapshot.eqPreampDb} dB · $crossfeed"
-                else -> "EQ enabled · flat or inactive filters bypass sample processing at this rate · $crossfeed"
-            })
+            stage("Processing controls","${snapshot.eqStatus().let { if (snapshot.eqProcessed) "EQ ${it.lowercase()}" else "EQ off" }} · $crossfeed")
             stage("Leveling",if(snapshot.levelingMode==com.evanna.player.loudness.LevelingMode.OFF)"Off" else
                 if(snapshot.leveling.mode!=snapshot.levelingMode)"${snapshot.levelingMode.name.lowercase().replaceFirstChar {it.uppercase()}} selected · waiting for the next playback start."
                 else "${snapshot.levelingMode.name.lowercase().replaceFirstChar {it.uppercase()}} · ${snapshot.leveling.offsetDb} dB · DAC hardware volume · ${snapshot.leveling.evidence}. Samples unchanged.")
@@ -110,7 +108,11 @@ internal fun signalSummary(snapshot: UsbPlaybackSnapshot): List<SignalStage> = b
             line(if (stream != null) output else "Output",
                 if (stream == null) "Android audio · not started" else "Android audio · ${stream.sampleRate} Hz${stream.bits?.let { " · $it-bit" }.orEmpty()}",
                 stream != null && !bitPerfect)
-            line("Processing",if (bitPerfect) "None, per Android. Not verified by Evanna" else "Android may change the samples",!bitPerfect)
+            line("Processing",when {
+                snapshot.eqProcessed -> if (bitPerfect) "Evanna EQ" else "Evanna EQ, then Android may change the samples"
+                bitPerfect -> "None, per Android. Not verified by Evanna"
+                else -> "Android may change the samples"
+            },!bitPerfect || snapshot.eqProcessed)
             line("Volume",if (bitPerfect) "Not changed by Android. DAC volume not verified" else "Android system volume")
         }
         PlaybackRoute.DIRECT_USB -> {

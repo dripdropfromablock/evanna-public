@@ -16,7 +16,6 @@ class CrossfeedPlaybackTest {
         override val description="Synthetic crossfeed output"
         var level=Crossfeed.OFF;var starts=0
         private fun processed(source:PcmFormat)=!dropsCrossfeed && level!=Crossfeed.OFF && source.channels==2
-        override fun setEqualizer(bands:List<EqBand>,preampDb:Float)=Unit
         override fun setCrossfeed(level:Crossfeed){this.level=level}
         override fun plan(source:PcmFormat)=PlaybackPlan(48000,24,false,!processed(source),processed(source))
         override fun prepareVolume()=true

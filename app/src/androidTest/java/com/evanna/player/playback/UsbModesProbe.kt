@@ -91,7 +91,6 @@ internal object UsbModesProbe {
         var starts = 0
         var wrote = CountDownLatch(1)
         var stopped = CountDownLatch(1)
-        override fun setEqualizer(bands: List<EqBand>, preampDb: Float) = Unit
         override fun plan(source: PcmFormat) = PlaybackPlan(48000, 16, true, false)
         override fun prepareVolume() = true
         override fun start(source: PcmFormat): StreamInfo {

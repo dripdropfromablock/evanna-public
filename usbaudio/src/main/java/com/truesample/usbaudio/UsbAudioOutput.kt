@@ -2,6 +2,7 @@
 // Modified for Evanna (2026-11-04): separate processing evidence and clipped-float statistics.
 // Modified for Evanna (2026-11-05): validated stereo crossfeed setter.
 // Modified for Evanna (2026-11-07): per-band equalizer channels.
+// Modified for Evanna (2026-11-13): equalizer removed; the app processes PCM before write().
 package com.truesample.usbaudio
 
 import android.hardware.usb.UsbConstants
@@ -67,18 +68,6 @@ data class PlaybackPlan(
     val bitPerfect: Boolean,
     val processed:Boolean=false,
 )
-
-/**
- * One equalizer filter. Frequencies in Hz, gain in dB; [q] sets the width (higher is narrower).
- * [channels]: 0 both, 1 left only, 2 right only.
- */
-data class EqBand(val type: Type, val frequencyHz: Float, val gainDb: Float, val q: Float, val channels: Int = 0) {
-    /**
-     * The native order. LOW_PASS, HIGH_PASS and BAND_PASS boost or cut a range: their output, scaled by
-     * 10^(dB/20) - 1, is added to the dry signal before the other types run as a chain.
-     */
-    enum class Type { PEAK, LOW_SHELF, HIGH_SHELF, LOW_PASS, HIGH_PASS, BAND_PASS }
-}
 
 /** libsamplerate sinc converter used when the DAC lacks the source rate. */
 enum class ResampleQuality { BEST, MEDIUM, FAST }
@@ -218,27 +207,9 @@ class UsbAudioOutput private constructor(
     }
 
     /**
-     * Applies an equalizer after any resampling (an empty [bands] list with 0 dB preamp turns it off).
-     * Takes effect within ~10 ms, mid-song included. While it is on, audio is processed, so playback
-     * is not bit-perfect. Settings persist across [start] calls until changed.
-     */
-    fun setEqualizer(bands: List<EqBand>, preampDb: Float) = synchronized(lock) {
-        checkOpen()
-        val flat = FloatArray(bands.size * 5)
-        bands.forEachIndexed { i, b ->
-            flat[i * 5] = b.type.ordinal.toFloat()
-            flat[i * 5 + 1] = b.frequencyHz
-            flat[i * 5 + 2] = b.gainDb
-            flat[i * 5 + 3] = b.q
-            flat[i * 5 + 4] = b.channels.toFloat()
-        }
-        NativeBridge.nativeSetEqualizer(handle, flat, preampDb)
-    }
-
-    /**
-     * Stereo crossfeed after the equalizer: bs2b lowpass cut 300-2000 Hz and feed level 1-15 dB
+     * Stereo crossfeed after any resampling: bs2b lowpass cut 300-2000 Hz and feed level 1-15 dB
      * (a higher level crosses less sound). [cutHz] 0 turns it off. Mono and multichannel streams
-     * bypass it. Same timing and processing status rules as [setEqualizer].
+     * bypass it. Takes effect within ~10 ms, mid-song included; while it is on, playback is not bit-perfect.
      */
     fun setCrossfeed(cutHz: Int, feedDb: Float) = synchronized(lock) {
         require(cutHz == 0 || (cutHz in 300..2000 && feedDb.isFinite() && feedDb in 1f..15f)) { "Invalid crossfeed setting" }

@@ -62,7 +62,7 @@ $guards = @(
     @{ Args = @{ Probe = 'FolderManagement'; TransportSilence = $true }; Message = 'Session/diagnostics probes cannot use USB transport switches.' }
     @{ Args = @{ Probe = 'Loudness'; TransportSilence = $true }; Message = 'Session/diagnostics probes cannot use USB transport switches.' }
     @{ Args = @{ Probe = 'LoudnessStore'; TransportSilence = $true }; Message = 'Session/diagnostics probes cannot use USB transport switches.' }
-    @{ Args = @{ Probe = 'EqualizerStore'; TransportSilence = $true }; Message = 'Session/diagnostics probes cannot use USB transport switches.' }
+    @{ Args = @{ Probe = 'CrossfeedStore'; TransportSilence = $true }; Message = 'Session/diagnostics probes cannot use USB transport switches.' }
     @{ Args = @{ Probe = 'CrossfeedStore'; TransportSilence = $true }; Message = 'Session/diagnostics probes cannot use USB transport switches.' }
     @{ Args = @{ Probe = 'LibraryState'; TransportSilence = $true }; Message = 'Session/diagnostics probes cannot use USB transport switches.' }
     @{ Args = @{ Probe = 'PlayerUi'; TransportSilence = $true }; Message = 'Session/diagnostics probes cannot use USB transport switches.' }

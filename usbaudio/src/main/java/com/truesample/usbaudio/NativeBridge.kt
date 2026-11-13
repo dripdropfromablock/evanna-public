@@ -1,5 +1,6 @@
 // Modified for Evanna (2026-11-02): expose clock/transport/volume/completion evidence and safe cleanup.
 // Modified for Evanna (2026-11-05): crossfeed setter.
+// Modified for Evanna (2026-11-13): equalizer setter removed.
 package com.truesample.usbaudio
 
 import java.nio.ByteBuffer
@@ -30,6 +31,5 @@ internal object NativeBridge {
         handle: Long, sampleRate: Int, bitsPerSample: Int, channels: Int, modeIndex: Int, modeRate: Int,
     ): IntArray?
     external fun nativeModes(handle: Long): IntArray
-    external fun nativeSetEqualizer(handle: Long, bands: FloatArray, preampDb: Float)
     external fun nativeSetCrossfeed(handle: Long, cutHz: Int, feedDb: Float)
 }

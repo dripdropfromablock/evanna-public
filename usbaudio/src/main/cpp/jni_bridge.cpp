@@ -2,6 +2,7 @@
 // Modified for Evanna (2026-11-04): explicit processed flags and clipping counter in the JNI protocol.
 // Modified for Evanna (2026-11-05): crossfeed setter.
 // Modified for Evanna (2026-11-07): equalizer bands carry a channel value; unknown types/channels are skipped.
+// Modified for Evanna (2026-11-13): equalizer setter removed.
 // JNI glue for com.truesample.usbaudio.NativeBridge.
 #include <jni.h>
 
@@ -206,28 +207,6 @@ extern "C" JNIEXPORT jintArray JNICALL JNI_FN(nativeModes)(JNIEnv* env, jobject,
                                jint(m.channels)});
     }
     return toIntArray(env, out);
-}
-
-// bands: flattened (type, frequencyHz, gainDb, q, channels) per band; an empty array turns the EQ off.
-// A band with an unknown type or channel value is skipped.
-extern "C" JNIEXPORT void JNICALL JNI_FN(nativeSetEqualizer)(JNIEnv* env, jobject, jlong h, jfloatArray bands,
-                                                           jfloat preampDb) {
-    const jsize n = env->GetArrayLength(bands);
-    std::vector<float> flat(static_cast<size_t>(n));
-    env->GetFloatArrayRegion(bands, 0, n, flat.data());
-    std::vector<uac::EqBand> list;
-    for (size_t i = 0; i + 4 < flat.size(); i += 5) {
-        const int type = int(flat[i]), channels = int(flat[i + 4]);
-        if (type < 0 || type > 5 || channels < 0 || channels > 2) continue;
-        uac::EqBand b;
-        b.type = static_cast<uac::EqBand::Type>(type);
-        b.frequency = flat[i + 1];
-        b.gainDb = flat[i + 2];
-        b.q = flat[i + 3];
-        b.channels = channels;
-        list.push_back(b);
-    }
-    streamer(h)->setEqualizer(list, preampDb);
 }
 
 // cutHz 0 turns crossfeed off; out-of-range values also leave it off (see uac::Crossfeed).

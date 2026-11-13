@@ -1,5 +1,6 @@
 // Modified for Evanna (2026-11-01): checked PCM input tests and original PowerShell runner.
 // Modified for Evanna (2026-11-07): reference vectors and pass-band, channel and rate tests for the equalizer.
+// Modified for Evanna (2026-11-13): equalizer tests removed with the equalizer.
 // Pure C++ tests: scripts/run-native-tests.ps1 builds with the NDK and runs silently on Android.
 #include <cstdio>
 #include <cmath>
@@ -9,7 +10,6 @@
 #include <vector>
 
 #include "../../main/cpp/uac/Crossfeed.h"
-#include "../../main/cpp/uac/Equalizer.h"
 #include "../../main/cpp/uac/Pcm.h"
 #include "../../main/cpp/uac/PcmWrite.h"
 #include "../../main/cpp/uac/UacDescriptors.h"
@@ -461,173 +461,6 @@ int main() {
         const auto clean = uac::inspectFloatSamples(values,3);
         CHECK(clean.clipped==0 && clean.finite);
         CHECK(uac::inspectFloatSamples(nullptr,0).finite);
-    });
-
-    test("equalizer: flat settings are inactive and pass audio unchanged", [] {
-        uac::Equalizer eq;
-        eq.configure({{uac::EqBand::Type::Peak, 1000, 0.0, 1.0}}, 0.0, 48000, 2);
-        CHECK(!eq.active());
-        std::vector<float> s = {0.5f, -0.25f, 0.125f, 0.0f};
-        eq.process(s.data(), 2);
-        CHECK(s[0] == 0.5f && s[1] == -0.25f && s[2] == 0.125f);
-    });
-
-    test("equalizer: peak and shelf responses match their settings", [] {
-        uac::Equalizer peak;
-        peak.configure({{uac::EqBand::Type::Peak, 1000, 6.0, 1.0}}, 0.0, 48000, 2);
-        CHECK(peak.active());
-        CHECK(std::fabs(peak.responseDb(1000, 48000) - 6.0) < 0.05);
-        CHECK(std::fabs(peak.responseDb(60, 48000)) < 0.3);
-
-        uac::Equalizer low;
-        low.configure({{uac::EqBand::Type::LowShelf, 100, 6.0, 0.707}}, 0.0, 44100, 2);
-        CHECK(std::fabs(low.responseDb(20, 44100) - 6.0) < 0.3);
-        CHECK(std::fabs(low.responseDb(10000, 44100)) < 0.1);
-
-        uac::Equalizer high;
-        high.configure({{uac::EqBand::Type::HighShelf, 8000, -6.0, 0.707}}, -2.0, 96000, 2);
-        CHECK(std::fabs(high.responseDb(30000, 96000) - (-8.0)) < 0.5);
-        CHECK(std::fabs(high.responseDb(100, 96000) - (-2.0)) < 0.1);  // preamp applies everywhere
-    });
-
-    test("equalizer: a real 1 kHz tone gets the designed boost", [] {
-        uac::Equalizer eq;
-        eq.configure({{uac::EqBand::Type::Peak, 1000, 6.0, 1.0}}, 0.0, 48000, 2);
-        const size_t frames = 48000;
-        std::vector<float> s(frames * 2);
-        for (size_t i = 0; i < frames; ++i) {
-            const float v = 0.25f * float(std::sin(2 * M_PI * 1000 * double(i) / 48000));
-            s[2 * i] = v;
-            s[2 * i + 1] = v;
-        }
-        eq.process(s.data(), frames);
-        double sumSq = 0;
-        for (size_t i = frames / 2; i < frames; ++i) sumSq += double(s[2 * i]) * s[2 * i];  // after settling
-        const double rms = std::sqrt(sumSq / double(frames / 2));
-        const double gainDb = 20 * std::log10(rms / (0.25 / std::sqrt(2.0)));
-        CHECK(std::fabs(gainDb - 6.0) < 0.1);
-    });
-
-    test("equalizer: overlapping boosts with combined headroom keep a full-scale tone in range", [] {
-        uac::Equalizer eq;
-        eq.configure({{uac::EqBand::Type::Peak,1000,6,1},{uac::EqBand::Type::Peak,1000,6,1}},-12.3,48000,2);
-        std::vector<float> samples(48000*2);
-        for(size_t i=0;i<48000;++i)samples[2*i]=samples[2*i+1]=float(std::sin(2*M_PI*1000*double(i)/48000));
-        eq.process(samples.data(),48000);
-        const auto stats=uac::inspectFloatSamples(samples.data(),samples.size());
-        CHECK(stats.finite && stats.clipped==0);
-        CHECK(std::fabs(eq.responseDb(1000,48000)+0.3)<0.01);
-    });
-
-    test("equalizer: extreme settings stay stable", [] {
-        uac::Equalizer eq;
-        eq.configure({{uac::EqBand::Type::Peak, 30, 15, 8}, {uac::EqBand::Type::LowShelf, 20, 15, 0.3},
-                      {uac::EqBand::Type::HighShelf, 20000, -15, 4}, {uac::EqBand::Type::Peak, 23999, 12, 1}},
-                     -15, 48000, 2);
-        std::vector<float> s(2 * 48000);
-        uint32_t seed = 1;
-        for (float& v : s) {
-            seed = seed * 1664525u + 1013904223u;
-            v = float(int32_t(seed)) / 2147483648.0f;
-        }
-        eq.process(s.data(), 48000);
-        bool finite = true;
-        for (float v : s) finite &= std::isfinite(v) && std::fabs(v) < 100.0f;
-        CHECK(finite);
-    });
-
-    test("equalizer: coefficients match the 12 Poweramp reference vectors", [] {
-        struct Vector { const char* name; uac::EqBand::Type type; double freq, q, gainDb, rate; double taps[5]; };
-        // From ui-overhaul-and-eq/agent-handoff-eq/reference/test_vectors.json; pass types ignore the gain here.
-        static const Vector vectors[] = {
-            {"peaking 1k Q1 +6dB", uac::EqBand::Type::Peak, 1000, 1.0, 6.0, 48000, {1.043953086990335, -1.8953207239365963, 0.8677222847598566, -1.8953207239365963, 0.9116753717501916}},
-            {"peaking 1k Q1 -6dB", uac::EqBand::Type::Peak, 1000, 1.0, -6.0, 48000, {0.9578974500501266, -1.8155228884860255, 0.8732915138730097, -1.8155228884860255, 0.8311889639231365}},
-            {"peaking 1k Q1 0dB", uac::EqBand::Type::Peak, 1000, 1.0, 0.0, 48000, {1.0, -1.8614084445321082, 0.8774704646235392, -1.8614084445321082, 0.8774704646235392}},
-            {"lowshelf 200 Q0.7 +6dB", uac::EqBand::Type::LowShelf, 200, 0.7, 6.0, 48000, {1.006508796538195, -1.96830588704021, 0.9627502259027584, -1.9685436050931961, 0.9690213043879671}},
-            {"highshelf 8k Q0.7 -6dB", uac::EqBand::Type::HighShelf, 8000, 0.7, -6.0, 48000, {0.6365248545504525, -0.27483085143871444, 0.12739963782803213, -0.7917478755256143, 0.2808415164653847}},
-            {"lowpass 90 Q0.8 gain ignored", uac::EqBand::Type::LowPass, 90, 0.8, 6.0, 48000, {3.4443818976322985e-05, 6.888763795264597e-05, 3.4443818976322985e-05, -1.9852439830027346, 0.9853817582786399}},
-            {"highpass 10k Q0.6 gain ignored", uac::EqBand::Type::HighPass, 10000, 0.6, 6.0, 48000, {0.34871527819379255, -0.6974305563875851, 0.34871527819379255, -0.2867899263707971, 0.10807118640437306}},
-            {"bandpass 1k Q1.5 gain ignored", uac::EqBand::Type::BandPass, 1000, 1.5, 6.0, 48000, {0.04169464946322244, 0.0, -0.04169464946322244, -1.9002138308334322, 0.916610701073555}},
-            {"peaking 1k Q1 +6 @44100", uac::EqBand::Type::Peak, 1000, 1.0, 6.0, 44100, {1.0476300262002127, -1.8849912524567818, 0.8566564609221257, -1.8849912524567818, 0.9042864871223383}},
-            {"lowshelf 30 Q1.5 +15 @96000", uac::EqBand::Type::LowShelf, 30, 1.5, 15.0, 96000, {1.0005844909559154, -1.9991449408381066, 0.998569588391074, -1.9991486975514388, 0.999150322633657}},
-            {"highshelf Nyquist-clamped 384k", uac::EqBand::Type::HighShelf, 300000, 1.0, 12.0, 384000, {1.0000057644944738, 1.9999884159970964, 0.9999826520368114, 1.9999884161970995, 0.9999884163312819}},
-            {"bandpass at f=sr/2-1 degenerate", uac::EqBand::Type::BandPass, 23999, 4.0, -15.0, 48000, {1.6362193964933718e-05, 0.0, -1.6362193964933718e-05, 1.9999672584776207, 0.9999672756120701}},
-        };
-        for (const Vector& v : vectors) {
-            uac::EqBand band;
-            band.type = v.type; band.frequency = v.freq; band.gainDb = v.gainDb; band.q = v.q;
-            const uac::Biquad k = uac::Equalizer::design(band, v.rate);
-            const double got[5] = {k.b0, k.b1, k.b2, k.a1, k.a2};
-            bool same = true;
-            for (int i = 0; i < 5; ++i) same &= std::fabs(got[i] - v.taps[i]) < 1e-12;
-            if (!same) std::printf("  vector mismatch: %s\n", v.name);
-            CHECK(same);
-        }
-    });
-
-    test("equalizer: pass bands boost or cut a range in parallel with the dry signal", [] {
-        uac::Equalizer band;  // a +6 dB band-pass adds 10^(6/20) - 1 of the filtered sound: exactly +6 dB at its centre
-        band.configure({{uac::EqBand::Type::BandPass, 1000, 6.0, 1.5}}, 0.0, 48000, 2);
-        CHECK(band.active());
-        CHECK(std::fabs(band.responseDb(1000, 48000) - 6.0) < 0.01);
-        CHECK(std::fabs(band.responseDb(100, 48000)) < 0.2);
-
-        uac::Equalizer bass;  // a +6 dB low-pass is a bass lift, not a cut-off
-        bass.configure({{uac::EqBand::Type::LowPass, 90, 6.0, 0.8}}, 0.0, 48000, 2);
-        CHECK(std::fabs(bass.responseDb(20, 48000) - 6.0) < 0.3);
-        CHECK(std::fabs(bass.responseDb(10000, 48000)) < 0.05);
-
-        uac::Equalizer treble;
-        treble.configure({{uac::EqBand::Type::HighPass, 10000, -6.0, 0.6}}, 0.0, 48000, 2);
-        CHECK(std::fabs(treble.responseDb(23000, 48000) + 6.0) < 0.2);  // full cut only near Nyquist (-5.0 dB at 20 kHz)
-        CHECK(std::fabs(treble.responseDb(100, 48000)) < 0.05);
-    });
-
-    test("equalizer: a real 1 kHz tone through a band-pass band gets its boost", [] {
-        uac::Equalizer eq;
-        eq.configure({{uac::EqBand::Type::BandPass, 1000, 6.0, 1.5}, {uac::EqBand::Type::Peak, 8000, -3.0, 1.0}}, 0.0, 48000, 2);
-        const size_t frames = 48000;
-        std::vector<float> s(frames * 2);
-        for (size_t i = 0; i < frames; ++i) s[2 * i] = s[2 * i + 1] = 0.25f * float(std::sin(2 * M_PI * 1000 * double(i) / 48000));
-        eq.process(s.data(), frames);
-        double sumSq = 0;
-        for (size_t i = frames / 2; i < frames; ++i) sumSq += double(s[2 * i]) * s[2 * i];
-        const double gainDb = 20 * std::log10(std::sqrt(sumSq / double(frames / 2)) / (0.25 / std::sqrt(2.0)));
-        CHECK(std::fabs(gainDb - eq.responseDb(1000, 48000)) < 0.05);
-        CHECK(std::fabs(gainDb - 6.0) < 0.2);
-    });
-
-    test("equalizer: a left-only band leaves the right channel bit-identical", [] {
-        uac::EqBand left{uac::EqBand::Type::Peak, 1000, 12.0, 1.0};
-        left.channels = 1;
-        uac::EqBand right{uac::EqBand::Type::BandPass, 1000, 9.0, 1.5};
-        right.channels = 2;
-        uac::Equalizer eq;
-        eq.configure({left}, 0.0, 48000, 2);
-        std::vector<float> s(2 * 4800), original;
-        uint32_t seed = 7;
-        for (float& v : s) { seed = seed * 1664525u + 1013904223u; v = float(int32_t(seed)) / 4294967296.0f; }
-        original = s;
-        eq.process(s.data(), 4800);
-        bool rightSame = true, leftChanged = false;
-        for (size_t i = 0; i < 4800; ++i) { rightSame &= s[2 * i + 1] == original[2 * i + 1]; leftChanged |= s[2 * i] != original[2 * i]; }
-        CHECK(rightSame && leftChanged);
-        CHECK(std::fabs(eq.responseDb(1000, 48000, 0) - 12.0) < 0.01 && std::fabs(eq.responseDb(1000, 48000, 1)) < 1e-9);
-
-        eq.configure({right}, 0.0, 48000, 2);
-        CHECK(std::fabs(eq.responseDb(1000, 48000, 0)) < 1e-9 && std::fabs(eq.responseDb(1000, 48000, 1) - 9.0) < 0.01);
-    });
-
-    test("equalizer: flat mixed pass and peak bands are off, and a new rate re-tunes every band", [] {
-        uac::Equalizer flat;
-        flat.configure({{uac::EqBand::Type::LowPass, 90, 0.0, 0.8}, {uac::EqBand::Type::BandPass, 1000, 0.0, 1.5},
-                        {uac::EqBand::Type::Peak, 3000, 0.0, 1.0}, {uac::EqBand::Type::HighShelf, 9000, 0.0, 0.7}}, 0.0, 48000, 2);
-        CHECK(!flat.active());
-
-        uac::Equalizer bell;
-        bell.configure({{uac::EqBand::Type::Peak, 10000, 12.0, 4.0}}, 0.0, 44100, 2);
-        bell.configure({{uac::EqBand::Type::Peak, 10000, 12.0, 4.0}}, 0.0, 96000, 2);
-        CHECK(std::fabs(bell.responseDb(10000, 96000) - 12.0) < 0.01);
     });
 
     // bs2b presets as (cut Hz, feed dB): Light, Medium, Strong. A higher feed level crosses less sound.

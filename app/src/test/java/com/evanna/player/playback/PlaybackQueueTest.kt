@@ -44,7 +44,6 @@ class PlaybackQueueTest {
         override var usbVolume: VolumeRange? = null
         var volumeAction: () -> Unit = {}
         var stopAction: () -> Unit = {}
-        override fun setEqualizer(bands: List<EqBand>, preampDb: Float) = Unit
         override fun plan(source: PcmFormat) = PlaybackPlan(source.sampleRate, source.significantBits, false, true)
         override fun prepareVolume() = true
         override fun start(source: PcmFormat): StreamInfo {

@@ -98,7 +98,6 @@ class UsbSessionOwnerTest {
         var starts = 0
         var closes = 0
         var calibrated = true
-        override fun setEqualizer(bands: List<EqBand>, preampDb: Float) = Unit
         override fun plan(source: PcmFormat) = PlaybackPlan(48000, 16, false, true)
         override fun prepareVolume() = calibrated
         override fun start(source: PcmFormat): StreamInfo {

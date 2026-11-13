@@ -2,6 +2,7 @@
 // Modified for Evanna (2026-11-03): PCM starts after a two-transfer buffer so a converted first chunk cannot underrun.
 // Modified for Evanna (2026-11-04): effect planning and finite/clipping checks before float conversion.
 // Modified for Evanna (2026-11-05): stereo crossfeed after the equalizer, planned and reported as processing.
+// Modified for Evanna (2026-11-13): equalizer removed; the app's sound engine processes PCM before write().
 #include "UsbStreamer.h"
 
 #include <libusb.h>
@@ -202,18 +203,15 @@ bool UsbStreamer::start(uint32_t sampleRate, uint32_t sourceBits, uint32_t chann
     } else {
         maxPushFrames_ = chunkFrames;
     }
-    // Float path (resampler, equalizer and/or crossfeed). Always ready: the EQ can be switched on mid-song.
+    // Float path (resampler and/or crossfeed). Always ready: crossfeed can be switched on mid-song.
     resampleIn_.resize(chunkFrames * channels);
     resampledInt_.resize(std::max(maxPushFrames_, chunkFrames) * channels);
     outputRate_ = outRate;
     {
-        std::lock_guard<std::mutex> lock(eqMutex_);
-        eq_.configure(eqBands_, eqPreampDb_, outRate, channels);
-        eq_.reset();  // new stream: no memory of the previous song
+        std::lock_guard<std::mutex> lock(cfMutex_);
         cf_.configure(cfCutHz_, cfFeedDb_, outRate, channels);
-        cf_.reset();
-        eqDirty_ = false;
-        eqActiveFlag_ = eq_.active();
+        cf_.reset();  // new stream: no memory of the previous song
+        cfDirty_ = false;
     }
 
     channels_ = channels;
@@ -321,7 +319,7 @@ bool UsbStreamer::start(uint32_t sampleRate, uint32_t sourceBits, uint32_t chann
     info.deviceRate = deviceRate;
     info.subslotBytes = f.subslotBytes;
     info.bitResolution = f.bitResolution;
-    info.processed = eq_.active() || cf_.active();
+    info.processed = cf_.active();
     info.bitPerfect = lossless && !info.processed;
     info.resampled = resampling;
     LOGI("streaming %u Hz %u-bit source -> %u Hz, alt %u (%u-bit in %u-byte slots)%s%s, %u packets/s", sampleRate,
@@ -337,12 +335,10 @@ bool UsbStreamer::plan(uint32_t sampleRate, uint32_t sourceBits, uint32_t channe
         return false;
     }
     auto processing = [&](uint32_t rate) {
-        std::lock_guard<std::mutex> lock(eqMutex_);
-        uac::Equalizer preview;
-        preview.configure(eqBands_, eqPreampDb_, rate, channels);
+        std::lock_guard<std::mutex> lock(cfMutex_);
         uac::Crossfeed crossfeed;
         crossfeed.configure(cfCutHz_, cfFeedDb_, rate, channels);
-        return preview.active() || crossfeed.active();
+        return crossfeed.active();
     };
     auto fits = [&](const uac::OutputFormat& f, uint32_t rate) {
         return f.channels == channels && fitsBandwidth(f, rate);
@@ -767,18 +763,17 @@ long UsbStreamer::write(const int32_t* pcm, size_t frames) {
     const size_t channels = channels_;
     const size_t chunkFrames = resampleIn_.size() / channels;
     for (size_t done = 0; done < frames;) {
-        applyPendingEqualizer();
+        applyPendingCrossfeed();
         const size_t n = std::min(chunkFrames, frames - done);
         const int32_t* src = pcm + done * channels;
         bool ok;
-        if (!resampler_ && !eq_.active() && !cf_.active()) {
+        if (!resampler_ && !cf_.active()) {
             ok = push(src, n, ditherIntegerPath_);  // untouched samples: bit-perfect when the format allows
         } else {
             src_int_to_float_array(src, resampleIn_.data(), int(n * channels));
             if (resampler_) {
                 ok = resampleAndPush(n, false);
             } else {
-                if (eq_.active()) eq_.process(resampleIn_.data(), n);
                 cf_.process(resampleIn_.data(), n);
                 ok = pushProcessedFloat(resampleIn_.data(), n);
             }
@@ -789,32 +784,20 @@ long UsbStreamer::write(const int32_t* pcm, size_t frames) {
     return long(frames);
 }
 
-void UsbStreamer::setEqualizer(const std::vector<uac::EqBand>& bands, double preampDb) {
-    std::lock_guard<std::mutex> lock(eqMutex_);
-    eqBands_ = bands;
-    eqPreampDb_ = preampDb;
-    eqDirty_ = true;
-}
-
-bool UsbStreamer::equalizerActive() const { return eqActiveFlag_; }
-
 void UsbStreamer::setCrossfeed(double cutHz, double feedDb) {
-    std::lock_guard<std::mutex> lock(eqMutex_);
+    std::lock_guard<std::mutex> lock(cfMutex_);
     cfCutHz_ = cutHz;
     cfFeedDb_ = feedDb;
-    eqDirty_ = true;
+    cfDirty_ = true;
 }
 
-// Runs on the writing thread only, between chunks, so filters never change mid-buffer.
-void UsbStreamer::applyPendingEqualizer() {
-    if (!eqDirty_.load(std::memory_order_acquire)) return;
-    std::lock_guard<std::mutex> lock(eqMutex_);
-    eq_.configure(eqBands_, eqPreampDb_, outputRate_, channels_);
+// Runs on the writing thread only, between chunks, so the filter never changes mid-buffer.
+void UsbStreamer::applyPendingCrossfeed() {
+    if (!cfDirty_.load(std::memory_order_acquire)) return;
+    std::lock_guard<std::mutex> lock(cfMutex_);
     cf_.configure(cfCutHz_, cfFeedDb_, outputRate_, channels_);
-    eqDirty_ = false;
-    eqActiveFlag_ = eq_.active();
-    LOGI("equalizer %s: %zu bands, preamp %.1f dB; crossfeed %s", eq_.active() ? "on" : "off", eqBands_.size(),
-         eqPreampDb_, cf_.active() ? "on" : "off");
+    cfDirty_ = false;
+    LOGI("crossfeed %s", cf_.active() ? "on" : "off");
 }
 
 bool UsbStreamer::resampleAndPush(size_t frames, bool endOfInput) {
@@ -834,7 +817,6 @@ bool UsbStreamer::resampleAndPush(size_t frames, bool endOfInput) {
             return false;
         }
         if (d.output_frames_gen > 0) {
-            if (eq_.active()) eq_.process(resampleOut_.data(), size_t(d.output_frames_gen));
             cf_.process(resampleOut_.data(), size_t(d.output_frames_gen));
             if (!pushProcessedFloat(resampleOut_.data(), size_t(d.output_frames_gen))) return false;
         }

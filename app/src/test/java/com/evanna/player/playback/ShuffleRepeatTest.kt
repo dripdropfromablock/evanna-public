@@ -23,7 +23,6 @@ class ShuffleRepeatTest {
     private class Output:UsbPlaybackOutput{
         override val description="Synthetic shuffle sink"
         var starts=0
-        override fun setEqualizer(bands:List<EqBand>,preampDb:Float)=Unit
         override fun plan(source:PcmFormat)=PlaybackPlan(48000,source.significantBits,false,true)
         override fun prepareVolume()=true
         override fun start(source:PcmFormat):StreamInfo{starts++;return StreamInfo(48000,source.significantBits,2,DacFormat(1,1,1,2,(source.significantBits+7)/8,source.significantBits,DacFormat.SyncType.SYNC,512,listOf(48000),48000,48000),48000,48000,true,false)}

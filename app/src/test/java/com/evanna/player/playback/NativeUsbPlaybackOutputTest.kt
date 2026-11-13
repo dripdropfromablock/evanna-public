@@ -128,9 +128,6 @@ class NativeUsbPlaybackOutputTest {
         var actual: StreamInfo? = null
         var startGate: CountDownLatch? = null
         val enteredStart = CountDownLatch(1)
-        override fun setEqualizer(bands: List<EqBand>, preampDb: Float) {
-            check(bands.isEmpty() && preampDb == 0f); calls += "eq"
-        }
         override fun plan(source: PcmFormat, mode: OutputMode?): PlaybackPlan {
             calls += "plan"
             val rate = mode?.sampleRate ?: source.sampleRate

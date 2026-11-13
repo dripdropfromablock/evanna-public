@@ -43,12 +43,9 @@ internal class EvannaPlayer(private val owner: UsbSessionOwner) : SimpleBasePlay
             owner.focusDenied -> "Audio focus was not granted. Try again with Evanna visible."
             snapshot.failure == UsbPlaybackFailure.VOLUME_UNVERIFIED -> "USB volume could not be verified. A controllable, unmuted DAC is required for music; analysis signals require measured calibration."
             snapshot.failure == UsbPlaybackFailure.CONVERSION_REQUIRED -> when {
-                snapshot.eqProcessed && snapshot.crossfeedProcessed -> "EQ and crossfeed change audio samples. Turn them off for Strict playback, or choose Compatibility USB or Play converted once."
-                snapshot.eqProcessed -> "EQ changes audio samples. Turn EQ off for Strict playback, or choose Compatibility USB or Play converted once."
                 snapshot.crossfeedProcessed -> "Crossfeed changes audio samples. Turn crossfeed off for Strict playback, or choose Compatibility USB or Play converted once."
                 else -> "Strict playback is unavailable. Choose Compatibility USB, or Play converted once for this play."
             }
-            snapshot.failure == UsbPlaybackFailure.EQ_HEADROOM_REQUIRED -> "EQ boosts need more headroom than the supported preamp range. Reduce the boosts or choose Flat."
             snapshot.failure == UsbPlaybackFailure.ROUTE_CHANGED -> "The audio output changed. Select an output again before playing."
             snapshot.failure != null -> "Playback stopped: ${snapshot.failure.name.lowercase().replace('_', ' ')}."
             else -> null
@@ -82,10 +79,8 @@ internal class EvannaPlayer(private val owner: UsbSessionOwner) : SimpleBasePlay
             putString(LEVELING_MODE,snapshot.levelingMode.name)
             putFloat(LEVELING_OFFSET,snapshot.leveling.offsetDb)
             putString(LEVELING_EVIDENCE,snapshot.leveling.evidence)
-            putBoolean(EQ_ENABLED,snapshot.eqEnabled);putBoolean(EQ_PROCESSED,snapshot.eqProcessed)
-            putString(EQ_NAME,snapshot.equalizer?.name ?: "Flat")
+            putBoolean(EQ_PROCESSED,snapshot.eqProcessed)
             putString(CROSSFEED,snapshot.crossfeed.name)
-            putLong(EQ_PRESET_ID,snapshot.equalizer?.id ?: 0);putLong(EQ_REVISION,snapshot.equalizer?.revision ?: 1)
             putFloat(EQ_PREAMP,snapshot.eqPreampDb)
             snapshot.appliedGainDb?.let {putFloat(USB_APPLIED_GAIN,it)}
             putString(SIGNAL_STATUS, signalStatus)
@@ -175,10 +170,6 @@ internal class EvannaPlayer(private val owner: UsbSessionOwner) : SimpleBasePlay
     fun setUsbKeyStep(db:Float,expectedProfileKey:String?=null):ListenableFuture<Boolean> = command {owner.setUsbKeyStep(db,expectedProfileKey)}
     fun setLevelingMode(mode:com.evanna.player.loudness.LevelingMode,expectedProfileKey:String?):ListenableFuture<Boolean> = command {owner.setLevelingMode(mode,expectedProfileKey)}
     fun setCrossfeed(level:com.evanna.player.equalizer.Crossfeed,expectedProfileKey:String?):ListenableFuture<Boolean> = command {owner.setCrossfeed(level,expectedProfileKey)}
-    fun setEqualizer(expectedKey:String?,expectedId:Long?,expectedRevision:Long?,config:com.evanna.player.equalizer.EqualizerConfig,
-        enabled:Boolean,persist:()->com.evanna.player.equalizer.EqualizerPreset?):ListenableFuture<Boolean> = command {
-        owner.setEqualizer(expectedKey,expectedId,expectedRevision,config,enabled,persist)
-    }
     fun selectTrack(factory: () -> PcmTrack): ListenableFuture<Boolean> = command { owner.selectTrack(factory) }
     fun playConvertedOnce(): ListenableFuture<Boolean> = command { owner.play(allowConversion = true) }
     fun setUsbPolicy(policy: UsbPlaybackPolicy): ListenableFuture<Boolean> = command { owner.setUsbPolicy(policy) }
@@ -272,11 +263,7 @@ internal class EvannaPlayer(private val owner: UsbSessionOwner) : SimpleBasePlay
         const val LEVELING_OFFSET="com.evanna.player.LEVELING_OFFSET"
         const val LEVELING_EVIDENCE="com.evanna.player.LEVELING_EVIDENCE"
         const val USB_APPLIED_GAIN="com.evanna.player.USB_APPLIED_GAIN"
-        const val EQ_ENABLED="com.evanna.player.EQ_ENABLED"
         const val EQ_PROCESSED="com.evanna.player.EQ_PROCESSED"
-        const val EQ_NAME="com.evanna.player.EQ_NAME"
-        const val EQ_PRESET_ID="com.evanna.player.EQ_PRESET_ID"
-        const val EQ_REVISION="com.evanna.player.EQ_REVISION"
         const val EQ_PREAMP="com.evanna.player.EQ_PREAMP"
         const val CROSSFEED="com.evanna.player.CROSSFEED"
         const val OUTPUT_ROUTE = "com.evanna.player.OUTPUT_ROUTE"

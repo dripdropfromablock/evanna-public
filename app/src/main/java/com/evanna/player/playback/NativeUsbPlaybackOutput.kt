@@ -22,7 +22,6 @@ internal interface UsbDacConnection {
     val formats: List<DacFormat>
     val outputModes: List<OutputMode>
     val volumeRange: VolumeRange? get() = null
-    fun setEqualizer(bands: List<EqBand>, preampDb: Float)
     /** [cutHz] 0 turns it off. Fakes may ignore it: planned processing then disagrees and playback fails closed. */
     fun setCrossfeed(cutHz:Int,feedDb:Float) {}
     fun plan(source: PcmFormat, mode: OutputMode?): PlaybackPlan?
@@ -89,11 +88,6 @@ internal class NativeUsbPlaybackOutput(
             return false
         calibration = value
         return true
-    }
-
-    @Synchronized override fun setEqualizer(bands: List<EqBand>, preampDb: Float) {
-        check(!closed && !restartBlocked)
-        dac.setEqualizer(bands, preampDb)
     }
 
     @Synchronized override fun setCrossfeed(level:Crossfeed) {

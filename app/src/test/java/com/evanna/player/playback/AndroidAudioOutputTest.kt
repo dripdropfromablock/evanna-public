@@ -153,7 +153,6 @@ class AndroidAudioOutputTest {
         val usb = object : UsbPlaybackOutput {
             override val description = "Uncalibrated USB"
             override fun plan(source: PcmFormat) = PlaybackPlan(source.sampleRate, 32, false, true)
-            override fun setEqualizer(bands: List<EqBand>, preampDb: Float) = Unit
             override fun prepareVolume() = false
             override fun start(source: PcmFormat): StreamInfo = error("USB must remain blocked")
             override fun readiness() = UsbPlaybackReadiness()

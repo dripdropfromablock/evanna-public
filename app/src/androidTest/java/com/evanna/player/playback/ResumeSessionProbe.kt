@@ -98,7 +98,6 @@ internal object ResumeSessionProbe {
         @Volatile var firstLeft: Int? = null
         @Volatile var running = false
         var starts = 0
-        override fun setEqualizer(bands: List<EqBand>, preampDb: Float) = Unit
         override fun plan(source: PcmFormat) = PlaybackPlan(source.sampleRate, source.significantBits, false, true)
         override fun prepareVolume() = true
         override fun start(source: PcmFormat): StreamInfo {

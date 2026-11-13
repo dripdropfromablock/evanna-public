@@ -43,6 +43,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        SoundSettings.load(this)
         owner = PlaybackRuntime.owner(this)
         player = EvannaPlayer(owner)
         session = MediaSession.Builder(this, player).setCallback(object : MediaSession.Callback {
@@ -64,7 +65,6 @@ class PlaybackService : MediaSessionService() {
                     commands.add(SessionCommand(SET_MAX_USB_RATE,Bundle.EMPTY))
                     commands.add(SessionCommand(SET_LEVELING_MODE,Bundle.EMPTY))
                     commands.add(SessionCommand(SET_CROSSFEED,Bundle.EMPTY))
-                    commands.add(SessionCommand(SET_EQUALIZER,Bundle.EMPTY))
                     commands.add(SessionCommand(SET_SLEEP_TIMER,Bundle.EMPTY))
                     commands.add(SessionCommand(SAVE_QUEUE_PLAYLIST,Bundle.EMPTY))
                     commands.add(SessionCommand(SET_FAVORITE,Bundle.EMPTY))
@@ -79,7 +79,6 @@ class PlaybackService : MediaSessionService() {
                 if (controller.uid != applicationInfo.uid)
                     return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
                 val profileKey=args.getString(EvannaPlayer.DAC_PROFILE_KEY)
-                if(customCommand.customAction==SET_EQUALIZER)return equalizerCommand(args,profileKey)
                 if(customCommand.customAction==SET_FAVORITE) {
                     val id=args.getString(QUEUE_ID)?.takeIf {it.length in 1..100}
                         ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
@@ -285,34 +284,6 @@ class PlaybackService : MediaSessionService() {
     private fun volumeResult(future:ListenableFuture<Boolean>):ListenableFuture<SessionResult> = Futures.transform(future,
         {success->SessionResult(if(success==true)SessionResult.RESULT_SUCCESS else SessionError.ERROR_UNKNOWN,volumeReadback(owner.snapshot.value))},Runnable::run)
 
-    private fun equalizerCommand(args:Bundle,key:String?):ListenableFuture<SessionResult> {
-        fun bad()=Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
-        if(key==null || key!=owner.snapshot.value.dacProfileKey)return bad()
-        val expectedId=args.getLong("eqExpectedId",-2)
-        val expectedRevision=args.getLong("eqExpectedRevision",-1)
-        if(!(expectedId==-1L && expectedRevision==0L || expectedId>=0 && expectedRevision>=1))return bad()
-        val action=args.getString("eqAction")
-        if(action !in listOf("SELECT","SAVE","COPY","DELETE") || !args.containsKey(EvannaPlayer.EQ_ENABLED))return bad()
-        val enabled=args.getBoolean(EvannaPlayer.EQ_ENABLED)
-        val config=runCatching {equalizerConfigFromValues(args.getFloatArray("eqBands") ?: error("Missing filters"),
-            args.getFloat("eqRequestedPreamp",Float.NaN),args.getBoolean("eqGraphic"))}.getOrNull() ?: return bad()
-        val targetId=args.getLong("eqTargetId",-1);val targetRevision=args.getLong("eqTargetRevision",0)
-        val name=args.getString("eqPresetName")?.let(::validEqualizerName)
-        if(action=="SELECT" && (targetId<0 || targetRevision<1) || action in listOf("SAVE","COPY") && name==null ||
-            action in listOf("SAVE","DELETE") && expectedId<=0 || action=="DELETE" && (enabled || config!=EqualizerConfig()))return bad()
-        return result(player.setEqualizer(key,expectedId.takeIf {it>=0},expectedRevision.takeIf {it>=1},config,enabled) {
-            val db=UserData.database(applicationContext)
-            db.commitEqualizer(key,expectedId.takeIf {it>=0},expectedRevision.takeIf {it>=1},enabled) {
-                when(action) {
-                    "SELECT" -> db.equalizerPreset(targetId,targetRevision)?.takeIf {it.config==config}
-                    "SAVE" -> db.saveEqualizerPreset(expectedId,name!!,config,expectedRevision)
-                    "COPY" -> db.saveEqualizerPreset(null,name!!,config)
-                    "DELETE" -> if(db.deleteEqualizerPreset(expectedId,expectedRevision))db.equalizerPreset(0)else null
-                    else -> null
-                }
-            }
-        })
-    }
     override fun onDestroy() {
         unregisterReceiver(receiver)
         PlaybackRuntime.beforeFocusRequest(null)
@@ -343,7 +314,6 @@ class PlaybackService : MediaSessionService() {
         const val SET_USB_KEY_STEP="com.evanna.player.SET_USB_KEY_STEP"
         const val SET_LEVELING_MODE="com.evanna.player.SET_LEVELING_MODE"
         const val SET_CROSSFEED="com.evanna.player.SET_CROSSFEED"
-        const val SET_EQUALIZER="com.evanna.player.SET_EQUALIZER"
         const val VOLUME_DB="volumeDb"
         const val VOLUME_DIRECTION="volumeDirection"
         const val VOLUME_GENERATION="volumeGeneration"

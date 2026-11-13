@@ -58,6 +58,7 @@ internal class UserDatabase(context:Context,name:String="user.db"):SQLiteOpenHel
         userSchema(USER_DB_VERSION).drop(userSchema(oldVersion).size).forEach(db::execSQL)
         if(oldVersion<6)seedEqualizerFlat(db)
     }
+    // The old USB-only EQ's tables and columns stay so every older database still migrates; nothing reads them now.
     private fun seedEqualizerFlat(db:SQLiteDatabase) {
         db.execSQL("INSERT INTO eq_presets(id,name,preamp_db,bands_json,created,modified,revision) VALUES(0,'Flat',0,'[]',0,0,1)")
     }
@@ -89,13 +90,11 @@ internal class UserDatabase(context:Context,name:String="user.db"):SQLiteOpenHel
     }catch(_:Exception){false}
 
     private fun readProfile(db:SQLiteDatabase,key:String):DacProfile? =
-        db.rawQuery("SELECT vendor_id,product_id,product_name,max_rate,start_volume_db,volume_limit_db,key_step_db,leveling_mode,eq_preset_id,eq_enabled,crossfeed FROM dac_profiles WHERE identity=?",arrayOf(key)).use {cursor ->
+        db.rawQuery("SELECT vendor_id,product_id,product_name,max_rate,start_volume_db,volume_limit_db,key_step_db,leveling_mode,crossfeed FROM dac_profiles WHERE identity=?",arrayOf(key)).use {cursor ->
             if(!cursor.moveToFirst())null else {
                 val identity=DacIdentity(cursor.getInt(0),cursor.getInt(1),cursor.getString(2));check(identity.key==key)
-                val preset=if(cursor.isNull(8))null else checkNotNull(equalizerPreset(cursor.getLong(8))){"Saved EQ preset is unavailable"}
-                val enabled=cursor.getInt(9).also {check(it in 0..1)}==1
-                DacProfile(identity,if(cursor.isNull(3))null else cursor.getInt(3),cursor.getFloat(4),cursor.getFloat(5),cursor.getFloat(6),storedLevelingMode(cursor.getString(7)),preset,enabled,
-                    storedCrossfeed(cursor.getString(10)))
+                DacProfile(identity,if(cursor.isNull(3))null else cursor.getInt(3),cursor.getFloat(4),cursor.getFloat(5),cursor.getFloat(6),storedLevelingMode(cursor.getString(7)),
+                    storedCrossfeed(cursor.getString(8)))
             }
         }
     private fun values(profile:DacProfile)=ContentValues().apply {
@@ -103,8 +102,6 @@ internal class UserDatabase(context:Context,name:String="user.db"):SQLiteOpenHel
         put("product_name",profile.identity.productName);put("max_rate",profile.maxRate)
         put("start_volume_db",profile.startVolumeDb);put("volume_limit_db",profile.volumeLimitDb);put("key_step_db",profile.keyStepDb)
         put("leveling_mode",profile.levelingMode.name)
-        if(profile.equalizer==null)putNull("eq_preset_id")else put("eq_preset_id",profile.equalizer.id)
-        put("eq_enabled",if(profile.eqEnabled)1 else 0)
         put("crossfeed",profile.crossfeed.name)
     }
 }

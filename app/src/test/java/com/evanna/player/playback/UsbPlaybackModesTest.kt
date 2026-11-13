@@ -180,7 +180,6 @@ class UsbPlaybackModesTest {
         var stopped = CountDownLatch(1)
         var wrote = CountDownLatch(1)
         override var startVolumeDb = Float.NaN
-        override fun setEqualizer(bands: List<EqBand>, preampDb: Float) = Unit
         override fun plan(source: PcmFormat) = PlaybackPlan(rate, bits, rate != source.sampleRate,
             rate == source.sampleRate && bits >= source.significantBits)
         override fun prepareVolume() = calibrated

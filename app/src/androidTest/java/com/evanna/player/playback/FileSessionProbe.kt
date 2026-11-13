@@ -156,7 +156,6 @@ internal object FileSessionProbe {
         var starts = 0
         var drains = 0
         override fun plan(source: PcmFormat) = PlaybackPlan(source.sampleRate, source.significantBits, false, true)
-        override fun setEqualizer(bands: List<EqBand>, preampDb: Float) = Unit
         override fun prepareVolume() = true
         override fun start(source: PcmFormat): StreamInfo {
             starts++

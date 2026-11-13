@@ -108,7 +108,6 @@ internal object GaplessProbe {
         override val description="Synthetic gapless output"
         var starts=0;var drains=0;var sent=0L
         val samples=mutableListOf<Int>()
-        override fun setEqualizer(bands:List<EqBand>,preampDb:Float)=Unit
         override fun plan(source:PcmFormat)=PlaybackPlan(source.sampleRate,source.significantBits,false,true)
         override fun prepareVolume()=true
         override fun start(source:PcmFormat):StreamInfo{starts++;return StreamInfo(source.sampleRate,source.significantBits,source.channels,
