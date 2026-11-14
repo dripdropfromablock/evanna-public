@@ -150,6 +150,8 @@ class MainActivity : ComponentActivity() {
     private var reduceTransparency by mutableStateOf(false)
     /** Increase contrast: solid controls with clear edges instead of glass (phase 6). */
     private var increaseContrast by mutableStateOf(false)
+    /** Now Playing's layout on a phone on its side. */
+    private var sidewaysStyle by mutableStateOf(SidewaysStyle.DETAILS)
     private var foreground by mutableStateOf(false)
     private var startPage by mutableStateOf(PlayerScreen.LIBRARY)
     private val motionScale = AppMotionScale()
@@ -314,6 +316,7 @@ class MainActivity : ComponentActivity() {
         liquidGlass = uiPreferences[GLASS_PREFERENCE] as? Boolean ?: true
         reduceTransparency = uiPreferences[REDUCE_TRANSPARENCY_PREFERENCE] as? Boolean ?: false
         increaseContrast = uiPreferences[INCREASE_CONTRAST_PREFERENCE] as? Boolean ?: false
+        sidewaysStyle = SidewaysStyle.stored(uiPreferences[SIDEWAYS_STYLE_PREFERENCE])
         motionScale.speed = storedAnimationSpeed(uiPreferences[ANIMATION_SPEED_PREFERENCE])
         fun readSystemMotionScale() = AndroidSettings.Global.getFloat(
             contentResolver, AndroidSettings.Global.ANIMATOR_DURATION_SCALE, 1f)
@@ -572,7 +575,7 @@ class MainActivity : ComponentActivity() {
                                     onRemove = { editQueue(PlaybackService.REMOVE_QUEUE, it) },
                                     onSavePlaylist = { openPlaylists(saveQueue = true) }, loadArtwork = ::queueArtwork,
                                     motion = motion, flying = flying, wantedOpen = wantedOpen,
-                                    outputSheetOpen = showOutput,
+                                    outputSheetOpen = showOutput, sidewaysStyle = sidewaysStyle, loadSongInfo = ::currentSongInfo,
                                     onConvert = if (outputRoute == "DIRECT_USB" && usbPolicy == UsbPlaybackPolicy.STRICT &&
                                         playerUi.canPlayPause && !playing) ::playConvertedOnce else null)
                             } }
@@ -729,6 +732,12 @@ class MainActivity : ComponentActivity() {
         val cache = LocalLibrary.artwork(applicationContext)
         return source.getString(PlaybackService.LIBRARY_ID)?.let { cache.song(it, ArtworkSize.SMALL) }
             ?: source.getString(PlaybackService.FILE_URI)?.let { cache.file(id, it, ArtworkSize.SMALL) }
+    }
+    /** The library's row for a queue song (tags, added date); null for a single file or when the controls are gone. */
+    private suspend fun currentSongInfo(id: String): com.evanna.player.library.LibrarySong? {
+        val controller = mediaController ?: return null
+        val library = sourceOf(controller, id)?.getString(PlaybackService.LIBRARY_ID) ?: return null
+        return withContext(Dispatchers.IO) { LocalLibrary.database(applicationContext).song(library) }
     }
     /** Null when the song has no lyrics; throws when its file cannot be read or controls are disconnected. */
     private suspend fun currentLyrics(id: String): Lyrics? {
@@ -1475,6 +1484,17 @@ class MainActivity : ComponentActivity() {
                         } }
                     }
                 }
+                item(key = "sideways") {
+                    SettingsSection("Now Playing on its side", footer = "Details and disc shows the album's facts and a turning disc. " +
+                        "Cover and controls keeps the upright screen's layout.", choices = true) {
+                        for (choice in SidewaysStyle.entries) row(choice) {
+                            CheckRow(choice.label, sidewaysStyle == choice) {
+                                sidewaysStyle = choice
+                                getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putString(SIDEWAYS_STYLE_PREFERENCE, choice.name).apply()
+                            }
+                        }
+                    }
+                }
                 item(key = "start") {
                     SettingsSection("Start page", footer = "Opens on the next app launch.", choices = true) {
                         for (choice in startPages) row(choice) {
@@ -1543,6 +1563,7 @@ private val licenseFiles = listOf(
     LicenseFile("libebur128 · MIT", "licenses/libebur128-MIT.txt", "https://github.com/jiixyj/libebur128/tree/67b33abe1558160ed76ada1322329b0e9e058b02"),
     LicenseFile("libebur128 queue · BSD 3-Clause", "licenses/libebur128-queue-BSD-3-Clause.txt"),
     LicenseFile("C++ runtime · LLVM notices", "licenses/NDK-libcxx.txt", "https://developer.android.com/ndk/downloads"),
+    LicenseFile("Georgia-ReBORN badges and disc · MIT", "licenses/Georgia-ReBORN-MIT.txt", "https://github.com/TT-ReBORN/Georgia-ReBORN"),
     LicenseFile("Components and attribution", "third-party-notices.txt"),
     LicenseFile("Apache License 2.0", "licenses/Apache-2.0.txt", "https://github.com/devang-altf4/truesample-player/tree/cf23a00030cd2d27c91f667737f0ca9aa30256a4/usbaudio"),
     LicenseFile("libusb · LGPL 2.1", "licenses/LGPL-2.1.txt", "https://github.com/libusb/libusb/tree/v1.0.29"),

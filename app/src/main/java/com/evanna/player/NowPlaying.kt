@@ -19,7 +19,10 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -62,8 +65,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -77,6 +83,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.evanna.player.library.ArtworkImage
 import com.evanna.player.library.LibraryArtwork
+import com.evanna.player.library.LibrarySong
 import com.evanna.player.library.LyricLine
 import com.evanna.player.library.Lyrics
 import com.evanna.player.playback.SleepMode
@@ -110,6 +117,10 @@ private val VolumeLabel = TextStyle(fontFamily = FontFamily.SansSerif, fontWeigh
 private val Status = playerText(13, 18, FontWeight.Normal)
 private val LyricsLine = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 34.sp, lineHeight = 40.sp, letterSpacing = (-0.3).sp)
 private val PlainLyrics = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold, fontSize = 24.sp, lineHeight = 31.sp)
+// Sideways Details style (Georgia mockup): the current line at 21 sp, the rest scaled to about 15 sp.
+private val SmallLyricsLine = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 21.sp, lineHeight = 26.sp, letterSpacing = (-0.2).sp)
+private val SmallPlainLyrics = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp)
+private const val SMALL_LYRIC_SCALE = 0.72f
 
 private val CoverShape = RoundedCornerShape(10.dp)
 private val SmallCoverShape = RoundedCornerShape(5.dp)
@@ -127,7 +138,8 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
     onFavorite: (String, Boolean) -> Unit, onSelect: (String) -> Unit, onMove: (String, String) -> Unit, onRemove: (String) -> Unit,
     onSavePlaylist: () -> Unit, loadArtwork: suspend (String) -> Bitmap?, motion: PlayerSheetMotion, flying: Boolean,
     wantedOpen: Boolean, onConvert: (() -> Unit)? = null,
-    outputSheetOpen: Boolean = false) {
+    outputSheetOpen: Boolean = false, sidewaysStyle: SidewaysStyle = SidewaysStyle.DETAILS,
+    loadSongInfo: suspend (String) -> LibrarySong? = { null }) {
     var page by rememberSaveable { mutableStateOf(PlayerPage.SONG) }
     var lyricsTrack by rememberSaveable { mutableStateOf<String?>(null) }
     var showSignal by rememberSaveable { mutableStateOf(false) }
@@ -168,7 +180,15 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
             page = it
         }
         CompositionLocalProvider(LocalContentColor provides Pv1) {
-            if (sidewaysPhone() && state.hasSong) SidewaysPlayer(state, cover, page, openPage, lyrics, more, contentAlpha, motion, flying,
+            if (sidewaysPhone() && state.hasSong && sidewaysStyle == SidewaysStyle.DETAILS) {
+                val info by key(state.id) {
+                    produceState<LibrarySong?>(null) { value = state.id?.let { runCatching { loadSongInfo(it) }.getOrNull() } }
+                }
+                DetailsPlayer(state, cover, info, page, openPage, lyrics, more, contentAlpha, motion, flying, onBack, onFavorite, onSeek,
+                    onPlayPause, onPrevious, onNext, { signalOrigin = it; showSignal = true }, onOutput, outputSheetOpen,
+                    queue = { QueuePage(state, onShuffle, onRepeat, onSelect, onMove, onRemove, onLibrary, loadArtwork, it) })
+            }
+            else if (sidewaysPhone() && state.hasSong) SidewaysPlayer(state, cover, page, openPage, lyrics, more, contentAlpha, motion, flying,
                 onBack, onFavorite, onSeek, onPlayPause, onPrevious, onNext,
                 controls = {
                     PlayerControls(state, actionError, page, openPage, lyrics, onSeek, { signalOrigin = it; showSignal = true },
@@ -641,7 +661,7 @@ private fun TransportButton(icon: ImageVector, size: Dp, description: String, en
  */
 @Composable
 private fun StripButton(icon: ImageVector, on: Boolean, description: String, enabled: Boolean = true,
-    modifier: Modifier = Modifier, onClick: () -> Unit,
+    modifier: Modifier = Modifier, onTint: Color = Pv1, onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val glass = glassLiftOn()
@@ -652,7 +672,7 @@ private fun StripButton(icon: ImageVector, on: Boolean, description: String, ena
         if (contrast) Box(Modifier.size(44.dp).contrastPlatter(CircleShape, on))
         else if (glass) Box(Modifier.size(44.dp).liftIntoGlass(interaction, CircleShape, outset = 2.dp))
         Icon(icon, contentDescription = null, modifier = Modifier.size(26.dp).pressScale(interaction),
-            tint = if (!enabled) Pv3 else if (on) Pv1 else Pv2)
+            tint = if (!enabled) Pv3 else if (on) onTint else Pv2)
     }
 }
 
@@ -735,7 +755,8 @@ internal fun lyricFramePosition(previous: Long, elapsedMs: Long, target: Long): 
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LyricsPage(load: LyricsLoad, state: PlayerPresentation, onSeek: (String?, Long) -> Unit, modifier: Modifier) {
+private fun LyricsPage(load: LyricsLoad, state: PlayerPresentation, onSeek: (String?, Long) -> Unit, modifier: Modifier,
+    small: Boolean = false, accent: Color = Pv1) {
     BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         if (load !is LyricsLoad.Ready) {
             Text(when (load) { LyricsLoad.Loading -> "Loading lyrics…"; LyricsLoad.None -> "This song has no lyrics."; else -> "Lyrics could not be read." },
@@ -803,19 +824,22 @@ private fun LyricsPage(load: LyricsLoad, state: PlayerPresentation, onSeek: (Str
                 drawContent()
                 drawRect(Brush.verticalGradient(0f to Color.Transparent, 0.08f to Color.Black, 0.85f to Color.Black, 1f to Color.Transparent),
                     blendMode = BlendMode.DstIn)
-            }, state = list, verticalArrangement = Arrangement.spacedBy(if (lyrics.timed) 20.dp else 8.dp),
-                contentPadding = PaddingValues(top = if (lyrics.timed) viewport * 0.3f else 24.dp, bottom = if (lyrics.timed) viewport * 0.7f else 24.dp)) {
+            }, state = list, verticalArrangement = Arrangement.spacedBy(if (!lyrics.timed) 8.dp else if (small) 4.dp else 20.dp),
+                // Small (sideways Details style): the current line sits near the middle, as in the Georgia mockup.
+                contentPadding = PaddingValues(top = if (lyrics.timed) viewport * (if (small) 0.36f else 0.3f) else 24.dp,
+                    bottom = if (lyrics.timed) viewport * (if (small) 0.64f else 0.7f) else 24.dp)) {
                 if (intro) item(key = "intro") {
-                    BreakDots(current < 0, position, 0L, lyrics.lines.first().timeMs!!, reducedMotion)
+                    BreakDots(current < 0, position, 0L, lyrics.lines.first().timeMs!!, reducedMotion, small)
                 }
                 itemsIndexed(lyrics.lines) { index, line ->
                     val next = lyrics.lines.getOrNull(index + 1)?.timeMs
                     if (lyrics.timed && line.text.isEmpty()) {
                         val start = line.timeMs!!
                         if (next != null && next - start >= DOTS_BREAK_MS) {
-                            BreakDots(index == current, position, start, next, reducedMotion)
+                            BreakDots(index == current, position, start, next, reducedMotion, small)
                         } else Spacer(Modifier.height(8.dp))
-                    } else LyricRow(line, lyrics.timed, index == current, !following || dragged, position, next, seekable, reducedMotion) {
+                    } else LyricRow(line, lyrics.timed, index == current, !following || dragged, position, next, seekable, reducedMotion,
+                        small, accent) {
                         following = true
                         onSeek(state.id, line.timeMs!!)
                     }
@@ -834,47 +858,54 @@ private fun LyricsPage(load: LyricsLoad, state: PlayerPresentation, onSeek: (Str
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LyricRow(line: LyricLine, timed: Boolean, current: Boolean, browsing: Boolean,
-    position: State<Long>, next: Long?, seekable: Boolean, reducedMotion: Boolean, onSeek: () -> Unit,
+    position: State<Long>, next: Long?, seekable: Boolean, reducedMotion: Boolean, small: Boolean, accent: Color, onSeek: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val active = !timed || current || browsing
+    // Small: the other lines are drawn at about 15 sp beside the 21 sp current one, by scale so the text does not re-wrap.
+    val resting = if (small) SMALL_LYRIC_SCALE else 0.98f
     val blur by animateFloatAsState(if (!active && Build.VERSION.SDK_INT >= 31) 3f else 0f,
         EvannaMotion.enter, label = "lyric focus blur")
-    val scale by animateFloatAsState(if (active) 1f else 0.98f, EvannaMotion.enter, label = "line scale")
+    val scale by animateFloatAsState(if (!timed || current) 1f else if (active && !small) 1f else resting, EvannaMotion.enter,
+        label = "line scale")
     val opacity by animateFloatAsState(if (active) 1f else INACTIVE_LYRIC_OPACITY, EvannaMotion.enter, label = "line opacity")
-    Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(RoundedCornerShape(16.dp))
+    val style = if (!small) LyricsLine else SmallLyricsLine
+    val lit = if (small && timed && current) accent else Pv1
+    Box(Modifier.fillMaxWidth().padding(horizontal = if (small) 4.dp else 20.dp).clip(RoundedCornerShape(16.dp))
         .then(if (seekable) Modifier.controlFocus(interaction, RoundedCornerShape(16.dp))
             .clickable(interaction, indication = null, onClickLabel = "Play from this line", onClick = onSeek) else Modifier)
         .then(if (timed && current) Modifier.semantics { stateDescription = "Current lyric" } else Modifier)
-        .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 10.dp)
+        .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = if (small) 4.dp else 10.dp)
         .graphicsLayer {
-            scaleX = scale; scaleY = scale; alpha = opacity; transformOrigin = TransformOrigin(0f, 0.5f)
+            scaleX = scale; scaleY = scale; alpha = opacity; transformOrigin = TransformOrigin(if (small) 0.5f else 0f, 0.5f)
             val radius = blur.dp.toPx()
             renderEffect = if (radius > 0f) BlurEffect(radius, radius, TileMode.Decal) else null
-        }.pressScale(interaction)) {
+        }.pressScale(interaction), contentAlignment = if (small) Alignment.Center else Alignment.CenterStart) {
+        val align = if (small) TextAlign.Center else TextAlign.Start
         when {
-            !timed -> Text(line.text.ifEmpty { " " }, style = PlainLyrics, color = Pv1)
+            !timed -> Text(line.text.ifEmpty { " " }, style = if (small) SmallPlainLyrics else PlainLyrics, color = Pv1, textAlign = align)
             line.words.isNotEmpty() && !reducedMotion -> FlowRow(Modifier.clearAndSetSemantics {
                 text = AnnotatedString(line.text)
-            }) {
+            }, horizontalArrangement = if (small) Arrangement.Center else Arrangement.Start) {
                 line.words.forEachIndexed { i, word ->
                     if (current && !browsing) {
                         val end = line.words.getOrNull(i + 1)?.timeMs ?: next ?: (word.timeMs + 1_000)
-                        SungWord(word.text, position, word.timeMs, end)
-                    } else Text(word.text, style = LyricsLine, color = Pv1)
+                        SungWord(word.text, position, word.timeMs, end, style, lit)
+                    } else Text(word.text, style = style, color = lit)
                 }
             }
-            else -> Text(line.text, style = LyricsLine, color = Pv1)
+            else -> Text(line.text, style = style, color = lit, textAlign = align)
         }
     }
 }
 
-/** One word: white text masked from bright (sung) to faint (to come), with a 30 dp soft edge, lifted 2 dp once reached. */
+/** One word: text masked from bright (sung) to faint (to come), with a 30 dp soft edge, lifted 2 dp once reached. */
 @Composable
-private fun SungWord(text: String, position: State<Long>, start: Long, end: Long) {
+private fun SungWord(text: String, position: State<Long>, start: Long, end: Long, style: TextStyle = LyricsLine, sung: Color = Pv1) {
     val reached by remember(position, start) { derivedStateOf { position.value >= start } }
     val lift by animateDpAsState(if (reached) (-2).dp else 0.dp, spring(dampingRatio = 0.93f, stiffness = 25f), label = "word lift")
-    Text(text, style = LyricsLine, color = Color.White, modifier = Modifier.graphicsLayer {
+    // The mask below only uses alpha, so the text colour is the colour of the sung part.
+    Text(text, style = style, color = if (sung == Pv1) Color.White else sung, modifier = Modifier.graphicsLayer {
         translationY = lift.toPx(); compositingStrategy = CompositingStrategy.Offscreen
     }.drawWithContent {
         drawContent()
@@ -905,9 +936,10 @@ internal fun breakDotFill(positionMs: Long, startMs: Long, endMs: Long, dot: Int
 
 /** Three 10 dp dots at the text inset. They stay faint until their break plays, then fill (see [breakDotFill]). */
 @Composable
-private fun BreakDots(active: Boolean, position: State<Long>, start: Long, end: Long, reducedMotion: Boolean) {
-    Row(Modifier.padding(start = 32.dp, top = 6.dp, bottom = 6.dp).semantics { contentDescription = "Instrumental break" },
-        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun BreakDots(active: Boolean, position: State<Long>, start: Long, end: Long, reducedMotion: Boolean, centered: Boolean = false) {
+    Row(Modifier.fillMaxWidth().padding(start = if (centered) 0.dp else 32.dp, top = 6.dp, bottom = 6.dp)
+        .semantics { contentDescription = "Instrumental break" },
+        horizontalArrangement = if (centered) Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally) else Arrangement.spacedBy(6.dp)) {
         repeat(3) { dot ->
             Canvas(Modifier.size(10.dp)) {
                 val fill = when {
@@ -1020,5 +1052,294 @@ private fun RowButton(icon: ImageVector, description: String, enabled: Boolean, 
         .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp).pressScale(interaction), tint = if (enabled) Pv2 else Pv3)
+    }
+}
+
+/** Which layout Now Playing uses on a phone on its side (Settings → Appearance). */
+internal enum class SidewaysStyle(val label: String) {
+    DETAILS("Details and disc"), COVER("Cover and controls");
+    companion object { fun stored(value: Any?) = entries.firstOrNull { it.name == value } ?: DETAILS }
+}
+internal const val SIDEWAYS_STYLE_PREFERENCE = "sideways-player"
+
+private val DetailsWidth = 270.dp
+private val DetailsGap = 24.dp
+private val DetailsLabel = playerText(13, 17, FontWeight.Normal)
+private val DetailsValue = playerText(13, 17)
+private val BarTitle = playerText(14, 18, FontWeight.SemiBold)
+
+/**
+ * Now Playing on its side after the foobar2000 Georgia-ReBORN theme (docs/mockups/landscape-georgia.html), drawn the iOS
+ * way. Details: album facts on the left, the cover in the middle and a disc printed with the cover peeking out of it,
+ * turning while music plays. Lyrics and Queue: the disc rolls back into the cover, the cover slides left and the page
+ * comes in on the right. A glass bar along the bottom holds the song, the transport and the page buttons.
+ * The codec, channel, Hi-Res and disc pictures are the theme's own (MIT, assets/licenses/Georgia-ReBORN-MIT.txt).
+ */
+@Composable
+private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: LibrarySong?, page: PlayerPage, onPage: (PlayerPage) -> Unit,
+    lyrics: LyricsLoad, more: @Composable () -> Unit, contentAlpha: () -> Float, motion: PlayerSheetMotion, flying: Boolean,
+    onBack: () -> Unit, onFavorite: (String, Boolean) -> Unit, onSeek: (String?, Long) -> Unit,
+    onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onSignal: (Rect?) -> Unit, onOutput: (Rect?) -> Unit,
+    outputSheetOpen: Boolean, queue: @Composable (Modifier) -> Unit) {
+    val accent = EvannaDesign.colorScheme.primary
+    var pane by remember { mutableStateOf(PlayerPage.LYRICS) }
+    SideEffect { if (page != PlayerPage.SONG) pane = page }
+    val shift by animateFloatAsState(if (page == PlayerPage.SONG) 0f else 1f, tween(420, easing = FastOutSlowInEasing), label = "details shift")
+    Column(Modifier.fillMaxSize().graphicsLayer { alpha = contentAlpha() }
+        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))) {
+        Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            PlayerHeaderButton(PlayerIcons.ChevronDown, "Minimize player", onClick = onBack)
+            Spacer(Modifier.weight(1f))
+            PageSwitch(page, lyrics, onPage)
+            Spacer(Modifier.weight(1f))
+            PlayerHeaderButton(if (state.favorite == true) PlayerIcons.HeartFill else PlayerIcons.Heart,
+                description = if (state.favorite == true) "Remove from favorites" else "Add to favorites",
+                enabled = state.connected && state.favorite != null, on = state.favorite == true) {
+                state.id?.let { onFavorite(it, state.favorite != true) }
+            }
+            Spacer(Modifier.width(8.dp))
+            more()
+        }
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 26.dp, vertical = 6.dp)) {
+            val t = shift
+            // Details: the cover sits after the facts with room for half a disc. Lyrics and Queue: a bigger cover on the left.
+            val start = minOf(maxHeight, (maxWidth - DetailsWidth - DetailsGap) / 1.5f)
+            val end = minOf(maxHeight, maxWidth * 0.42f)
+            val side = lerp(start, end, t)
+            val left = lerp(DetailsWidth + DetailsGap, 0.dp, t)
+            val top = (maxHeight - side) / 2
+            val rolled = (t * 1.6f).coerceAtMost(1f)
+            if (t < 1f) {
+                Disc(cover, state.playing && page == PlayerPage.SONG, Modifier
+                    .offset(left + side * 0.5f * (1f - rolled) + side * 0.03f, top + side * 0.03f).size(side * 0.94f)
+                    .graphicsLayer { alpha = 1f - ((t - 0.55f) / 0.2f).coerceIn(0f, 1f) })
+                AlbumDetails(state, info, accent, Modifier.width(DetailsWidth).fillMaxHeight()
+                    .graphicsLayer { alpha = 1f - (t / 0.45f).coerceAtMost(1f); translationX = -30.dp.toPx() * t }
+                    .then(if (page == PlayerPage.SONG) Modifier else Modifier.clearAndSetSemantics {}))
+            }
+            ArtworkImage(cover, Modifier.offset(left, top).size(side).dockingCover(motion, flying, corner = 10.dp)
+                .shadow(15.dp, CoverShape), CoverShape)
+            if (t > 0f) Box(Modifier.offset(end + DetailsGap, 0.dp).width(maxWidth - end - DetailsGap).fillMaxHeight()
+                .graphicsLayer { alpha = ((t - 0.45f) / 0.45f).coerceIn(0f, 1f); translationX = 24.dp.toPx() * (1f - t) }
+                .then(if (page == PlayerPage.SONG) Modifier.clearAndSetSemantics {} else Modifier)) {
+                if (pane == PlayerPage.QUEUE) queue(Modifier.fillMaxSize())
+                else LyricsPage(lyrics, state, onSeek, Modifier.fillMaxSize(), small = true, accent = accent)
+            }
+        }
+        DetailsBar(state, info?.musicTags?.trackNumber, page, onPage, lyrics, accent, onPlayPause, onPrevious, onNext, onSignal, onOutput,
+            outputSheetOpen, onSeek)
+    }
+}
+
+/** Details · Lyrics · Queue, as an iOS segmented control. */
+@Composable
+private fun PageSwitch(page: PlayerPage, lyrics: LyricsLoad, onPage: (PlayerPage) -> Unit) {
+    val pages = listOf(PlayerPage.SONG to "Details", PlayerPage.LYRICS to "Lyrics", PlayerPage.QUEUE to "Queue")
+    Row(Modifier.clip(RoundedCornerShape(9.dp)).background(Pv4).padding(2.dp).selectableGroup()) {
+        for ((target, label) in pages) {
+            val on = page == target
+            val enabled = target != PlayerPage.LYRICS || on || lyrics is LyricsLoad.Ready
+            Box(Modifier.heightIn(min = 32.dp).clip(RoundedCornerShape(7.dp)).background(if (on) Pv3 else Color.Transparent)
+                .selectable(on, enabled = enabled, role = Role.Tab) { onPage(target) }.padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center) {
+                Text(label, style = Badge.copy(fontSize = 13.sp), color = if (!enabled) Pv3 else if (on) Pv1 else Pv2)
+            }
+        }
+    }
+}
+
+/** A disc printed with the cover, under the theme's clear CD so its hub and rim show; it turns while music plays. */
+@Composable
+private fun Disc(cover: Bitmap?, turning: Boolean, modifier: Modifier) {
+    var angle by remember { mutableFloatStateOf(0f) }
+    val durationScale = rememberCoroutineScope().coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
+    LaunchedEffect(turning, durationScale) {
+        // Reduced motion (scale 0) keeps it still. One turn every ten seconds.
+        if (!turning || durationScale == 0f) return@LaunchedEffect
+        var last = withFrameNanos { it }
+        while (true) withFrameNanos { now ->
+            angle = (angle + (now - last) / 1_000_000_000f * 36f / durationScale) % 360f
+            last = now
+        }
+    }
+    Box(modifier.shadow(10.dp, CircleShape).graphicsLayer { rotationZ = angle }) {
+        Image(painterResource(R.drawable.georgia_cd), contentDescription = null, modifier = Modifier.fillMaxSize())
+        ArtworkImage(cover, Modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen; alpha = 0.94f }
+            .drawWithContent {
+                drawContent()
+                drawRect(Brush.radialGradient(0f to Color.Transparent, 0.37f to Color.Transparent, 0.38f to Color.Black,
+                    0.965f to Color.Black, 0.975f to Color.Transparent), blendMode = BlendMode.DstIn)
+            }, CircleShape)
+    }
+}
+
+/** The album's name, a bar of its tracks and the facts the library knows, in iOS grouped rows. */
+@Composable
+private fun AlbumDetails(state: PlayerPresentation, info: LibrarySong?, accent: Color, modifier: Modifier) {
+    val tags = info?.musicTags
+    val fields = state.sourceQuality.split(" · ")
+    // Until the decoder reports the format (nothing played yet), the library's scan gives the codec and rate.
+    val codec = fields.firstOrNull()?.takeIf { it.isNotBlank() } ?: info?.codec?.takeIf { it.isNotBlank() }
+    val rate = fields.getOrNull(1)?.removeSuffix(" Hz")?.toIntOrNull() ?: info?.rate?.takeIf { it > 0 }
+    val bits = fields.getOrNull(2)?.removeSuffix("-bit")?.toIntOrNull()
+    val channels = state.signalStages.firstOrNull { it.label == "Source" }?.value
+        ?.let { Regex("""(\d+) channels""").find(it)?.groupValues?.get(1)?.toIntOrNull() }
+    val position = state.positionMs.toFloat() / (state.durationMs?.takeIf { it > 0 } ?: 1).toFloat()
+    Column(modifier.verticalScroll(rememberScrollState())) {
+        Text(state.album?.takeIf { it.isNotBlank() } ?: "Unknown album", style = SongTitle.copy(fontSize = 19.sp, lineHeight = 23.sp),
+            color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(listOfNotNull(tags?.albumArtist ?: state.artist, tags?.year?.toString()).joinToString(" · "),
+            style = DetailsLabel.copy(fontSize = 14.sp), color = Pv2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // One piece per track: the ones played are dimmed accent, the one playing fills as it plays.
+        val total = tags?.totalTracks?.takeIf { it in 1..40 } ?: 1
+        val number = tags?.trackNumber?.takeIf { it in 1..total } ?: 1
+        Row(Modifier.fillMaxWidth().padding(top = 7.dp, bottom = 8.dp).height(4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            for (i in 1..total) Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(Pv3).drawWithContent {
+                val filled = when { i < number -> 1f; i == number -> position.coerceIn(0f, 1f); else -> 0f }
+                drawRect(accent.copy(alpha = if (i < number) 0.55f else 1f), size = size.copy(width = size.width * filled))
+            })
+        }
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Pv4)) {
+            var first = true
+            @Composable fun row(label: String, content: @Composable RowScope.() -> Unit) {
+                if (!first) Box(Modifier.padding(start = 12.dp).fillMaxWidth().height(0.5.dp).background(Pv4))
+                first = false
+                // Seven rows fit beside the cover on a phone on its side; with large text the list scrolls.
+                Row(Modifier.fillMaxWidth().heightIn(min = 23.dp).padding(horizontal = 12.dp).semantics(mergeDescendants = true) {},
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, style = DetailsLabel, color = Pv2, modifier = Modifier.padding(end = 12.dp))
+                    Spacer(Modifier.weight(1f))
+                    content()
+                }
+            }
+            @Composable fun value(text: String) = Text(text, style = DetailsValue, color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            tags?.year?.let { row("Released") { value(it.toString()) } }
+            tags?.genre?.takeIf { it.isNotBlank() }?.let { row("Genre") { value(it) } }
+            val trackNumber = tags?.trackNumber
+            if (tags != null && trackNumber != null) row("Track") {
+                val disc = tags.discNumber
+                val discs = tags.totalDiscs
+                value(listOfNotNull(tags.totalTracks?.let { "$trackNumber of $it" } ?: "$trackNumber",
+                    if (disc != null && discs != null && discs > 1) "Disc $disc of $discs" else null).joinToString(" · "))
+            }
+            codec?.let { name -> row("Codec") { ThemeBadge(codecBadge(name), name) } }
+            channels?.let { n -> row("Channels") { ThemeBadge(channelBadge(n), if (n == 1) "Mono" else if (n == 2) "Stereo" else "$n channels") } }
+            if (rate != null) row("Source") {
+                value(listOfNotNull(bits?.let { "$it-bit" }, shortSourceQuality("${codec ?: "?"} · $rate Hz").split(" · ").getOrNull(1))
+                    .joinToString(" · "))
+                if ((bits ?: 0) >= 24 || rate > 48_000) ThemeBadge(R.drawable.georgia_hires, "Hi-Res", Modifier.padding(start = 6.dp).height(15.dp))
+            }
+            info?.addedAt?.takeIf { it > 0 }?.let {
+                row("Added") { value(java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(it))) }
+            }
+        }
+    }
+}
+
+/** One of the theme's white badges, or its name in words when there is no picture for it. */
+@Composable
+private fun ThemeBadge(picture: Int?, name: String, modifier: Modifier = Modifier.height(13.dp)) {
+    if (picture == null) Text(name, style = DetailsValue, color = Pv1)
+    else Image(painterResource(picture), contentDescription = name, modifier = modifier, contentScale = ContentScale.Fit)
+}
+
+/** The theme's codec picture for an FFmpeg codec name as the decoder reports it (FLAC, ALAC, PCM_S24LE, DSD64…). */
+internal fun codecBadge(codec: String): Int? {
+    val name = codec.uppercase(java.util.Locale.ROOT)
+    return when {
+        name.startsWith("PCM") -> R.drawable.georgia_codec_pcm
+        name.startsWith("MP3") -> R.drawable.georgia_codec_mp3
+        name.startsWith("AAC") -> R.drawable.georgia_codec_aac
+        name.startsWith("DSD") -> R.drawable.georgia_codec_dsd
+        name == "VORBIS" -> R.drawable.georgia_codec_ogg
+        name == "FLAC" -> R.drawable.georgia_codec_flac
+        name == "ALAC" -> R.drawable.georgia_codec_alac
+        name == "OPUS" -> R.drawable.georgia_codec_opus
+        name == "WAVPACK" -> R.drawable.georgia_codec_wavpack
+        name == "APE" -> R.drawable.georgia_codec_ape
+        name == "TTA" -> R.drawable.georgia_codec_tta
+        else -> null
+    }
+}
+
+internal fun channelBadge(channels: Int): Int? = when (channels) {
+    1 -> R.drawable.georgia_channels_1
+    2 -> R.drawable.georgia_channels_2
+    6 -> R.drawable.georgia_channels_6
+    8 -> R.drawable.georgia_channels_8
+    else -> null
+}
+
+/** The glass bar along the bottom: the song, its codec, the transport, the page buttons, the time and the seek line. */
+@Composable
+private fun DetailsBar(state: PlayerPresentation, number: Int?, page: PlayerPage, onPage: (PlayerPage) -> Unit, lyrics: LyricsLoad, accent: Color,
+    onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onSignal: (Rect?) -> Unit, onOutput: (Rect?) -> Unit,
+    outputSheetOpen: Boolean, onSeek: (String?, Long) -> Unit) {
+    val lyricsOn = page == PlayerPage.LYRICS
+    val queueOn = page == PlayerPage.QUEUE
+    // The seek line runs along the bar's bottom edge, inside the pill, as in the theme and the mockup.
+    val duration = state.durationMs?.takeIf { it > 0 }
+    val seekPress = remember(state.id, duration) { MutableInteractionSource() }
+    val dragging by seekPress.collectIsDraggedAsState()
+    val pressed by seekPress.collectIsPressedAsState()
+    var target by remember(state.id, duration) { mutableFloatStateOf(0f) }
+    val shown = if (dragging) target.toLong() else state.positionMs
+    val line by animateDpAsState(if ((dragging || pressed) && state.canSeek) 5.dp else 3.dp, label = "seek line")
+    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp)) {
+        // Under the bar, so its buttons take their own taps. It covers the bar's bottom 14 dp and the 10 dp below it.
+        if (duration != null) Slider(shown.coerceIn(0, duration).toFloat(), { target = it }, Modifier.align(Alignment.BottomCenter)
+            .height(24.dp).semantics { contentDescription = "Estimated playback position" }, enabled = state.connected && state.canSeek,
+            valueRange = 0f..duration.toFloat(), onValueChangeFinished = { onSeek(state.id, target.toLong()) }, interactionSource = seekPress,
+            thumb = { Spacer(Modifier.size(0.dp)) }, track = { Spacer(Modifier.fillMaxWidth()) })
+        Row(Modifier.padding(bottom = 10.dp).fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(50)).background(Pv4).drawWithContent {
+            drawContent()
+            if (duration == null) return@drawWithContent
+            val height = line.toPx()
+            val top = size.height - height
+            drawRect(Pv4, Offset(0f, top), Size(size.width, height))
+            drawRect(accent, Offset(0f, top), Size(size.width * (shown.toFloat() / duration).coerceIn(0f, 1f), height))
+        }.padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(state.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", style = BarTitle, color = accent, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).padding(end = 10.dp))
+                    number?.let { Text("%02d.".format(it), style = BarTitle, color = Pv2, maxLines = 1, modifier = Modifier.padding(end = 6.dp)) }
+                    Text(state.title.ifBlank { "Local audio file" }, style = BarTitle, color = Pv1, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                }
+                if (state.sourceQuality.isNotBlank()) {
+                    var box by remember { mutableStateOf<Rect?>(null) }
+                    val press = remember { MutableInteractionSource() }
+                    Row(Modifier.padding(top = 2.dp).onGloballyPositioned { box = it.screenBox() }
+                        .clickable(press, indication = null, role = Role.Button) { onSignal(box) }
+                        .semantics { contentDescription = "Audio quality details" }, verticalAlignment = Alignment.CenterVertically) {
+                        codecBadge(state.sourceQuality.substringBefore(" · "))?.let {
+                            Image(painterResource(it), contentDescription = null, modifier = Modifier.padding(end = 6.dp).height(10.dp))
+                        }
+                        Text(shortSourceQuality(state.sourceQuality), style = Badge, color = Pv2, maxLines = 1)
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TransportButton(PlayerIcons.Previous, 26.dp, "Previous", state.connected && state.canPrevious, onClick = onPrevious)
+                TransportButton(if (state.playing) PlayerIcons.Pause else if (state.ended) PlayerIcons.Refresh else PlayerIcons.Play, 32.dp,
+                    if (state.playing) "Pause playback" else "Play playback", state.connected && state.canPlayPause, onClick = onPlayPause)
+                TransportButton(PlayerIcons.Next, 26.dp, "Next", state.connected && state.canNext, onClick = onNext)
+            }
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                StripButton(PlayerIcons.Lyrics, lyricsOn, if (lyricsOn) "Close lyrics" else "Open lyrics",
+                    enabled = lyricsOn || lyrics is LyricsLoad.Ready, onTint = accent) {
+                    onPage(if (lyricsOn) PlayerPage.SONG else PlayerPage.LYRICS)
+                }
+                var outputBox by remember { mutableStateOf<Rect?>(null) }
+                StripButton(PlayerIcons.Output, outputSheetOpen, "Sound output", onTint = accent,
+                    modifier = Modifier.onGloballyPositioned { outputBox = it.screenBox() }) { onOutput(outputBox) }
+                StripButton(PlayerIcons.QueueList, queueOn, "Queue · ${state.queue.size} songs", onTint = accent) {
+                    onPage(if (queueOn) PlayerPage.SONG else PlayerPage.QUEUE)
+                }
+                Text("${playbackTime(shown)} / ${playbackTime(state.durationMs)}", style = Times, color = Pv2,
+                    maxLines = 1, modifier = Modifier.padding(start = 8.dp))
+            }
+        }
     }
 }
