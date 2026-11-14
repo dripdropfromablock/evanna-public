@@ -189,6 +189,11 @@ class MainActivity : ComponentActivity() {
     private val usbKeyDowns=mutableMapOf<Int,Pair<MediaController,Long>>()
     private var usbKeyIndicator by mutableStateOf<Float?>(null)
     private var usbKeyIndicatorRevision by mutableIntStateOf(0)
+    @Suppress("DEPRECATION")
+    private val installedPackage by lazy { packageManager.getPackageInfo(packageName, 0) }
+    private val installedVersion get() = installedPackage.longVersionCode
+    /** Test builds carry another signing key, so they cannot update from releases. */
+    private val updatesEnabled by lazy { (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) == 0 }
     /** The note in the capsule at the top of the screen; it goes after a few seconds. */
     private var notice by mutableStateOf<String?>(null)
     private var noticeRevision by mutableIntStateOf(0)
@@ -301,9 +306,6 @@ class MainActivity : ComponentActivity() {
         volumeControlStream = AudioManager.STREAM_MUSIC
         val uiSettings = getSharedPreferences(UI_SETTINGS, MODE_PRIVATE)
         val uiPreferences = uiSettings.all
-        @Suppress("DEPRECATION")
-        val installedVersion = packageManager.getPackageInfo(packageName, 0).longVersionCode
-        val updatesEnabled = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) == 0
         startPage = storedStartPage(uiPreferences[START_PAGE_PREFERENCE])
         navigation = savedInstanceState?.getStringArrayList("playerScreens")?.mapNotNull { value -> PlayerScreen.entries.firstOrNull { it.name == value } }
             ?.takeIf { it.firstOrNull() in startPages && it.size == it.distinct().size } ?: listOf(startPage)
@@ -368,6 +370,9 @@ class MainActivity : ComponentActivity() {
                 }
                 LaunchedEffect(usbKeyIndicatorRevision) {delay(1500);usbKeyIndicator=null}
                 LaunchedEffect(noticeRevision) { if (notice != null) { delay(4000); notice = null } }
+                // Installing replaces the app and ends its process; stop the music gently first.
+                val installingUpdate = AppUpdater.state is UpdateState.Installing
+                LaunchedEffect(installingUpdate) { if (installingUpdate) mediaController?.pause() }
                 BackHandler(navigation.size > 1) { if (screen == PlayerScreen.NOTICES && licenseIndex != null) licenseIndex = null else back() }
                 // Cancelling "Add to playlist" with system Back must not leak stale add arguments.
                 LaunchedEffect(PlayerScreen.PLAYLISTS in navigation) {
@@ -734,6 +739,8 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         foreground = true
+        // Back from Android's "Install unknown apps" switch: finish the update if it is now allowed.
+        if (updatesEnabled) AppUpdater.resume(this)
     }
 
     override fun onPause() {
@@ -1277,6 +1284,8 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                if (updatesEnabled && (query.isEmpty() || "check for updates software".contains(query, ignoreCase = true)))
+                    item(key = "updates") { UpdateSettingsSection(installedVersion, installedPackage.versionName.orEmpty()) }
                 item(key = "public-repository") {
                     Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
                         TextButton(

@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lets Evanna hand its own downloaded update to Android's installer; Android still asks the user each time. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
     <!-- Install-time permission Android 14+ requires to set and clear the bit-perfect USB mixer (explicit route only). -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
@@ -33,6 +35,8 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+        <!-- Hears back from Android's installer when Evanna installs its own update. Only Evanna's reply reaches it. -->
+        <receiver android:name=".UpdateInstallReceiver" android:exported="false" />
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.reports"
             android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/report_paths" />
