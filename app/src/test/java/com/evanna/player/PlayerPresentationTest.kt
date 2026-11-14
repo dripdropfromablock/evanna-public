@@ -22,7 +22,7 @@ class PlayerPresentationTest {
             override suspend fun <R> withFrameNanos(onFrame: (Long) -> R): R { now += 16_000_000L; return onFrame(now) }
         }) { motion.settle(open = true, track = null) }
         assertEquals(1f, motion.progress, 0f)
-        assertEquals(0f, motion.chromeOffsetY, 0f)
+        assertEquals(0f, motion.offsetY, 0f)
     }
 
     @Test fun playerPullUsesDistanceForSlowDragsAndDirectionForFlings() {

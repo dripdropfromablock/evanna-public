@@ -125,7 +125,7 @@ internal fun HorizontalDivider(modifier: Modifier = Modifier, color: Color = Eva
 }
 
 /** The part of a morphing card that shows: [box] in the card's own pixels, with [radius] corners. */
-private data class MorphClip(val box: Rect, val radius: Float) : Shape {
+internal data class MorphClip(val box: Rect, val radius: Float) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
         Outline.Rounded(RoundRect(box, CornerRadius(radius)))
 }

@@ -1,0 +1,121 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Now Playing: ways to open</title>
+<style>
+  body { margin: 0; background: #151517; color: #fff; font: 15px/1.3 Roboto, "Segoe UI", sans-serif; padding: 26px 30px 30px; width: 1440px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } .note { color: #9a9aa0; font-size: 13px; margin: 0 0 20px; max-width: 1300px; }
+  .opt { display: flex; gap: 14px; margin-bottom: 26px; align-items: flex-start; }
+  .about { width: 250px; flex: none; } .about h2 { font-size: 17px; margin: 0 0 6px; } .about p { color: #b4b4ba; font-size: 13.5px; margin: 0 0 8px; }
+  .about .cost { color: #8c8c92; font-size: 12.5px; }
+  .fr { width: 215px; flex: none; } .fr .lb { font-size: 12.5px; color: #9a9aa0; margin: 0 0 6px; height: 16px; }
+  .live .lb { color: #93d394; }
+  .ph { width: 215px; height: 440px; border-radius: 21px; overflow: hidden; position: relative; background: #000; }
+  .phone { width: 390px; height: 800px; transform: scale(.5513); transform-origin: 0 0; position: absolute; left: 0; top: 0; overflow: hidden; }
+  .lib { position: absolute; inset: 0; background: linear-gradient(#3a3a3e, #232326); transform-origin: 50% 40%; }
+  .lib h3 { margin: 0; position: absolute; left: 22px; top: 44px; font-size: 32px; }
+  .lib .alb { position: absolute; left: 90px; top: 104px; width: 210px; height: 210px; border-radius: 10px; background: linear-gradient(135deg, #f1ede6 0 45%, #1d1d1f 46% 100%); }
+  .lib .side { position: absolute; top: 120px; width: 40px; height: 180px; border-radius: 8px; background: #555; } .lib .side.l { left: -14px } .lib .side.r { right: -14px; background: #111 }
+  .lib .cap { position: absolute; left: 0; right: 0; top: 330px; text-align: center; font-weight: 600; font-size: 17px; } .lib .cap span { display: block; color: #9a9aa0; font-weight: 400; font-size: 14px; }
+  .lib .btns { position: absolute; left: 22px; right: 22px; top: 390px; display: flex; gap: 12px; } .lib .btns i { flex: 1; height: 44px; border-radius: 22px; background: rgba(255,255,255,.1); }
+  .lib .row { position: absolute; left: 22px; right: 22px; height: 52px; border-bottom: 1px solid rgba(255,255,255,.08); color: #ddd; line-height: 52px; font-size: 16px; }
+  .mini { position: absolute; left: 12px; top: 664px; width: 366px; height: 56px; border-radius: 28px; background: rgba(70,70,76,.92); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+  .mini b { position: absolute; left: 74px; top: 10px; font-size: 15px; font-weight: 600; } .mini span { position: absolute; left: 74px; top: 30px; font-size: 13px; color: #aaa; }
+  .mini em { position: absolute; right: 22px; top: 14px; font-style: normal; font-size: 22px; letter-spacing: 10px; }
+  .mini .mc { position: absolute; left: 10px; top: 8px; width: 40px; height: 40px; border-radius: 8px; }
+  .art { background: linear-gradient(135deg, #f1ede6 0 45%, #1d1d1f 46% 100%); }
+  .tabs { position: absolute; left: 12px; top: 730px; width: 290px; height: 54px; border-radius: 27px; background: rgba(70,70,76,.85); display: flex; justify-content: space-around; align-items: center; color: #bbb; font-size: 12px; }
+  .srch { position: absolute; right: 12px; top: 730px; width: 54px; height: 54px; border-radius: 50%; background: rgba(70,70,76,.85); }
+  .np { position: absolute; inset: 0; background: radial-gradient(90% 60% at 50% 25%, #6a6a62, #1f1f21); transform-origin: 50% 50%; }
+  .npc { position: absolute; inset: 0; }
+  .npc .grab { position: absolute; left: 175px; top: 40px; width: 40px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.35); }
+  .npc .tt { position: absolute; left: 30px; top: 446px; font-weight: 700; font-size: 22px; } .npc .tt span { display: block; color: rgba(255,255,255,.6); font-weight: 600; }
+  .npc .hb { position: absolute; top: 452px; width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.14); }
+  .npc .seek { position: absolute; left: 30px; right: 30px; top: 530px; height: 7px; border-radius: 4px; background: rgba(255,255,255,.22); } .npc .seek i { display: block; width: 30%; height: 100%; border-radius: 4px; background: #fff; }
+  .npc .badge { position: absolute; left: 120px; width: 150px; top: 548px; height: 20px; line-height: 20px; text-align: center; font-size: 11.5px; font-weight: 600; border-radius: 5px; background: rgba(255,255,255,.12); }
+  .npc .tr { position: absolute; left: 30px; right: 30px; top: 590px; display: flex; justify-content: space-evenly; font-size: 40px; }
+  .npc .vol { position: absolute; left: 60px; right: 60px; top: 676px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.2); } .npc .vol i { display: block; width: 28%; height: 100%; background: #fff; border-radius: 3px; }
+  .npc .strip { position: absolute; left: 40px; right: 40px; top: 728px; display: flex; justify-content: space-between; font-size: 22px; color: rgba(255,255,255,.85); }
+  .cov { position: absolute; }
+  .png .live { display: none; }
+</style></head>
+<body>
+<h1>Now Playing: ways to open</h1>
+<p class="note">Today the page rises from the bottom while the cover flies up. Each row shows a new way, left to right in time.
+  The green "Live" phone plays it on a loop at half speed (open this file in a browser). Closing, and a swipe down, run the same steps backwards with your finger.</p>
+<div id="rows"></div>
+<script>
+const png = location.search.includes('png'); if (png) document.body.classList.add('png');
+const phoneHtml = `<div class="ph"><div class="phone">
+  <div class="lib"><h3>Carousel</h3><i class="side l"></i><div class="alb"></div><i class="side r"></i>
+    <div class="cap">Bad 25<span>Michael Jackson</span></div><div class="btns"><i></i><i></i></div>
+    <div class="row" style="top:456px">4 &nbsp; Liberian Girl</div><div class="row" style="top:508px">5 &nbsp; Smooth Criminal</div><div class="row" style="top:560px">6 &nbsp; Leave Me Alone</div></div>
+  <div class="mini"><i class="mc art"></i><b>Smooth Criminal</b><span>Michael Jackson</span><em>⏸⏭</em></div>
+  <div class="tabs"><span>Carousel</span><span>Library</span><span>Settings</span></div><div class="srch"></div>
+  <div class="np"><div class="npc"><i class="grab"></i>
+    <div class="tt">Smooth Criminal<span>Michael Jackson</span></div><i class="hb" style="left:268px"></i><i class="hb" style="left:318px"></i>
+    <div class="seek"><i></i></div><div class="badge">ALAC · 44.1 kHz · 24-bit</div><div class="tr">⏮ ⏸ ⏭</div>
+    <div class="vol"><i></i></div><div class="strip"><span>❞</span><span>🔈</span><span>☰</span></div></div></div>
+  <div class="cov art"></div>
+</div></div>`;
+const lerp = (a, b, t) => a + (b - a) * t, clamp = t => Math.max(0, Math.min(1, t)), ease = t => 1 - Math.pow(1 - t, 3);
+const MINI_COVER = [22, 672, 40, 40, 8], FULL_COVER = [30, 90, 330, 330, 10];
+const MINI_BOX = { t: 664, r: 12, b: 80, l: 12, rad: 28 };
+const place = (el, r) => Object.assign(el.style, { left: r[0] + 'px', top: r[1] + 'px', width: r[2] + 'px', height: r[3] + 'px', borderRadius: r[4] + 'px' });
+const mix = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
+// Scales a box around the phone's middle (195, 400).
+const zoom = (r, s) => [195 + (r[0] - 195) * s, 400 + (r[1] - 400) * s, r[2] * s, r[3] * s, r[4] * s];
+
+const options = [
+  { id: 'a', name: 'A · Morph out of the mini player', cost: 'Medium: clip the page to a box that grows from the mini player, like the quality badge.',
+    desc: 'The mini player itself grows into the full page, the same way the quality badge grows into Sound path. The cover flies to its place inside it. Swipe down and the page shrinks back into the mini player under your finger.',
+    apply(p, t) {
+      const e = clamp(t), q = el => p.querySelector(el);
+      q('.np').style.clipPath = `inset(${lerp(MINI_BOX.t, 0, e)}px ${lerp(MINI_BOX.r, 0, e)}px ${lerp(MINI_BOX.b, 0, e)}px ${lerp(MINI_BOX.l, 0, e)}px round ${lerp(MINI_BOX.rad, 38, e)}px)`;
+      q('.np').style.opacity = clamp(t / .06);
+      q('.npc').style.opacity = clamp((t - .5) / .5);
+      q('.mini').style.opacity = 1 - clamp(t / .2); q('.mc').style.opacity = 0;
+      place(q('.cov'), mix(MINI_COVER, FULL_COVER, e)); q('.cov').style.opacity = 1;
+      q('.lib').style.filter = `brightness(${lerp(1, .6, e)})`;
+    } },
+  { id: 'b', name: 'B · Fade, the cover leads', cost: 'Small: drop the slide, keep the cover flight on taps too.',
+    desc: 'Nothing moves but the cover. The page fades in where it is, and the cover flies from the mini player to its place. Close to Apple Music, without the slide.',
+    apply(p, t) {
+      const q = el => p.querySelector(el);
+      q('.np').style.clipPath = 'none'; q('.np').style.opacity = clamp(t);
+      q('.npc').style.opacity = clamp((t - .15) / .85);
+      q('.mini').style.opacity = 1 - clamp(t / .3); q('.mc').style.opacity = 0;
+      place(q('.cov'), mix(MINI_COVER, FULL_COVER, ease(clamp(t)))); q('.cov').style.opacity = 1;
+      q('.lib').style.filter = 'none';
+    } },
+  { id: 'c', name: 'C · Zoom in', cost: 'Small: a fade plus a little zoom on both pages.',
+    desc: 'The page zooms in from a little smaller while the library behind shrinks back and dims, so it feels like stepping in. Calm, but it no longer comes from the mini player.',
+    apply(p, t) {
+      const q = el => p.querySelector(el), s = lerp(.9, 1, t);
+      q('.np').style.clipPath = 'none'; q('.np').style.opacity = clamp(t); q('.np').style.transform = `scale(${s})`;
+      q('.npc').style.opacity = 1;
+      q('.mini').style.opacity = 1; q('.mc').style.opacity = 1;
+      place(q('.cov'), zoom(FULL_COVER, s)); q('.cov').style.opacity = clamp(t);
+      q('.lib').style.transform = `scale(${lerp(1, .94, t)})`; q('.lib').style.filter = `brightness(${lerp(1, .55, t)})`;
+    } },
+];
+const steps = [[0, 'Tap the mini player'], [.3, 'Starts growing'], [.65, 'Nearly full'], [1, 'Open']];
+
+document.getElementById('rows').innerHTML = options.map(o => `<div class="opt">
+  <div class="about"><h2>${o.name}</h2><p>${o.desc}</p><p class="cost">${o.cost}</p></div>
+  ${steps.map((s, i) => `<div class="fr" data-o="${o.id}" data-t="${s[0]}"><p class="lb">${o.id === 'b' && i === 1 ? 'Fades in' : o.id === 'c' && i === 1 ? 'Zooms in' : s[1]}</p>${phoneHtml}</div>`).join('')}
+  <div class="fr live" data-o="${o.id}"><p class="lb">Live</p>${phoneHtml}</div>
+</div>`).join('');
+const byId = Object.fromEntries(options.map(o => [o.id, o]));
+document.querySelectorAll('.fr[data-t]').forEach(f => byId[f.dataset.o].apply(f, +f.dataset.t));
+
+// Live loop, 4 s at half speed: rest, open (0.7 s), hold, close (0.5 s), rest.
+const lives = [...document.querySelectorAll('.fr.live')];
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function tick(now) {
+  const u = (now % 4000) / 4000;
+  const t = u < .1 ? 0 : u < .275 ? ease((u - .1) / .175) : u < .7 ? 1 : u < .825 ? 1 - ease((u - .7) / .125) : 0;
+  lives.forEach(f => byId[f.dataset.o].apply(f, t));
+  requestAnimationFrame(tick);
+}
+if (!png) { if (reduce) lives.forEach(f => byId[f.dataset.o].apply(f, 1)); else requestAnimationFrame(tick); }
+</script>
+</body></html>

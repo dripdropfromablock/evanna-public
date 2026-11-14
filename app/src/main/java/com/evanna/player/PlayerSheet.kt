@@ -30,9 +30,12 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import com.evanna.player.ui.MorphClip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Constraints
@@ -68,15 +71,16 @@ internal class PlayerSheetMotion(initiallyOpen: Boolean) {
     /** Counts finished pulls. A quick pull can start and end between two frames, so [dragging] alone may never look changed. */
     var releases by mutableIntStateOf(0)
         private set
-    private var settlingPull by mutableStateOf(false)
     var travelPx = 0
     var miniCover by mutableStateOf<LayoutCoordinates?>(null)
     var fullCover by mutableStateOf<LayoutCoordinates?>(null)
     var fullCorner by mutableStateOf(10.dp)
+    /** The mini player capsule. While it is on screen, Now Playing grows out of it instead of fading in place. */
+    var miniBox by mutableStateOf<LayoutCoordinates?>(null)
+    val morphs get() = miniBox?.isAttached == true
 
     val progress get() = (dragPosition ?: position.value).coerceIn(0f, 1f)
     val offsetY get() = travelPx * (1f - progress)
-    val chromeOffsetY get() = if (dragPosition != null || settlingPull) offsetY else 0f
 
     fun beginPull(track: String?): Boolean {
         if (travelPx <= 0 || dragging) return false
@@ -100,18 +104,16 @@ internal class PlayerSheetMotion(initiallyOpen: Boolean) {
     suspend fun settle(open: Boolean, track: String?) {
         val held = dragPosition
         if (held != null) {
-            settlingPull = true
             position.snapTo(held)
             dragPosition = null
         } else if (progress == 0f || progress == 1f) captureTrack(track)
         val velocity = releaseVelocity
         releaseVelocity = 0f
         position.animateTo(if (open) 1f else 0f, EvannaMotion.playerSpring, initialVelocity = velocity)
-        settlingPull = false
     }
 
-    /** Only a finger pull flies the cover; a tap to open or close is a plain fade, so nothing rises from the bottom. */
-    fun isFlying(track: String?): Boolean = (dragPosition != null || settlingPull) && track != null && track == flightTrack &&
+    /** The cover flies between the mini player and Now Playing while the page grows or shrinks, by tap or by finger. */
+    fun isFlying(track: String?): Boolean = track != null && track == flightTrack &&
         progress > 0f && progress < 1f && miniCover?.isAttached == true && fullCover?.isAttached == true
 
     private fun captureTrack(track: String?) {
@@ -213,8 +215,17 @@ internal fun PlayerSheet(motion: PlayerSheetMotion, cover: Bitmap?, flying: Bool
     }
     DisposableEffect(scroll) { onDispose(scroll::cancel) }
     Box(Modifier.fillMaxSize().nestedScroll(scroll).playerPull(motion, true, track, onOpenChange)) {
-        Box(Modifier.matchParentSize().graphicsLayer { translationY = motion.chromeOffsetY }
-            .onGloballyPositioned { sheet = it }.playerFocusScope(blocked = !ready)) { content() }
+        // The page behind dims as Now Playing grows over it.
+        if (motion.morphs) Box(Modifier.matchParentSize().graphicsLayer { alpha = motion.progress }.background(Color.Black.copy(alpha = 0.4f)))
+        // Now Playing grows out of the mini player, as the quality badge grows into Sound path: only its edges move,
+        // nothing slides up from the bottom. Without a mini player on screen it fades in place.
+        Box(Modifier.matchParentSize().graphicsLayer {
+            val p = motion.progress
+            val from = if (p < 1f) coverBounds(motion.miniBox, sheet) else null
+            clip = from != null
+            if (from != null) this.shape = MorphClip(androidx.compose.ui.geometry.lerp(from, Rect(Offset.Zero, size), p),
+                from.height / 2f + (32.dp.toPx() - from.height / 2f) * p)
+        }.onGloballyPositioned { sheet = it }.playerFocusScope(blocked = !ready)) { content() }
         if (flying) FlyingCover(motion, cover, sheet)
         // New touches wait for the animation; the pointer already pulling the sheet keeps its original target.
         if (!ready) Box(Modifier.matchParentSize().blockTouches())

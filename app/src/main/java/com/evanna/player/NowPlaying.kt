@@ -157,9 +157,13 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
     }
     Box(Modifier.fillMaxSize()) {
         PlayerBackdrop(cover, LocalLookStyle.current.look == EvannaLook.APPLE_LIGHT,
-            Modifier.matchParentSize().graphicsLayer { alpha = motion.progress })
+            // Growing out of the mini player, the page is solid almost at once and its words come in near the end.
+            Modifier.matchParentSize().graphicsLayer { alpha = if (motion.morphs) (motion.progress / 0.2f).coerceAtMost(1f) else motion.progress })
         CompositionLocalProvider(LocalContentColor provides Pv1) {
-            Column(Modifier.fillMaxSize().graphicsLayer { alpha = ((motion.progress - 0.15f) / 0.85f).coerceIn(0f, 1f) }
+            Column(Modifier.fillMaxSize().graphicsLayer {
+                alpha = if (motion.morphs) ((motion.progress - 0.5f) / 0.5f).coerceIn(0f, 1f)
+                    else ((motion.progress - 0.15f) / 0.85f).coerceIn(0f, 1f)
+            }
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
                 Grabber(page.heading, onBack)
                 if (!state.hasSong) NoSong(state, onLibrary, Modifier.weight(1f))

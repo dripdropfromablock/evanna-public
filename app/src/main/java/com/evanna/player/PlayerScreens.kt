@@ -8,6 +8,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import kotlin.math.roundToInt
@@ -279,7 +280,7 @@ internal fun MiniPlayer(state: PlayerPresentation, cover: Bitmap?, onOpen: () ->
     val canNext = state.connected && state.canNext
     val previous by rememberUpdatedState(onPrevious)
     val next by rememberUpdatedState(onNext)
-    GlassSurface(Modifier.fillMaxWidth(), shape,
+    GlassSurface(Modifier.fillMaxWidth().onGloballyPositioned { motion.miniBox = it }, shape,
         solidColor = if (look.dark) colors.surfaceContainerLow.copy(alpha = 0.94f) else colors.surfaceContainerHigh,
         border = border, shadowElevation = 6.dp) {
         val rowHeight = 56.dp
