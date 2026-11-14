@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.evanna.player.ui.glass.GlassTier
 import com.evanna.player.ui.glass.LocalGlass
+import com.evanna.player.ui.glass.contrastEdge
 import com.evanna.player.ui.glass.rimColors
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -41,7 +42,18 @@ import kotlinx.coroutines.launch
  * with Liquid glass off controls only sink, as before.
  */
 @Composable
-internal fun glassLiftOn(): Boolean = LocalGlass.current.tier != GlassTier.SOLID
+internal fun glassLiftOn(): Boolean = LocalGlass.current.let { it.tier != GlassTier.SOLID && !it.increaseContrast }
+
+/** Increase contrast is on: controls get solid fills and clear edges instead of glass. */
+@Composable
+internal fun increaseContrastOn(): Boolean = LocalGlass.current.increaseContrast
+
+/** Increase contrast's stand-in for [glassPlatter] over the dark Now Playing backdrop: solid black with a light edge. */
+internal fun Modifier.contrastPlatter(shape: Shape, on: Boolean = false): Modifier = drawBehind {
+    val outline = shape.createOutline(size, layoutDirection, this)
+    drawOutline(outline, if (on) Color(0xFF3A3A3A) else Color.Black)
+    drawOutline(outline, contrastEdge(dark = true), style = Stroke(1.dp.toPx()))
+}
 
 /** A quick tap still shows this much of the lift before it settles. */
 private const val MIN_LIFT_MS = 140L

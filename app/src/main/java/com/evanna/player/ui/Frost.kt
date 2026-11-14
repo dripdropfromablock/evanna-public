@@ -37,9 +37,9 @@ import kotlin.math.roundToInt
  */
 internal class WindowStill(val image: ImageBitmap, val windowSize: IntSize, val origin: IntOffset)
 
-/** Frost needs glass on and Reduce transparency off. */
+/** Frost needs glass on, and Reduce transparency and Increase contrast off. */
 @Composable
-internal fun frostOn(): Boolean = LocalGlass.current.let { it.tier != GlassTier.SOLID && !it.reduceTransparency }
+internal fun frostOn(): Boolean = LocalGlass.current.let { it.tier != GlassTier.SOLID && !it.reduceTransparency && !it.increaseContrast }
 
 /**
  * The still for an overlay that is up while [enabled]; null until it is taken, if it can't be, or when not [enabled].

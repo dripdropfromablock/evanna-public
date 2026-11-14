@@ -104,6 +104,7 @@ import com.evanna.player.usb.AUTO_CONNECT_DAC_PREFERENCE
 import com.evanna.player.ui.glass.GLASS_PREFERENCE
 import com.evanna.player.ui.glass.GlassContext
 import com.evanna.player.ui.glass.GlassTier
+import com.evanna.player.ui.glass.INCREASE_CONTRAST_PREFERENCE
 import com.evanna.player.ui.glass.LocalGlass
 import com.evanna.player.ui.glass.REDUCE_TRANSPARENCY_PREFERENCE
 import com.evanna.player.ui.glass.backdrop.backdrops.layerBackdrop
@@ -150,6 +151,8 @@ class MainActivity : ComponentActivity() {
     /** Liquid glass on the floating controls, in the Apple looks; Reduce transparency keeps it frosted and dense. */
     private var liquidGlass by mutableStateOf(true)
     private var reduceTransparency by mutableStateOf(false)
+    /** Increase contrast: solid controls with clear edges instead of glass (phase 6). */
+    private var increaseContrast by mutableStateOf(false)
     private var foreground by mutableStateOf(false)
     private var startPage by mutableStateOf(PlayerScreen.LIBRARY)
     private val motionScale = AppMotionScale()
@@ -308,6 +311,7 @@ class MainActivity : ComponentActivity() {
         look = storedLook(uiPreferences[LOOK_PREFERENCE])
         liquidGlass = uiPreferences[GLASS_PREFERENCE] as? Boolean ?: true
         reduceTransparency = uiPreferences[REDUCE_TRANSPARENCY_PREFERENCE] as? Boolean ?: false
+        increaseContrast = uiPreferences[INCREASE_CONTRAST_PREFERENCE] as? Boolean ?: false
         motionScale.speed = storedAnimationSpeed(uiPreferences[ANIMATION_SPEED_PREFERENCE])
         fun readSystemMotionScale() = AndroidSettings.Global.getFloat(
             contentResolver, AndroidSettings.Global.ANIMATOR_DURATION_SCALE, 1f)
@@ -466,12 +470,15 @@ class MainActivity : ComponentActivity() {
                 // The recording starts from the page colour: a transparent gap would blur to black.
                 val recordPage = remember(pageColor) { val draw: ContentDrawScope.() -> Unit = { drawRect(pageColor); drawContent() }; draw }
                 val pageBackdrop = rememberLayerBackdrop(onDraw = recordPage)
-                val glass = remember(glassTier, pageBackdrop, reduceTransparency) {
-                    GlassContext(glassTier, pageBackdrop.takeIf { glassTier.samplesBackdrop }, reduceTransparency)
+                val glass = remember(glassTier, pageBackdrop, reduceTransparency, increaseContrast) {
+                    GlassContext(glassTier, pageBackdrop.takeIf { glassTier.samplesBackdrop && !increaseContrast }, reduceTransparency,
+                        increaseContrast)
                 }
                 // Controls everywhere read the tier, so pressed controls only lift into glass while glass is on.
                 // Only the dock gets the recorded page to sample.
-                val glassControls = remember(glassTier, reduceTransparency) { GlassContext(glassTier, null, reduceTransparency) }
+                val glassControls = remember(glassTier, reduceTransparency, increaseContrast) {
+                    GlassContext(glassTier, null, reduceTransparency, increaseContrast)
+                }
                 CompositionLocalProvider(LocalGlass provides glassControls) {
                 Surface(Modifier.fillMaxSize(), color = EvannaDesign.colorScheme.background) {
                 Box(Modifier.fillMaxSize().onSizeChanged { motion.travelPx = it.height }) {
@@ -479,7 +486,7 @@ class MainActivity : ComponentActivity() {
                     // While the sheet is open its contents are hidden from screen readers.
                     Box(Modifier.fillMaxSize().playerFocusScope(blocked = playerVisible)) {
                         Box(Modifier.fillMaxSize()
-                            .then(if (glassTier.samplesBackdrop) Modifier.layerBackdrop(pageBackdrop) else Modifier)
+                            .then(if (glassTier.samplesBackdrop && !increaseContrast) Modifier.layerBackdrop(pageBackdrop) else Modifier)
                             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                             .imePadding()) {
                             val covered = playerVisible || pushed != null
@@ -1430,6 +1437,7 @@ class MainActivity : ComponentActivity() {
                 item(key = "glass") {
                     val tier = glassTier(Build.VERSION.SDK_INT, liquidGlass, reduceTransparency)
                     SettingsSection(footer = when {
+                        increaseContrast -> "Controls are drawn solid, with a clear edge."
                         tier == GlassTier.FULL -> "This phone shows full glass: blur and a bent edge."
                         tier == GlassTier.BLUR -> "This phone shows blurred glass. The bent edge needs Android 13."
                         tier == GlassTier.FROSTED && !reduceTransparency && liquidGlass -> "This phone shows frosted glass. Live blur needs Android 12."
@@ -1443,6 +1451,10 @@ class MainActivity : ComponentActivity() {
                             enabled = liquidGlass) { on ->
                             reduceTransparency = on
                             getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putBoolean(REDUCE_TRANSPARENCY_PREFERENCE, on).apply()
+                        } }
+                        row { SwitchRow("Increase contrast", "Solid black or white controls with a clear edge.", increaseContrast) { on ->
+                            increaseContrast = on
+                            getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putBoolean(INCREASE_CONTRAST_PREFERENCE, on).apply()
                         } }
                     }
                 }

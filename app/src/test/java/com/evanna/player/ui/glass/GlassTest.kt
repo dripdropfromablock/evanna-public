@@ -1,5 +1,6 @@
 package com.evanna.player.ui.glass
 
+import androidx.compose.ui.graphics.toArgb
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -33,6 +34,16 @@ class GlassTest {
         var previous = -1f
         for (i in 0..20) { val a = floorAlpha(i / 20f); assertTrue(a >= previous); previous = a }
         assertTrue(floorAlpha(0.1f) < 0.05f)  // the top edge is near invisible
+    }
+    @Test fun increaseContrastEdgesStandOutFromThePageAndTheFill() {
+        for (dark in listOf(true, false)) {
+            val fill = contrastFill(dark)
+            val ratio = com.evanna.player.contrastRatio(contrastEdge(dark).toArgb(), fill.toArgb())
+            // Fill and page are the same black or white, so one check covers both; 3:1 is the floor for a control's edge.
+            assertTrue("dark=$dark edge is ${"%.2f".format(ratio)}:1", ratio >= 3.0)
+        }
+        assertEquals(androidx.compose.ui.graphics.Color.Black, contrastFill(dark = true))
+        assertEquals(androidx.compose.ui.graphics.Color.White, contrastFill(dark = false))
     }
     // Shape outlines need android.graphics.Path, which JVM tests lack; the corners are checked on the phone instead.
 }

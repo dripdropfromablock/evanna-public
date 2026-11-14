@@ -366,10 +366,18 @@ private fun lerpPx(open: Int, folded: Int, t: Float) = (open + (folded - open) *
  * One layout places all three pieces, so the fold is a single movement rather than separate bars appearing and going.
  */
 @Composable
-internal fun PlayerDock(selected: PlayerScreen, onSelect: (PlayerScreen) -> Unit,
+internal fun PlayerDock(selected: PlayerScreen, onTab: (PlayerScreen) -> Unit,
     tabs: List<Triple<PlayerScreen, String, ImageVector>>, searchIcon: ImageVector, hasSong: Boolean,
     folded: Boolean, onUnfold: () -> Unit, modifier: Modifier = Modifier, miniPlayer: @Composable (compact: Boolean) -> Unit,
 ) {
+    // A tick when the tab changes, as the iOS tab bar gives (phase 6).
+    val haptics = LocalHapticFeedback.current
+    val current by rememberUpdatedState(selected)
+    val pick by rememberUpdatedState(onTab)
+    val onSelect = remember(haptics) { { tab: PlayerScreen ->
+        if (tab != current) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
+        pick(tab)
+    } }
     val colors = EvannaDesign.colorScheme
     val surface = if (LocalLookStyle.current.look.dark) colors.surfaceContainerLow.copy(alpha = 0.94f) else colors.surfaceContainer
     val border = evannaHairline(0.62f)

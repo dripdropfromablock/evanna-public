@@ -59,7 +59,18 @@ internal val GlassTier.samplesBackdrop get() = this == GlassTier.BLUR || this ==
 
 /** The tier in force and, for the live tiers, the recorded app content the glass bends and blurs. */
 @Immutable
-internal class GlassContext(val tier: GlassTier, val backdrop: LayerBackdrop?, val reduceTransparency: Boolean = false)
+internal class GlassContext(val tier: GlassTier, val backdrop: LayerBackdrop?, val reduceTransparency: Boolean = false,
+    /** Increase contrast (phase 6): glass is drawn solid black or white with a clear edge, and nothing turns see-through. */
+    val increaseContrast: Boolean = false)
+
+/** UI_SETTINGS key for Increase contrast (default off). */
+internal const val INCREASE_CONTRAST_PREFERENCE = "increase-contrast"
+
+/** Increase contrast's solid fill: the page's own black or white, so controls read as cut out of it. */
+internal fun contrastFill(dark: Boolean): Color = if (dark) Color.Black else Color.White
+
+/** Increase contrast's edge: strong enough to see against the page and against the fill (3:1 for a control's edge). */
+internal fun contrastEdge(dark: Boolean): Color = if (dark) Color(0xFFA0A0A0) else Color(0xFF6E6E6E)
 
 internal val LocalGlass = staticCompositionLocalOf { GlassContext(GlassTier.SOLID, null) }
 
@@ -95,6 +106,8 @@ internal fun GlassSurface(modifier: Modifier, shape: CornerBasedShape, solidColo
     val dark = LocalLookStyle.current.look.dark
     val backdrop = glass.backdrop
     when {
+        glass.increaseContrast ->
+            Surface(modifier, shape, contrastFill(dark), BorderStroke(1.dp, contrastEdge(dark)), shadowElevation, content)
         glass.tier == GlassTier.SOLID -> Surface(modifier, shape, solidColor, border, shadowElevation, content)
         !glass.tier.samplesBackdrop || backdrop == null ->
             Surface(modifier.glassRim(shape, dark), shape, frostColor(dark, glass.reduceTransparency), null, shadowElevation, content)

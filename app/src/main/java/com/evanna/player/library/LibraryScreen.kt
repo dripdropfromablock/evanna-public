@@ -44,6 +44,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 
@@ -511,11 +512,15 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
         // "All is well" notes are left out to save room; scan progress, results and errors still show.
         if (!LocalLibrary.statusIsIdle) line { Text(LocalLibrary.status, style = EvannaDesign.typography.bodySmall, color = muted) }
         if(view==LibraryView.ADDED && kind==null)line {Text("Sorted by when Evanna first saved the song. Existing songs share the upgrade date.",style=EvannaDesign.typography.bodySmall,color=muted)}
-        if (loading && !changingSearchLetter && shown == null) line {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (searchMode && filter.search.isNotBlank()) "Searching…" else "Loading library…",
-                    style = EvannaDesign.typography.bodySmall, color = muted)
-                LinearProgressIndicator(Modifier.fillMaxWidth())
+        // Placeholders shaped like what is coming, instead of a spinner; screen readers still hear what is happening.
+        if (loading && !changingSearchLetter && shown == null) {
+            val waiting = if (searchMode && filter.search.isNotBlank()) "Searching…" else "Loading library…"
+            val tiles = view == LibraryView.ALBUMS && kind == null && !(albumHome && albumLayout == AlbumLayout.LIST)
+            if (tiles) items(6, key = { "skeleton $it" }) { index ->
+                SkeletonTile(Modifier.clearAndSetSemantics { if (index == 0) contentDescription = waiting })
+            } else for (index in 0 until 8) line(key = "skeleton $index") {
+                SkeletonRow(cover = if (searchMode) 44.dp else 52.dp,
+                    modifier = Modifier.clearAndSetSemantics { if (index == 0) contentDescription = waiting })
             }
         }
         if(!searchHome && cursor.base>0)line {TextButton(onClick={cursor=LibraryPageCursor()},modifier=Modifier.heightIn(min=48.dp)){Text("Start of list")}}

@@ -266,13 +266,15 @@ private fun PlayerHeaderButton(icon: ImageVector, description: String, size: Dp,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val glass = glassLiftOn()
+    val contrast = increaseContrastOn()
     Box(Modifier.size(48.dp).controlFocus(interaction, CircleShape)
         .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
-        if (glass) Box(Modifier.size(36.dp).glassPlatter(GlassKind.CLEAR, CircleShape).liftIntoGlass(interaction, CircleShape, outset = 3.dp))
+        if (contrast) Box(Modifier.size(36.dp).contrastPlatter(CircleShape))
+        else if (glass) Box(Modifier.size(36.dp).glassPlatter(GlassKind.CLEAR, CircleShape).liftIntoGlass(interaction, CircleShape, outset = 3.dp))
         else if (showCircle) Box(Modifier.size(28.dp).background(Pv4, CircleShape))
         Icon(icon, contentDescription = null, tint = if (enabled) Pv1 else Pv3,
-            modifier = Modifier.size(if (glass) minOf(size, 20.dp) else size).pressScale(interaction))
+            modifier = Modifier.size(if (glass || contrast) minOf(size, 20.dp) else size).pressScale(interaction))
     }
 }
 
@@ -534,14 +536,19 @@ private fun StripButton(icon: ImageVector, on: Boolean, description: String, ena
 ) {
     val interaction = remember { MutableInteractionSource() }
     val glass = glassLiftOn()
+    val contrast = increaseContrastOn()
+    val round = glass || contrast
     val platter = Color.White.copy(alpha = 0.22f)
-    val shape = if (glass) CircleShape else RoundedCornerShape(10.dp)
-    Box(Modifier.size(48.dp).controlFocus(interaction, if (glass) CircleShape else RoundedCornerShape(12.dp))
+    val shape = if (round) CircleShape else RoundedCornerShape(10.dp)
+    Box(Modifier.size(48.dp).controlFocus(interaction, if (round) CircleShape else RoundedCornerShape(12.dp))
         .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description; if (enabled) stateDescription = if (on) "On" else "Off" }, contentAlignment = Alignment.Center) {
-        Box(Modifier.size(if (glass) 44.dp else 40.dp)
-            .then(if (glass) Modifier.glassPlatter(GlassKind.REGULAR, shape, on).liftIntoGlass(interaction, shape, outset = 2.dp)
-                else Modifier.clip(shape).background(if (on) platter else Color.Transparent)),
+        Box(Modifier.size(if (round) 44.dp else 40.dp)
+            .then(when {
+                contrast -> Modifier.contrastPlatter(shape, on)
+                glass -> Modifier.glassPlatter(GlassKind.REGULAR, shape, on).liftIntoGlass(interaction, shape, outset = 2.dp)
+                else -> Modifier.clip(shape).background(if (on) platter else Color.Transparent)
+            }),
             contentAlignment = Alignment.Center) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp).pressScale(interaction), tint = if (enabled) Pv1 else Pv3)
         }

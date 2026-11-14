@@ -80,6 +80,7 @@ import com.evanna.player.LocalLookStyle
 import com.evanna.player.PlayerIcons
 import com.evanna.player.blockTouches
 import com.evanna.player.evannaHairline
+import com.evanna.player.ui.glass.contrastEdge
 import com.evanna.player.ui.glass.rimColors
 
 @Composable
@@ -157,11 +158,15 @@ private val MenuText = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpa
 /** True in a menu that has choices: every row keeps the leading checkmark column, so all the text lines up. */
 private val LocalMenuChecks = staticCompositionLocalOf { false }
 
-/** The rim light along a menu's edge, as on the frosted glass dock. */
+/** The rim light along a menu's edge, as on the frosted glass dock; a plain strong edge with Increase contrast on. */
 @Composable
 internal fun menuRim(): BorderStroke {
     val dark = LocalLookStyle.current.look.dark
-    return remember(dark) { rimColors(dark).let { (top, bottom) -> BorderStroke(1.dp, Brush.verticalGradient(listOf(top, bottom))) } }
+    val contrast = increaseContrastOn()
+    return remember(dark, contrast) {
+        if (contrast) BorderStroke(1.dp, contrastEdge(dark))
+        else rimColors(dark).let { (top, bottom) -> BorderStroke(1.dp, Brush.verticalGradient(listOf(top, bottom))) }
+    }
 }
 
 /**

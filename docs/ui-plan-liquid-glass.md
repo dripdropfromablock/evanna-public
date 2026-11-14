@@ -1,6 +1,6 @@
 # Evanna UI plan: Liquid Glass, Apple rules, BitChord lessons
 
-Status: phases 0–5 built (phases 3–5 on 2026-11-14). Written 2026-11-13.
+Status: all phases (0–6) built (phases 3–6 on 2026-11-14). Written 2026-11-13.
 Each phase gets a mockup first, then code, then emulator and phone checks (same flow as the sound path sheet).
 
 ## 1. What Apple's Liquid Glass actually is
@@ -102,10 +102,10 @@ Glass costs GPU time, and the M30s already drops frames.
 2. Regular glass for the queue/lyrics bar. Built: Lyrics and Queue are 44 dp regular-glass circles that brighten while their page is open.
 3. Tint only Play; everything else neutral. Built: Play/Pause takes the cover's accent. All of it is drawn, not sampled; with glass off the old flat look returns.
 
-### Phase 6 — Polish
-1. Skeleton rows instead of spinners in Library and Search.
-2. Haptics on switch flips, tab changes and long-press lift.
-3. Increase Contrast mode: solid black/white glass with a border.
+### Phase 6 — Polish (built)
+1. Skeleton rows instead of spinners in Library and Search. Built (`ui/Skeleton.kt`): rows and album tiles the real size, gently pulsing; TalkBack still hears "Loading library…".
+2. Haptics on switch flips, tab changes and long-press lift. Built: switches (phase 3), tab changes (a segment tick) and segments; the long press already ticks through `combinedClickable`.
+3. Increase Contrast mode: solid black/white glass with a border. Built: an Appearance switch. The dock, mini player and Now Playing buttons go solid with a 3:1 edge; menus get a plain strong edge; frost, lift and page recording turn off.
 
 ## 5. Decisions needed
 
