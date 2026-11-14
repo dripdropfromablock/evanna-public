@@ -244,7 +244,7 @@ private fun NoSong(state: PlayerPresentation, onLibrary: () -> Unit, modifier: M
     }
 }
 
-/** The 28 dp More circle with its menu. */
+/** The More circle with its menu. */
 @Composable
 private fun MoreButton(items: List<Pair<String, () -> Unit>>) {
     var open by remember { mutableStateOf(false) }
@@ -256,17 +256,23 @@ private fun MoreButton(items: List<Pair<String, () -> Unit>>) {
     }
 }
 
+/**
+ * Favorite and More beside the title. With glass on, each sits in a 36 dp circle of clear glass, as in iOS 26; without
+ * it, More keeps its flat 28 dp circle and Favorite has none.
+ */
 @Composable
 private fun PlayerHeaderButton(icon: ImageVector, description: String, size: Dp,
     enabled: Boolean = true, showCircle: Boolean = false, onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
+    val glass = glassLiftOn()
     Box(Modifier.size(48.dp).controlFocus(interaction, CircleShape)
         .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
-        if (showCircle) Box(Modifier.size(28.dp).background(Pv4, CircleShape))
+        if (glass) Box(Modifier.size(36.dp).glassPlatter(GlassKind.CLEAR, CircleShape).liftIntoGlass(interaction, CircleShape, outset = 3.dp))
+        else if (showCircle) Box(Modifier.size(28.dp).background(Pv4, CircleShape))
         Icon(icon, contentDescription = null, tint = if (enabled) Pv1 else Pv3,
-            modifier = Modifier.size(size).pressScale(interaction))
+            modifier = Modifier.size(if (glass) minOf(size, 20.dp) else size).pressScale(interaction))
     }
 }
 
@@ -356,10 +362,11 @@ private fun PlayerControls(state: PlayerPresentation, actionError: String?, page
         SeekBar(state, onSeek, onSignal)
         Row(Modifier.fillMaxWidth().padding(top = 12.dp).height(64.dp), horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically) {
-            TransportButton(PlayerIcons.Previous, 36.dp, "Previous", state.connected && state.canPrevious, onPrevious)
+            TransportButton(PlayerIcons.Previous, 36.dp, "Previous", state.connected && state.canPrevious, onClick = onPrevious)
             TransportButton(if (state.playing) PlayerIcons.Pause else if (state.ended) Icons.Filled.Refresh else Icons.Filled.PlayArrow, 52.dp,
-                if (state.playing) "Pause playback" else "Play playback", state.connected && state.canPlayPause, onPlayPause)
-            TransportButton(PlayerIcons.Next, 36.dp, "Next", state.connected && state.canNext, onNext)
+                if (state.playing) "Pause playback" else "Play playback", state.connected && state.canPlayPause,
+                tint = EvannaDesign.colorScheme.primary, onClick = onPlayPause)
+            TransportButton(PlayerIcons.Next, 36.dp, "Next", state.connected && state.canNext, onClick = onNext)
         }
         if (directUsb) UsbVolume(state, onUsbVolume, onUsbVolumeSet, onOpenOutput = onOutput)
         else if (!compact) AndroidMediaVolume(enabled = volumeEnabled,
@@ -503,28 +510,39 @@ private fun SeekBar(state: PlayerPresentation, onSeek: (String?, Long) -> Unit, 
     }
 }
 
-/** A plain transport icon that shrinks a little while pressed, over a glass circle that lifts in under the finger. */
+/**
+ * A plain transport icon that shrinks a little while pressed, over a glass circle that lifts in under the finger.
+ * Only Play/Pause takes a [tint] (the cover's accent): Apple colours the one main action and leaves the rest neutral.
+ */
 @Composable
-private fun TransportButton(icon: ImageVector, size: Dp, description: String, enabled: Boolean, onClick: () -> Unit) {
+private fun TransportButton(icon: ImageVector, size: Dp, description: String, enabled: Boolean, tint: Color = Pv1, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     Box(Modifier.size(size + 12.dp).liftIntoGlass(interaction, CircleShape, outset = 4.dp).controlFocus(interaction, CircleShape)
         .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = null, tint = if (enabled) Pv1 else Pv3, modifier = Modifier.size(size).pressScale(interaction))
+        Icon(icon, contentDescription = null, tint = if (enabled) tint else Pv3, modifier = Modifier.size(size).pressScale(interaction))
     }
 }
 
-/** Player strip buttons share a 48 dp touch target and highlight the open control. */
+/**
+ * Player strip buttons (Lyrics, Queue) share a 48 dp touch target and highlight the open control. With glass on, each is
+ * a 44 dp circle of regular glass that brightens while its page is open.
+ */
 @Composable
 private fun StripButton(icon: ImageVector, on: Boolean, description: String, enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
+    val glass = glassLiftOn()
     val platter = Color.White.copy(alpha = 0.22f)
-    Box(Modifier.size(48.dp).controlFocus(interaction, RoundedCornerShape(12.dp))
+    val shape = if (glass) CircleShape else RoundedCornerShape(10.dp)
+    Box(Modifier.size(48.dp).controlFocus(interaction, if (glass) CircleShape else RoundedCornerShape(12.dp))
         .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description; if (enabled) stateDescription = if (on) "On" else "Off" }, contentAlignment = Alignment.Center) {
-        Box(Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(if (on) platter else Color.Transparent), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(if (glass) 44.dp else 40.dp)
+            .then(if (glass) Modifier.glassPlatter(GlassKind.REGULAR, shape, on).liftIntoGlass(interaction, shape, outset = 2.dp)
+                else Modifier.clip(shape).background(if (on) platter else Color.Transparent)),
+            contentAlignment = Alignment.Center) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp).pressScale(interaction), tint = if (enabled) Pv1 else Pv3)
         }
     }

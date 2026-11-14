@@ -101,6 +101,31 @@ internal fun Modifier.liftIntoGlass(interaction: InteractionSource, shape: Shape
     }
 }
 
+/** Apple's two glass kinds (docs/ui-plan-liquid-glass.md, phase 5). */
+internal enum class GlassKind {
+    /** See-through, for controls right over a picture; a dimming layer under it keeps a white glyph readable. */
+    CLEAR,
+    /** Frostier, for bars of controls. */
+    REGULAR,
+}
+
+/**
+ * A control's resting glass over the dark Now Playing backdrop. That backdrop is already a blurred cover, so a drawn
+ * fill, a sheen and a lit rim read as glass without sampling anything. [on] brightens it for an open control.
+ */
+internal fun Modifier.glassPlatter(kind: GlassKind, shape: Shape, on: Boolean = false): Modifier = drawBehind {
+    val outline = shape.createOutline(size, layoutDirection, this)
+    if (kind == GlassKind.CLEAR) drawOutline(outline, Color.Black.copy(alpha = 0.18f))
+    drawOutline(outline, Color.White.copy(alpha = when {
+        on -> 0.26f
+        kind == GlassKind.CLEAR -> 0.05f
+        else -> 0.11f
+    }))
+    drawOutline(outline, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.14f), Color.Transparent), 0f, size.height * 0.55f))
+    drawOutline(outline, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.42f), Color.White.copy(alpha = 0.07f)), 0f, size.height),
+        style = Stroke(1.dp.toPx()))
+}
+
 /** A slider knob, 38 × 24 dp by default: white at rest; held, with glass on, it swells into clear glass over the track. */
 @Composable
 internal fun GlassThumb(lift: State<Float>, glass: Boolean, dark: Boolean, size: DpSize = DpSize(38.dp, 24.dp)) {

@@ -1,6 +1,6 @@
 # Evanna UI plan: Liquid Glass, Apple rules, BitChord lessons
 
-Status: phases 0–4 built (phases 3 and 4 on 2026-11-14). Written 2026-11-13.
+Status: phases 0–5 built (phases 3–5 on 2026-11-14). Written 2026-11-13.
 Each phase gets a mockup first, then code, then emulator and phone checks (same flow as the sound path sheet).
 
 ## 1. What Apple's Liquid Glass actually is
@@ -97,10 +97,10 @@ Glass costs GPU time, and the M30s already drops frames.
 2. Long-press lift menu for songs and albums (BitChord `HeldContextMenu`). Built for songs (`LiftMenu`): the row lifts on its page colour, the page blurs (a still) and dims. Albums have no menu yet, so none lifts.
 3. Output sheet and sound path sheet: glass chrome, frosted still behind (BitChord `PlayerFrost`). Built (`ui/Frost.kt`): a 1/8-size PixelCopy of the window, box-blurred once, under a thinner tint and a lit rim. Works on Android 11 too; off with glass off or Reduce transparency on.
 
-### Phase 5 — Now Playing
-1. Clear glass for the round buttons over the cover, with a dimming layer.
-2. Regular glass for the queue/lyrics bar.
-3. Tint only Play; everything else neutral.
+### Phase 5 — Now Playing (built)
+1. Clear glass for the round buttons over the cover, with a dimming layer. Built: Favorite and More are 36 dp clear-glass circles (`glassPlatter(CLEAR)`), on every page.
+2. Regular glass for the queue/lyrics bar. Built: Lyrics and Queue are 44 dp regular-glass circles that brighten while their page is open.
+3. Tint only Play; everything else neutral. Built: Play/Pause takes the cover's accent. All of it is drawn, not sampled; with glass off the old flat look returns.
 
 ### Phase 6 — Polish
 1. Skeleton rows instead of spinners in Library and Search.
