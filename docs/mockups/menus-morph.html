@@ -1,0 +1,79 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Menus and sheets grow out of their button</title>
+<style>
+  body { margin: 0; background: #151517; color: #fff; font: 15px/1.3 Roboto, "Segoe UI", sans-serif; padding: 26px 30px 30px; width: 1440px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } .note { color: #9a9aa0; font-size: 13px; margin: 0 0 20px; max-width: 1300px; }
+  .opt { display: flex; gap: 14px; margin-bottom: 26px; align-items: flex-start; }
+  .about { width: 250px; flex: none; } .about h2 { font-size: 17px; margin: 0 0 6px; } .about p { color: #b4b4ba; font-size: 13.5px; margin: 0 0 8px; }
+  .about .cost { color: #8c8c92; font-size: 12.5px; }
+  .fr { width: 215px; flex: none; } .fr .lb { font-size: 12.5px; color: #9a9aa0; margin: 0 0 6px; height: 16px; } .live .lb { color: #93d394; }
+  .ph { width: 215px; height: 440px; border-radius: 21px; overflow: hidden; position: relative; background: #000; }
+  .phone { width: 390px; height: 800px; transform: scale(.5513); transform-origin: 0 0; position: absolute; left: 0; top: 0; overflow: hidden;
+    background: radial-gradient(90% 60% at 50% 25%, #6a6a62, #1f1f21); }
+  .cv { position: absolute; left: 30px; top: 90px; width: 330px; height: 330px; border-radius: 10px; background: linear-gradient(135deg, #f1ede6 0 45%, #1d1d1f 46% 100%); }
+  .tt { position: absolute; left: 30px; top: 446px; font-weight: 700; font-size: 22px; } .tt span { display: block; color: rgba(255,255,255,.6); font-weight: 600; }
+  .hb { position: absolute; top: 452px; width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.14); text-align: center; line-height: 30px; font-weight: 700; }
+  .seek { position: absolute; left: 30px; right: 30px; top: 530px; height: 7px; border-radius: 4px; background: rgba(255,255,255,.22); } .seek i { display: block; width: 30%; height: 100%; border-radius: 4px; background: #fff; }
+  .tr { position: absolute; left: 30px; right: 30px; top: 590px; display: flex; justify-content: space-evenly; font-size: 40px; }
+  .vol { position: absolute; left: 60px; right: 60px; top: 676px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.2); }
+  .strip { position: absolute; left: 40px; right: 40px; top: 722px; display: flex; justify-content: space-between; font-size: 22px; color: rgba(255,255,255,.85); }
+  .hot { box-shadow: 0 0 0 6px rgba(255,255,255,.12); border-radius: 50%; background: rgba(255,255,255,.2); }
+  .dim { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+  .card { position: absolute; overflow: hidden; background: rgba(52,54,56,.97); box-shadow: 0 20px 50px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.12); }
+  .menu .row { height: 48px; line-height: 48px; padding: 0 18px; font-size: 17px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .menu .row:last-child { border: 0; }
+  .sheet { padding: 6px 16px; } .sheet .bar { height: 48px; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 17px; }
+  .sheet .grp { background: rgba(255,255,255,.07); border-radius: 18px; margin-bottom: 14px; }
+  .sheet .it { height: 56px; display: flex; align-items: center; padding: 0 14px; gap: 12px; border-bottom: 1px solid rgba(255,255,255,.08); } .sheet .it:last-child { border: 0; }
+  .sheet .it i { width: 30px; height: 30px; border-radius: 8px; background: #93d394; } .sheet .it.off i { background: #555; }
+  .sheet .it b { flex: 1; font-weight: 500; } .sheet .it em { font-style: normal; color: #93d394; }
+  .png .live { display: none; }
+</style></head>
+<body>
+<h1>Menus and sheets grow out of their button</h1>
+<p class="note">The same move as Sound path and Now Playing: the thing you open grows out of the button you tapped, and shrinks back into it when it closes.
+  The green "Live" phone plays it on a loop at half speed (open this file in a browser).</p>
+<div id="rows"></div>
+<script>
+const png = location.search.includes('png'); if (png) document.body.classList.add('png');
+const np = `<div class="cv"></div><div class="tt">Smooth Criminal<span>Michael Jackson</span></div>
+  <i class="hb" style="left:268px">♡</i><i class="hb more" style="left:318px">···</i>
+  <div class="seek"><i></i></div><div class="tr">⏮ ⏸ ⏭</div><div class="vol"></div>
+  <div class="strip"><span>❞</span><span class="out">🔈</span><span>☰</span></div>`;
+const menu = `<div class="menu">${['Go to album', 'Go to artist', 'Sleep timer', 'Share', 'Song info'].map(r => `<div class="row">${r}</div>`).join('')}</div>`;
+const sheet = `<div class="sheet"><div class="bar">Audio output</div>
+  <div class="grp"><div class="it"><i></i><b>This phone</b><em>✓</em></div><div class="it off"><i></i><b>USB DAC</b></div></div>
+  <div class="grp"><div class="it off"><i></i><b>Volume</b></div><div class="it off"><i></i><b>Audio pipeline</b></div></div></div>`;
+const lerp = (a, b, t) => a + (b - a) * t, clamp = t => Math.max(0, Math.min(1, t)), ease = t => 1 - Math.pow(1 - t, 3);
+const options = [
+  { id: 'menu', name: '··· menus', desc: 'Every ··· menu, the sort menu and the Library picker. The button stretches into the menu, then the rows fade in.',
+    cost: 'One change in the shared menu, so all of them get it.', from: [318, 452, 34, 34, 17], to: [128, 200, 240, 245, 22], body: menu, btn: '.more' },
+  { id: 'sheet', name: 'Audio output', desc: 'The speaker button at the bottom stretches into a floating card, like Sound path. It no longer slides up as a sheet from the bottom edge.',
+    cost: 'Small: Audio output uses the same card as Sound path.', from: [180, 720, 30, 30, 15], to: [12, 380, 366, 408, 34], body: sheet, btn: '.out' },
+];
+const steps = [[0, 'Tap'], [.35, 'It stretches'], [.7, 'Nearly full'], [1, 'Open']];
+function apply(f, o, t) {
+  const c = f.querySelector('.card'), e = clamp(t), r = o.from.map((v, i) => lerp(v, o.to[i], e));
+  Object.assign(c.style, { left: r[0] + 'px', top: r[1] + 'px', width: r[2] + 'px', height: r[3] + 'px', borderRadius: r[4] + 'px', opacity: clamp(t / .08) });
+  c.firstElementChild.style.opacity = clamp((t - .5) / .5);
+  // The words stay where they end up; only the edges move over them.
+  Object.assign(c.firstElementChild.style, { width: o.to[2] + 'px', boxSizing: 'border-box', transform: `translate(${o.to[0] - r[0]}px, ${o.to[1] - r[1]}px)` });
+  f.querySelector('.dim').style.opacity = e;
+  f.querySelector(o.btn).classList.toggle('hot', t === 0 && f.dataset.t === '0');
+}
+const phone = o => `<div class="ph"><div class="phone">${np}<div class="dim"></div><div class="card">${o.body}</div></div></div>`;
+document.getElementById('rows').innerHTML = options.map(o => `<div class="opt">
+  <div class="about"><h2>${o.name}</h2><p>${o.desc}</p><p class="cost">${o.cost}</p></div>
+  ${steps.map(s => `<div class="fr" data-o="${o.id}" data-t="${s[0]}"><p class="lb">${s[1]}</p>${phone(o)}</div>`).join('')}
+  <div class="fr live" data-o="${o.id}"><p class="lb">Live</p>${phone(o)}</div></div>`).join('');
+const byId = Object.fromEntries(options.map(o => [o.id, o]));
+document.querySelectorAll('.fr[data-t]').forEach(f => apply(f, byId[f.dataset.o], +f.dataset.t));
+const lives = [...document.querySelectorAll('.fr.live')];
+function tick(now) {
+  const u = (now % 3200) / 3200;
+  const t = u < .1 ? 0 : u < .3 ? ease((u - .1) / .2) : u < .7 ? 1 : u < .84 ? 1 - ease((u - .7) / .14) : 0;
+  lives.forEach(f => apply(f, byId[f.dataset.o], t)); requestAnimationFrame(tick);
+}
+if (!png) { if (matchMedia('(prefers-reduced-motion: reduce)').matches) lives.forEach(f => apply(f, byId[f.dataset.o], 1)); else requestAnimationFrame(tick); }
+</script>
+</body></html>

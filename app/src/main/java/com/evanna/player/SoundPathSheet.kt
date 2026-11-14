@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
@@ -162,8 +163,11 @@ private fun PathLine(path: SoundPath, onOtherOutput: (() -> Unit)?) {
             }
         }
         val tail = 64.dp.toPx()
-        drawLine(Brush.verticalGradient(listOf(Color.Transparent, light.copy(alpha = strength), Color.Transparent), y - tail, y + 8.dp.toPx()),
-            Offset(x, y - tail), Offset(x, y + 8.dp.toPx()), 6.dp.toPx(), StrokeCap.Round)
+        // The light stays on the line: its tail must not stick out above the first stop or below the last.
+        clipRect(top = centers.first(), bottom = centers.last()) {
+            drawLine(Brush.verticalGradient(listOf(Color.Transparent, light.copy(alpha = strength), Color.Transparent), y - tail, y + 8.dp.toPx()),
+                Offset(x, y - tail), Offset(x, y + 8.dp.toPx()), 6.dp.toPx(), StrokeCap.Round)
+        }
     }.padding(horizontal = 14.dp)) {
         stops.forEachIndexed { index, stop ->
             StopRow(stop, index == 0, Modifier.onPlaced { centers[index] = it.positionInParent().y + discCenter },
