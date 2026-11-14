@@ -1,0 +1,124 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Evanna sideways</title>
+<style>
+  body { margin: 0; background: #151517; color: #fff; font: 15px/1.3 Roboto, "Segoe UI", sans-serif; padding: 26px 30px 30px; width: 1440px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 17px; margin: 0 0 4px; } .note { color: #9a9aa0; font-size: 13px; margin: 0 0 16px; }
+  .grid { display: grid; grid-template-columns: repeat(2, 690px); gap: 22px 30px; margin-bottom: 30px; }
+  .lb { font-size: 13.5px; color: #b4b4ba; margin: 0 0 8px; } .lb b { color: #fff; }
+  /* A phone on its side, 800 x 370 drawn at 0.8625 */
+  .ph { width: 690px; height: 319px; border-radius: 26px; overflow: hidden; position: relative; background: #000; }
+  .scr { position: absolute; left: 0; top: 0; width: 800px; height: 370px; transform: scale(.8625); transform-origin: 0 0; overflow: hidden;
+    background: radial-gradient(70% 90% at 25% 40%, #5c5148, #1d1b1c); }
+  .art { background: linear-gradient(135deg, #f1ede6 0 45%, #1d1d1f 46% 100%); border-radius: 10px; position: absolute; box-shadow: 0 14px 30px rgba(0,0,0,.45); }
+  .t { position: absolute; font-weight: 700; font-size: 20px; } .t span { display: block; color: rgba(255,255,255,.6); font-weight: 600; font-size: 18px; }
+  .hb { position: absolute; width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.14); text-align: center; line-height: 30px; font-size: 13px; }
+  .bar { position: absolute; height: 6px; border-radius: 3px; background: rgba(255,255,255,.22); } .bar i { display: block; height: 100%; width: 30%; border-radius: 3px; background: #fff; }
+  .tm { position: absolute; font-size: 11px; color: rgba(255,255,255,.6); }
+  .badge { position: absolute; font-size: 10.5px; font-weight: 600; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,.12); }
+  .tr { position: absolute; display: flex; justify-content: space-evenly; font-size: 30px; }
+  .strip { position: absolute; display: flex; justify-content: space-between; font-size: 18px; color: rgba(255,255,255,.85); }
+  .lyr { position: absolute; font-size: 22px; font-weight: 700; line-height: 1.35; color: rgba(255,255,255,.35); } .lyr b { color: #fff; display: block; }
+  .q { position: absolute; } .q div { height: 44px; display: flex; align-items: center; gap: 10px; font-size: 14px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .q i { width: 30px; height: 30px; border-radius: 5px; background: #777; flex: none; } .q span { color: rgba(255,255,255,.55); font-size: 12px; display: block; }
+  .seg { position: absolute; display: flex; gap: 4px; background: rgba(255,255,255,.1); border-radius: 15px; padding: 3px; font-size: 12px; }
+  .seg b { padding: 4px 12px; border-radius: 12px; font-weight: 500; } .seg b.on { background: rgba(255,255,255,.22); }
+  .bad { outline: 2px dashed #ff6b6b; outline-offset: -2px; }
+  .tag { position: absolute; background: #ff6b6b; color: #fff; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+  .good { position: absolute; background: #93d394; color: #12301a; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+  .page { background: linear-gradient(#2c2d2b, #1c1d1c); }
+  .h1 { position: absolute; left: 44px; top: 28px; font-size: 26px; font-weight: 700; }
+  .cov { position: absolute; border-radius: 8px; }
+  .dock { position: absolute; height: 46px; border-radius: 23px; background: rgba(70,70,76,.9); display: flex; justify-content: space-around; align-items: center; font-size: 11px; color: #ccc; }
+  .mini { position: absolute; height: 46px; border-radius: 23px; background: rgba(70,70,76,.92); }
+  .mini i.art { box-shadow: none; }
+  .mini i { position: absolute; left: 8px; top: 7px; width: 32px; height: 32px; border-radius: 6px; }
+  .mini b { position: absolute; left: 50px; top: 7px; font-size: 13px; } .mini span { position: absolute; left: 50px; top: 25px; font-size: 11px; color: #aaa; }
+  .mini em { position: absolute; right: 16px; top: 11px; font-style: normal; font-size: 17px; letter-spacing: 8px; }
+  .side { position: absolute; left: 0; top: 0; bottom: 0; width: 76px; background: rgba(40,40,44,.85); display: flex; flex-direction: column; align-items: center; gap: 26px; padding-top: 70px; font-size: 10.5px; color: #bbb; box-sizing: border-box; }
+  .side div { text-align: center; } .side div i { display: block; width: 26px; height: 22px; margin: 0 auto 3px; border-radius: 6px; background: #888; } .side .on { color: #fff; } .side .on i { background: #fff; }
+</style></head>
+<body>
+<h1>Evanna sideways</h1>
+<p class="note">Turned sideways today, Now Playing loses its cover, and the dock and mini player cover half of each tab. The red marks are today's problems. The green ones are the fixes.</p>
+
+<h2>1 · Now Playing on its side</h2>
+<p class="note">Pick one. All three keep every control from the upright screen: heart, ···, seek bar, quality badge, transport, volume, lyrics, Audio output, queue.</p>
+<div class="grid" id="np"></div>
+
+<h2>2 · The rest of the app on its side</h2>
+<p class="note">These fixes go in with whichever Now Playing you pick.</p>
+<div class="grid" id="rest"></div>
+
+<script>
+const ph = (inner, cls = '') => `<div class="ph"><div class="scr ${cls}">${inner}</div></div>`;
+const controls = (x, w, top) => `
+  <div class="t" style="left:${x}px;top:${top}px">Smooth Criminal<span>Michael Jackson</span></div>
+  <i class="hb" style="left:${x + w - 72}px;top:${top + 6}px">♡</i><i class="hb" style="left:${x + w - 32}px;top:${top + 6}px">···</i>
+  <div class="bar" style="left:${x}px;width:${w}px;top:${top + 72}px"><i></i></div>
+  <div class="tm" style="left:${x}px;top:${top + 84}px">1:12</div><div class="tm" style="left:${x + w - 30}px;top:${top + 84}px">−2:58</div>
+  <div class="badge" style="left:${x + w / 2 - 66}px;top:${top + 82}px">ALAC · 44.1 kHz · 24-bit</div>
+  <div class="tr" style="left:${x}px;width:${w}px;top:${top + 112}px">⏮ ⏸ ⏭</div>
+  <div class="bar" style="left:${x + 24}px;width:${w - 48}px;top:${top + 172}px;height:5px"><i style="width:45%"></i></div>
+  <div class="strip" style="left:${x + 10}px;width:${w - 20}px;top:${top + 196}px"><span>❞</span><span>🔈</span><span>☰</span></div>`;
+const lyrics = (x, top, w) => `<div class="lyr" style="left:${x}px;top:${top}px;width:${w}px">As he came into the window<b>It was the sound of a crescendo</b>He came into her apartment<br>He left the bloodstains on the carpet</div>`;
+const queue = (x, top, w) => `<div class="q" style="left:${x}px;top:${top}px;width:${w}px">${['Speed Demon', 'Liberian Girl', 'Just Good Friends', 'Another Part of Me', 'Man in the Mirror'].map(s => `<div><i style="background:linear-gradient(135deg,#f1ede6 0 45%,#1d1d1f 46%)"></i><p style="margin:0">${s}<span>Michael Jackson</span></p></div>`).join('')}</div>`;
+
+document.getElementById('np').innerHTML = [
+  ['Today', 'The cover is gone and the controls stretch across the whole width.',
+    `<div class="t" style="left:60px;top:46px">Smooth Criminal<span>Michael Jackson</span></div>
+     <div class="bar bad" style="left:60px;width:680px;top:118px"><i></i></div>
+     <div class="tr" style="left:60px;width:680px;top:160px">⏮ ⏸ ⏭</div>
+     <div class="bar" style="left:100px;width:600px;top:240px;height:5px"><i style="width:45%"></i></div>
+     <div class="strip" style="left:60px;width:680px;top:262px"><span>❞</span><span>🔈</span><span>☰</span></div>
+     <span class="tag" style="left:330px;top:14px">no cover</span><span class="tag" style="left:300px;top:96px">bar too long</span>`],
+  ['<b>A · Cover left, controls right</b> (Apple Music)', 'The big cover fills the left half. Everything else sits beside it, the same as upright.',
+    `<div class="art" style="left:44px;top:30px;width:300px;height:300px"></div>${controls(390, 360, 52)}`],
+  ['<b>B · Cover, controls and lyrics</b>', 'A smaller cover with the controls under it on the left. Lyrics run on the right, and the strip swaps them for the queue.',
+    `<div class="art" style="left:44px;top:26px;width:132px;height:132px"></div>
+     <div class="t" style="left:192px;top:60px;font-size:18px">Smooth Criminal<span style="font-size:15px">Michael Jackson</span></div>
+     ${controls(44, 330, 116).replace(/<div class="t"[\s\S]*?<\/div>/, '').replace(/<i class="hb"[^>]*>[^<]*<\/i>/g, '')}
+     <i class="hb" style="left:192px;top:116px">♡</i><i class="hb" style="left:232px;top:116px">···</i>
+     ${lyrics(430, 70, 330)}`],
+  ['<b>C · Cover left, a page on the right</b>', 'The cover stays on the left. The right side holds the controls, and lyrics or queue slide over them when you open one.',
+    `<div class="art" style="left:44px;top:30px;width:300px;height:300px"></div>
+     <div class="seg" style="left:470px;top:26px"><b>Playing</b><b class="on">Queue</b><b>Lyrics</b></div>
+     ${queue(390, 66, 360)}
+     <div class="tr" style="left:390px;width:360px;top:300px;font-size:24px">⏮ ⏸ ⏭</div>`],
+  ['<b>D · Cover fills the screen, panel on the right</b> (your video)', 'The cover is the whole background. A soft frosted panel on the right holds the controls. Lyrics and queue swap into the panel, with a small Play row under them.',
+    `<div style="position:absolute;inset:0;background:linear-gradient(135deg,#f1ede6 0 45%,#1d1d1f 46% 100%)"></div>
+     <div style="position:absolute;top:0;bottom:0;right:0;width:400px;background:linear-gradient(90deg,rgba(40,36,34,0),rgba(40,36,34,.82) 18%);backdrop-filter:blur(14px);-webkit-mask:linear-gradient(90deg,transparent,#000 14%)"></div>
+     ${controls(440, 320, 46)}`],
+  ['<b>D · with lyrics open</b>', 'The controls slide away and the words fill the panel. Tap the lyrics button again to bring the controls back.',
+    `<div style="position:absolute;inset:0;background:linear-gradient(135deg,#f1ede6 0 45%,#1d1d1f 46% 100%)"></div>
+     <div style="position:absolute;top:0;bottom:0;right:0;width:400px;background:linear-gradient(90deg,rgba(40,36,34,0),rgba(40,36,34,.82) 18%);backdrop-filter:blur(14px);-webkit-mask:linear-gradient(90deg,transparent,#000 14%)"></div>
+     ${lyrics(440, 40, 320)}
+     <div class="tr" style="left:440px;width:120px;top:318px;font-size:20px">⏮ ⏸ ⏭</div>
+     <div class="strip" style="left:690px;width:70px;top:322px"><span>❞</span><span>☰</span></div>`],
+].map(([h, p, body]) => `<div><p class="lb">${h}<br>${p}</p>${ph(body)}</div>`).join('');
+
+const carousel = (dock) => `<div class="h1" style="${dock ? '' : 'left:110px'}">Carousel</div>
+  ${[[-30, 120, .6], [150, 140, .8], [300, 190, 1], [520, 140, .8], [690, 120, .6]].map(([x, s, o]) =>
+    dock ? `<div class="cov art" style="left:${x + 40}px;top:84px;width:${s}px;height:${s}px;opacity:${o}"></div>`
+      : `<div class="cov art" style="left:${110 + (x + 30) * 0.86}px;top:${86 + (190 - s) / 2}px;width:${s}px;height:${s}px;opacity:${o}"></div>`).join('')}
+  ${dock ? '' : '<div style="position:absolute;left:110px;right:0;top:290px;text-align:center;font-weight:600;font-size:15px">2 Alivë<span style="display:block;color:#93d394;font-weight:400;font-size:13px">Yeat</span></div>'}`;
+document.getElementById('rest').innerHTML = [
+  ['Today', 'The mini player and dock stretch edge to edge and cover the albums.',
+    `${carousel(true)}<div class="mini bad" style="left:40px;right:40px;top:248px"><i class="art"></i><b>Smooth Criminal</b><span>Michael Jackson</span><em>▶⏭</em></div>
+     <div class="dock bad" style="left:40px;right:110px;top:304px"><span>Carousel</span><span>Library</span><span>Settings</span></div>
+     <span class="tag" style="left:330px;top:224px">covers the albums</span>`, 'page'],
+  ['<b>Fix · Tabs on the left side</b>', 'The tabs move to a thin bar on the left, like an iPad. The mini player is a short pill top right, and the albums fit the height.',
+    `<div class="side"><div class="on"><i></i>Carousel</div><div><i></i>Library</div><div><i></i>Settings</div><div><i style="border-radius:50%"></i>Search</div></div>
+     ${carousel(false)}<div class="mini" style="right:20px;width:290px;top:20px"><i class="art"></i><b>Smooth Criminal</b><span>Michael Jackson</span><em>▶⏭</em></div>
+     <span class="good" style="left:120px;top:340px">albums fit</span>`, 'page'],
+  ['<b>Fix · One short row at the bottom</b> (your video)', 'The dock stays folded sideways: mini player and tabs share one thin row, so the albums get the rest.',
+    `<div class="h1">Carousel</div>
+     ${[[40, 150, .7], [210, 150, .85], [380, 150, 1], [550, 150, .85], [720, 150, .7]].map(([x, s, o]) =>
+       `<div class="cov art" style="left:${x}px;top:80px;width:${s}px;height:${s}px;opacity:${o}"></div>`).join('')}
+     <div style="position:absolute;left:0;right:0;top:246px;text-align:center;font-weight:600;font-size:15px">2 Alivë<span style="display:block;color:#93d394;font-weight:400;font-size:13px">Yeat</span></div>
+     <div class="mini" style="left:40px;width:470px;top:306px"><i class="art"></i><b>Smooth Criminal</b><span>Michael Jackson</span><em>⏸⏭</em></div>
+     <div class="dock" style="left:520px;width:180px;top:306px"><span>♫</span><span>⌂</span><span>⚙</span></div>
+     <div class="dock" style="left:710px;width:46px;top:306px"><span>⌕</span></div>
+     <span class="good" style="left:340px;top:52px">albums fit</span>`, 'page'],
+].map(([h, p, body, cls]) => `<div><p class="lb">${h}<br>${p}</p>${ph(body, cls)}</div>`).join('');
+</script>
+</body></html>
