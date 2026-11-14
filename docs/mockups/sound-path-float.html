@@ -1,0 +1,77 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sound path as a floating card</title>
+<style>
+  :root { --accent: #93d394; --card: rgba(255,255,255,.075); --sep: rgba(255,255,255,.1); --t2: rgba(235,235,245,.6); }
+  body { margin: 0; background: #151517; color: #fff; font: 15px/1.3 Roboto, "Segoe UI", sans-serif; padding: 26px 30px 36px; width: 1290px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } .note { color: #9a9aa0; font-size: 13px; margin: 0 0 18px; }
+  .row { display: flex; gap: 26px; } .tag { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
+  .phone { width: 390px; height: 800px; border-radius: 38px; overflow: hidden; position: relative; background: radial-gradient(90% 60% at 50% 20%, #4b5a4a, #1e2420); }
+  .np { position: absolute; inset: 0; padding: 0 30px; }
+  .np .cv { margin-top: 60px; height: 330px; border-radius: 10px; background: linear-gradient(135deg, #7d8e7a, #2f3a30); }
+  .np .tt { margin-top: 30px; font-weight: 700; font-size: 21px; } .np .tt span { display: block; color: rgba(255,255,255,.6); }
+  .np .seek { margin-top: 64px; height: 7px; border-radius: 4px; background: rgba(255,255,255,.22); } .np .seek i { display: block; width: 40%; height: 100%; border-radius: 4px; background: #fff; }
+  .np .badge { width: 170px; margin: 10px auto 0; text-align: center; font-size: 12px; font-weight: 600; padding: 3px 0; border-radius: 5px; background: rgba(255,255,255,.14); }
+  .np .badge.hot { background: rgba(255,255,255,.32); box-shadow: 0 0 0 6px rgba(255,255,255,.08); }
+  .np .tr { display: flex; justify-content: space-evenly; margin-top: 34px; font-size: 40px; }
+  .dim { position: absolute; inset: 0; background: rgba(0,0,0,.35); backdrop-filter: blur(6px); }
+  .float { position: absolute; left: 12px; right: 12px; top: 160px; border-radius: 34px; padding: 6px 16px 16px;
+    background: rgba(42,46,46,.94); box-shadow: 0 24px 60px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.12); }
+  .float.pop { transform: translate(0, 230px) scale(.28, .16); opacity: .5; transform-origin: 50% 0; }
+  .bar { display: flex; align-items: center; justify-content: space-between; height: 48px; }
+  .bar b { font-size: 17px; font-weight: 600; } .x { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--t2); } .chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .verdict { font-size: 22px; font-weight: 700; letter-spacing: -.3px; margin: 6px 0 4px; line-height: 1.2; }
+  .why { color: var(--t2); font-size: 14px; margin: 0 0 16px; }
+  .card { background: var(--card); border-radius: 22px; overflow: hidden; position: relative; }
+  .item { display: flex; align-items: center; min-height: 60px; padding: 0 14px; position: relative; }
+  .item + .item::before { content: ""; position: absolute; top: 0; right: 0; left: 62px; height: 1px; background: var(--sep); }
+  .txt { flex: 1; padding: 9px 0 9px 14px; } .txt b { font-weight: 500; font-size: 16px; display: block; } .txt span { color: var(--t2); font-size: 13.5px; }
+  .trail { color: var(--t2); font-size: 15px; display: flex; align-items: center; gap: 6px; } .changed { color: var(--accent); }
+  .disc { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none; position: relative; z-index: 1; background: #3a3e3f; }
+  .disc.on { background: var(--accent); color: #12301a; }
+  .rail { position: absolute; left: 30px; width: 2px; top: 30px; bottom: 30px; background: linear-gradient(var(--sep) 0 18%, rgba(147,211,148,.6) 18% 100%); }
+  .glow { position: absolute; left: 28px; width: 6px; top: 118px; height: 56px; border-radius: 3px; background: linear-gradient(transparent, var(--accent), transparent); }
+  svg { display: block; }
+  .steps { color: #9a9aa0; font-size: 13px; margin-top: 10px; width: 390px; }
+</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <g id="file" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M7 2.5H14L19 7.5V20Q19 21.5 17.5 21.5H7.5Q6 21.5 6 20V4Q6 2.5 7 2.5Z"/><path d="M14 2.5V8H19"/><path d="M11.6 17V11.8L15 11"/><circle cx="10" cy="17" r="1.6" fill="currentColor"/></g>
+  <g id="sliders" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20V12M5 8V4M12 20V14M12 10V4M19 20V16M19 12V4M3 10H7M10 12H14M17 14H21"/></g>
+  <g id="phone" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H16Q18 3 18 5V19Q18 21 16 21H8Q6 21 6 19V5Q6 3 8 3Z"/><path d="M11 18H13"/></g>
+  <g id="spk"><path fill="currentColor" d="M4 9.2H7L11.6 5.4Q12.5 4.9 12.5 5.9V18.1Q12.5 19.1 11.6 18.6L7 14.8H4Q3 14.8 3 13.8V10.2Q3 9.2 4 9.2Z"/><path d="M15.3 9.4Q16.6 12 15.3 14.6M17.9 7.4Q20.2 12 17.9 16.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></g>
+  <path id="down" d="M6 9L12 15L18 9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path id="close" d="M7 7L17 17M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+</defs></svg>
+
+<h1>Sound path as a floating card</h1>
+<p class="note">It grows out of the quality badge and floats over Now Playing. It never touches the screen edges. Inside is option B.</p>
+
+<template id="np"><div class="np"><div class="cv"></div><div class="tt">2 Alivë<span>Yeat</span></div><div class="seek"><i></i></div>
+  <div class="badge">FLAC · 44.1 kHz · 24-bit</div><div class="tr">⏮ ⏸ ⏭</div></div></template>
+
+<template id="body">
+  <div class="bar"><span style="width:32px"></span><b>Sound path</b><span class="x"><svg width="14" height="14" viewBox="0 0 24 24"><use href="#close"/></svg></span></div>
+  <div style="padding:0 4px"><span class="chip"><i></i>Playing now</span>
+    <div class="verdict">Android may change the sound</div>
+    <p class="why">Android mixes it with other sounds and may change its rate. It uses the phone's volume.</p></div>
+  <div class="card"><div class="rail"></div><div class="glow"></div>
+    <div class="item"><span class="disc"><svg width="18" height="18" viewBox="0 0 24 24"><use href="#file"/></svg></span><div class="txt"><b>Song file</b><span>Lossless · 24-bit · 44.1 kHz</span></div><span class="trail"><svg width="16" height="16" viewBox="0 0 24 24"><use href="#down"/></svg></span></div>
+    <div class="item"><span class="disc on"><svg width="18" height="18" viewBox="0 0 24 24"><use href="#sliders"/></svg></span><div class="txt"><b>Evanna</b><span>EQ on, so the sound changes</span></div><span class="trail"><span class="changed">Changed</span><svg width="16" height="16" viewBox="0 0 24 24"><use href="#down"/></svg></span></div>
+    <div class="item"><span class="disc on"><svg width="18" height="18" viewBox="0 0 24 24"><use href="#phone"/></svg></span><div class="txt"><b>Android</b><span>Mixes it, may change the rate</span></div><span class="trail"><span class="changed">Changed</span><svg width="16" height="16" viewBox="0 0 24 24"><use href="#down"/></svg></span></div>
+    <div class="item"><span class="disc"><svg width="18" height="18" viewBox="0 0 24 24" color="#aaa"><use href="#spk"/></svg></span><div class="txt"><b>Phone speaker</b><span>Where you hear it</span></div></div>
+  </div>
+</template>
+
+<div class="row">
+  <div><p class="tag">1 · Tap the badge</p><div class="phone" id="p1"></div><p class="steps">The quality badge under the bar.</p></div>
+  <div><p class="tag">2 · It pops out</p><div class="phone" id="p2"></div><p class="steps">The card grows from the badge with a little spring. The page behind blurs and dims.</p></div>
+  <div><p class="tag">3 · Open</p><div class="phone" id="p3"></div><p class="steps">Floats with a gap on all sides. Tap outside, tap ✕, or swipe it down to close. It shrinks back into the badge.</p></div>
+</div>
+<script>
+  const np = document.getElementById('np').innerHTML, body = document.getElementById('body').innerHTML;
+  p1.innerHTML = np.replace('class="badge"', 'class="badge hot"');
+  p2.innerHTML = np + '<div class="dim" style="opacity:.5"></div><div class="float pop">' + body + '</div>';
+  p3.innerHTML = np + '<div class="dim"></div><div class="float">' + body + '</div>';
+</script>
+</body></html>

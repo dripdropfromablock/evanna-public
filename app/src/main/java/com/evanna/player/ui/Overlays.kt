@@ -484,7 +484,8 @@ internal const val SHEET_FROST_TINT = 0.62f
 
 @Composable
 internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: Shape, containerColor: Color, scrimColor: Color,
-    dragHandle: @Composable () -> Unit, title: String = "Audio output", content: @Composable ColumnScope.() -> Unit,
+    dragHandle: @Composable (close: () -> Unit) -> Unit, title: String = "Audio output", floating: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     var closing by remember { mutableStateOf(false) }
     val close = { closing = true }
@@ -534,7 +535,9 @@ internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: S
         Box(Modifier.fillMaxSize()) {
             Box(Modifier.matchParentSize().graphicsLayer { alpha = progress.value }
                 .background(scrimColor).clickable(onClick = close).semantics { contentDescription = "Dismiss ${title.lowercase()}" })
-            Box(Modifier.align(Alignment.BottomCenter).statusBarsPadding().onGloballyPositioned {
+            // Floating, the card sits in the middle with a gap on every side instead of resting on the bottom edge.
+            Box(Modifier.align(if (floating) Alignment.Center else Alignment.BottomCenter).statusBarsPadding()
+                .then(if (floating) Modifier.navigationBarsPadding().padding(12.dp) else Modifier).onGloballyPositioned {
                 val center = it.localToScreen(Offset(it.size.width / 2f, it.size.height / 2f))
                 sheetCenter = center.takeIf { it.isFinite }
                 it.localToScreen(Offset.Zero).takeIf { at -> at.isFinite }?.let { at -> sheetTopLeft = at }
@@ -554,10 +557,10 @@ internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: S
                     .then(if (still == null) Modifier else Modifier.clip(shape).drawBehind { drawStill(still, sheetTopLeft) }),
                     shape = shape, color = if (still == null) containerColor else containerColor.copy(alpha = SHEET_FROST_TINT),
                     border = if (still == null) evannaHairline(0.6f) else rim) {
-                    Column(Modifier.navigationBarsPadding().imePadding()) {
+                    Column(Modifier.then(if (floating) Modifier else Modifier.navigationBarsPadding()).imePadding()) {
                         Box(Modifier.fillMaxWidth().draggable(rememberDraggableState { delta -> offset = (offset + delta).coerceAtLeast(0f) },
                             orientation = Orientation.Vertical, onDragStopped = { velocity -> settle(velocity) }),
-                            contentAlignment = Alignment.Center) { dragHandle() }
+                            contentAlignment = Alignment.Center) { dragHandle(close) }
                         content()
                     }
                 }

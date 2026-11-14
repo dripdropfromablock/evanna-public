@@ -110,7 +110,8 @@ internal class PlayerSheetMotion(initiallyOpen: Boolean) {
         settlingPull = false
     }
 
-    fun isFlying(track: String?): Boolean = track != null && track == flightTrack &&
+    /** Only a finger pull flies the cover; a tap to open or close is a plain fade, so nothing rises from the bottom. */
+    fun isFlying(track: String?): Boolean = (dragPosition != null || settlingPull) && track != null && track == flightTrack &&
         progress > 0f && progress < 1f && miniCover?.isAttached == true && fullCover?.isAttached == true
 
     private fun captureTrack(track: String?) {

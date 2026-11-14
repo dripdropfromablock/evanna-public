@@ -46,6 +46,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.isFinite
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.TileMode
@@ -60,6 +61,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.AnnotatedString
@@ -128,9 +130,10 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
     var page by rememberSaveable { mutableStateOf(PlayerPage.SONG) }
     var lyricsTrack by rememberSaveable { mutableStateOf<String?>(null) }
     var showSignal by rememberSaveable { mutableStateOf(false) }
+    var signalOrigin by remember { mutableStateOf<Offset?>(null) }
     var showSleep by rememberSaveable { mutableStateOf(false) }
     if (showSleep) SleepDialog(state, onSleep) { showSleep = false }
-    if (showSignal) SoundPathSheet(state.soundPath, { showSignal = false; onOutput(null) }, { showSignal = false })
+    if (showSignal) SoundPathSheet(state.soundPath, { showSignal = false; onOutput(null) }, { showSignal = false }, signalOrigin)
     BackHandler { if (wantedOpen && page != PlayerPage.SONG) page = PlayerPage.SONG else onBack() }
     // The preview and full view share one load, and never show the preceding track's words.
     val lyrics by key(state.id) {
@@ -201,7 +204,7 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
                     PlayerControls(state, actionError, page, {
                         if (it == PlayerPage.LYRICS) lyricsTrack = state.id
                         page = it
-                    }, lyrics, onSeek, { showSignal = true }, onPlayPause, onPrevious, onNext, onUsbVolume, onUsbVolumeSet, onSleep,
+                    }, lyrics, onSeek, { signalOrigin = it; showSignal = true }, onPlayPause, onPrevious, onNext, onUsbVolume, onUsbVolumeSet, onSleep,
                         onOutput, outputSheetOpen)
                 }
             }
@@ -345,7 +348,7 @@ private fun CompactHeader(state: PlayerPresentation, cover: Bitmap?, more: @Comp
 /** Shared playback controls keep their positions when the upper page changes. */
 @Composable
 private fun PlayerControls(state: PlayerPresentation, actionError: String?, page: PlayerPage, onPage: (PlayerPage) -> Unit,
-    lyrics: LyricsLoad, onSeek: (String?, Long) -> Unit, onSignal: () -> Unit, onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit,
+    lyrics: LyricsLoad, onSeek: (String?, Long) -> Unit, onSignal: (Offset?) -> Unit, onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit,
     onUsbVolume: (Int) -> Unit, onUsbVolumeSet: (Float, Long) -> Unit, onSleep: (SleepMode, Int) -> Unit,
     onOutput: (Offset?) -> Unit, outputSheetOpen: Boolean) {
     val lyricsOn = page == PlayerPage.LYRICS
@@ -477,7 +480,7 @@ internal fun PillSlider(value: Float, onValueChange: (Float) -> Unit, onValueCha
 
 /** Seek pill, then elapsed time, the honest quality badge and the time left. */
 @Composable
-private fun SeekBar(state: PlayerPresentation, onSeek: (String?, Long) -> Unit, onSignal: () -> Unit) {
+private fun SeekBar(state: PlayerPresentation, onSeek: (String?, Long) -> Unit, onSignal: (Offset?) -> Unit) {
     key(state.id, state.durationMs) {
         val interaction = remember(state.id, state.durationMs) { MutableInteractionSource() }
         val dragging by interaction.collectIsDraggedAsState()
@@ -497,12 +500,14 @@ private fun SeekBar(state: PlayerPresentation, onSeek: (String?, Long) -> Unit, 
                 maxLines = 1, modifier = Modifier.align(Alignment.CenterEnd))
             if (state.sourceQuality.isNotBlank()) {
                 val badgePress = remember { MutableInteractionSource() }
+                var badgeCenter by remember { mutableStateOf<Offset?>(null) }
                 Text(remember(state.sourceQuality) { shortSourceQuality(state.sourceQuality) }, style = Badge, color = Pv1,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp)
                         .liftIntoGlass(badgePress, RoundedCornerShape(10.dp), outset = 5.dp).clip(RoundedCornerShape(5.dp)).background(Pv4)
                         .controlFocus(badgePress, RoundedCornerShape(5.dp))
-                        .clickable(badgePress, indication = null, role = Role.Button, onClick = onSignal)
+                        .onGloballyPositioned { badgeCenter = it.localToScreen(Offset(it.size.width / 2f, it.size.height / 2f)).takeIf { at -> at.isFinite } }
+                        .clickable(badgePress, indication = null, role = Role.Button) { onSignal(badgeCenter) }
                         .semantics { contentDescription = "Audio quality details" }
                         .padding(horizontal = 7.dp, vertical = 3.5.dp).pressScale(badgePress))
             }

@@ -1,0 +1,144 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sound path sheet, iOS style</title>
+<style>
+  :root { --accent: #93d394; --sheet: #26292a; --card: rgba(255,255,255,.075); --sep: rgba(255,255,255,.1); --t2: rgba(235,235,245,.6); --t3: rgba(235,235,245,.3); }
+  body { margin: 0; background: #151517; color: #fff; font: 15px/1.3 Roboto, "Segoe UI", sans-serif; padding: 26px 30px 36px; width: 1700px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } .note { color: #9a9aa0; font-size: 13px; margin: 0 0 18px; }
+  .row { display: flex; gap: 26px; align-items: flex-start; }
+  .tag { font-size: 15px; font-weight: 600; margin: 0 0 4px; } .sub { color: #8e8e93; font-size: 12.5px; margin: 0 0 10px; height: 32px; width: 390px; }
+  .phone { width: 390px; height: 780px; border-radius: 38px; overflow: hidden; position: relative;
+    background: radial-gradient(90% 60% at 50% 20%, #4b5a4a, #1e2420); }
+  .phone::before { content: ""; position: absolute; left: 30px; right: 30px; top: 60px; height: 330px; border-radius: 10px;
+    background: linear-gradient(135deg, #6c7d6a, #2f3a30); opacity: .7; }
+  .scrim { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--sheet); border-radius: 30px 30px 0 0; padding: 0 16px 30px; }
+  .grab { width: 36px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.3); margin: 8px auto 0; }
+  .bar { display: flex; align-items: center; justify-content: space-between; height: 48px; margin-top: 4px; }
+  .bar b { font-size: 17px; font-weight: 600; } .x { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--t2); }
+  .chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .verdict { font-size: 24px; font-weight: 700; letter-spacing: -.3px; margin: 6px 0 4px; line-height: 1.2; }
+  .why { color: var(--t2); font-size: 14.5px; margin: 0 0 18px; }
+  .card { background: var(--card); border-radius: 22px; overflow: hidden; }
+  .item { display: flex; align-items: center; min-height: 58px; padding: 0 14px; position: relative; }
+  .item + .item::before { content: ""; position: absolute; top: 0; right: 0; left: 58px; height: 1px; background: var(--sep); }
+  .tile { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex: none; }
+  .txt { flex: 1; padding: 9px 0 9px 14px; } .txt b { font-weight: 500; font-size: 16px; display: block; } .txt span { color: var(--t2); font-size: 13.5px; }
+  .trail { color: var(--t2); font-size: 15px; display: flex; align-items: center; gap: 6px; }
+  .changed { color: var(--accent); }
+  .detail { display: flex; justify-content: space-between; padding: 9px 14px 9px 58px; font-size: 14.5px; position: relative; }
+  .detail::before { content: ""; position: absolute; top: 0; right: 0; left: 58px; height: 1px; background: var(--sep); }
+  .detail span:last-child { color: var(--t2); font-variant-numeric: tabular-nums; }
+  .foot { color: var(--t2); font-size: 12.5px; padding: 7px 16px 0; }
+  .head { color: var(--t2); font-size: 13px; padding: 0 16px 7px; font-weight: 500; }
+  /* B: circles on a line */
+  .path .item { min-height: 62px; }
+  .path .item + .item::before { left: 62px; }
+  .disc { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none; position: relative; z-index: 1; background: #3a3e3f; }
+  .disc.on { background: var(--accent); color: #12301a; }
+  .path { position: relative; }
+  .path .rail { position: absolute; left: 30px; width: 2px; top: 31px; bottom: 31px; background: linear-gradient(var(--sep) 0 18%, rgba(147,211,148,.6) 18% 100%); }
+  .path .glow { position: absolute; left: 28px; width: 6px; top: 120px; height: 56px; border-radius: 3px; background: linear-gradient(transparent, var(--accent), transparent); }
+  /* C: hero */
+  .hero { text-align: center; padding-top: 6px; }
+  .hero .big { width: 64px; height: 64px; border-radius: 50%; margin: 4px auto 10px; background: rgba(147,211,148,.18); display: flex; align-items: center; justify-content: center; }
+  .flow { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0 18px; }
+  .flow .tile { width: 36px; height: 36px; border-radius: 10px; } .flow em { color: var(--t3); font-style: normal; font-size: 13px; }
+  svg { display: block; }
+  .old .sheet { background: #2b302c; padding: 0 22px 30px; }
+</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <g id="file" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M7 2.5H14L19 7.5V20Q19 21.5 17.5 21.5H7.5Q6 21.5 6 20V4Q6 2.5 7 2.5Z"/><path d="M14 2.5V8H19"/><path d="M11.6 17V11.8L15 11"/><circle cx="10" cy="17" r="1.6" fill="currentColor"/></g>
+  <g id="sliders" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20V12M5 8V4M12 20V14M12 10V4M19 20V16M19 12V4M3 10H7M10 12H14M17 14H21"/></g>
+  <g id="phone" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H16Q18 3 18 5V19Q18 21 16 21H8Q6 21 6 19V5Q6 3 8 3Z"/><path d="M11 18H13"/></g>
+  <g id="spk"><path fill="currentColor" d="M4 9.2H7L11.6 5.4Q12.5 4.9 12.5 5.9V18.1Q12.5 19.1 11.6 18.6L7 14.8H4Q3 14.8 3 13.8V10.2Q3 9.2 4 9.2Z"/><path d="M15.3 9.4Q16.6 12 15.3 14.6M17.9 7.4Q20.2 12 17.9 16.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></g>
+  <path id="down" d="M6 9L12 15L18 9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path id="up" d="M6 15L12 9L18 15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path id="close" d="M7 7L17 17M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+  <g id="wave" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 11V13M8 8V16M12 4V20M16 7V17M20 10V14"/></g>
+</defs></svg>
+
+<h1>Sound path sheet, iOS style</h1>
+<p class="note">Same words and numbers as now. Only the look changes. The green is the cover's color, as now.</p>
+<div class="row">
+
+  <!-- NOW -->
+  <div class="old"><p class="tag">Now</p><p class="sub">A line of round stops on a flat sheet. Green tags.</p>
+    <div class="phone"><div class="scrim"></div><div class="sheet">
+      <div class="grab"></div>
+      <div style="font-weight:600;font-size:17px;margin:18px 0 12px">Sound path</div>
+      <span class="chip" style="background:rgba(255,255,255,.09);padding:4px 10px;border-radius:12px"><i></i>Playing now</span>
+      <div class="verdict" style="margin-top:10px">Android may change the sound</div>
+      <p class="why">Android mixes it with other sounds and may change its rate. It uses the phone's volume.</p>
+      <div style="position:relative">
+        <div style="position:absolute;left:19px;top:32px;bottom:32px;width:2px;background:linear-gradient(rgba(255,255,255,.16) 0 22%, rgba(147,211,148,.55) 22%)"></div>
+        <div style="display:flex;gap:14px;padding:12px 0;position:relative"><div class="disc" style="width:40px;height:40px;border:1.5px solid rgba(255,255,255,.28)"><svg width="20" height="20" viewBox="0 0 24 24"><use href="#file"/></svg></div><div class="txt" style="padding:0"><b style="font-weight:600">Song file</b><span>Lossless · 24-bit · 44.1 kHz</span></div><svg width="20" height="20" viewBox="0 0 24 24" color="#aaa"><use href="#down"/></svg></div>
+        <div style="display:flex;gap:14px;padding:12px 0;position:relative"><div class="disc on" style="width:40px;height:40px"><svg width="20" height="20" viewBox="0 0 24 24"><use href="#sliders"/></svg></div><div class="txt" style="padding:0"><b style="font-weight:600">Evanna <small style="background:rgba(147,211,148,.18);color:var(--accent);font-size:11px;padding:2px 7px;border-radius:6px;font-weight:700">Changed</small></b><span>EQ on, so the sound changes on purpose.</span></div><svg width="20" height="20" viewBox="0 0 24 24" color="#aaa"><use href="#down"/></svg></div>
+        <div style="display:flex;gap:14px;padding:12px 0;position:relative"><div class="disc on" style="width:40px;height:40px"><svg width="20" height="20" viewBox="0 0 24 24"><use href="#phone"/></svg></div><div class="txt" style="padding:0"><b style="font-weight:600">Android <small style="background:rgba(147,211,148,.18);color:var(--accent);font-size:11px;padding:2px 7px;border-radius:6px;font-weight:700">Changed</small></b><span>Mixed by Android, which may change the rate. Uses the phone's volume.</span></div><svg width="20" height="20" viewBox="0 0 24 24" color="#aaa"><use href="#down"/></svg></div>
+        <div style="display:flex;gap:14px;padding:12px 0;position:relative"><div class="disc" style="width:40px;height:40px;border:1.5px solid rgba(255,255,255,.16)"><svg width="20" height="20" viewBox="0 0 24 24" color="#aaa"><use href="#spk"/></svg></div><div class="txt" style="padding:0"><b style="font-weight:600">Phone speaker</b><span>Where you hear it</span></div></div>
+      </div>
+    </div></div></div>
+
+  <!-- A -->
+  <div><p class="tag">A · Settings list</p><p class="sub">Like iOS Settings: one rounded card, color tiles. No line. Tap a row to see its numbers.</p>
+    <div class="phone"><div class="scrim"></div><div class="sheet">
+      <div class="grab"></div>
+      <div class="bar"><span style="width:32px"></span><b>Sound path</b><span class="x"><svg width="14" height="14" viewBox="0 0 24 24"><use href="#close"/></svg></span></div>
+      <div style="padding:0 4px"><span class="chip"><i></i>Playing now</span>
+        <div class="verdict">Android may change the sound</div>
+        <p class="why">Android mixes it with other sounds and may change its rate. It uses the phone's volume.</p></div>
+      <div class="card">
+        <div class="item"><span class="tile" style="background:#8e8e93"><svg width="18" height="18" viewBox="0 0 24 24"><use href="#file"/></svg></span><div class="txt"><b>Song file</b><span>Lossless · 24-bit · 44.1 kHz</span></div><span class="trail"><svg width="16" height="16" viewBox="0 0 24 24"><use href="#down"/></svg></span></div>
+        <div class="item"><span class="tile" style="background:#af52de"><svg width="18" height="18" viewBox="0 0 24 24"><use href="#sliders"/></svg></span><div class="txt"><b>Evanna</b><span>EQ on, so the sound changes</span></div><span class="trail"><span class="changed">Changed</span><svg width="16" height="16" viewBox="0 0 24 24"><use href="#up"/></svg></span></div>
+        <div class="detail"><span>EQ</span><span>On · 10 bands</span></div>
+        <div class="detail"><span>Preamp</span><span>−3.0 dB</span></div>
+        <div class="item"><span class="tile" style="background:#007aff"><svg width="18" height="18" viewBox="0 0 24 24"><use href="#phone"/></svg></span><div class="txt"><b>Android</b><span>Mixes it, may change the rate</span></div><span class="trail"><span class="changed">Changed</span><svg width="16" height="16" viewBox="0 0 24 24"><use href="#down"/></svg></span></div>
+        <div class="item"><span class="tile" style="background:#ff2d55"><svg width="18" height="18" viewBox="0 0 24 24"><use href="#spk"/></svg></span><div class="txt"><b>Phone speaker</b><span>Where you hear it</span></div></div>
+      </div>
+      <p class="foot">Goes top to bottom: from the file to your ears.</p>
+    </div></div></div>
+
+  <!-- B -->
+  <div><p class="tag">B · Card with the line</p><p class="sub">Same card, but stops keep the line and the moving light. Closest to now.</p>
+    <div class="phone"><div class="scrim"></div><div class="sheet">
+      <div class="grab"></div>
+      <div class="bar"><span style="width:32px"></span><b>Sound path</b><span class="x"><svg width="14" height="14" viewBox="0 0 24 24"><use href="#close"/></svg></span></div>
+      <div style="padding:0 4px"><span class="chip"><i></i>Playing now</span>
+        <div class="verdict">Android may change the sound</div>
+        <p class="why">Android mixes it with other sounds and may change its rate. It uses the phone's volume.</p></div>
+      <div class="card path"><div class="rail"></div><div class="glow"></div>
+        <div class="item"><span class="disc"><svg width="18" height="18" viewBox="0 0 24 24"><use href="#file"/></svg></span><div class="txt"><b>Song file</b><span>Lossless · 24-bit · 44.1 kHz</span></div><span class="trail"><svg width="16" height="16" viewBox="0 0 24 24"><use href="#down"/></svg></span></div>
+        <div class="item"><span class="disc on"><svg width="18" height="18" viewBox="0 0 24 24"><use href="#sliders"/></svg></span><div class="txt"><b>Evanna</b><span>EQ on, so the sound changes</span></div><span class="trail"><span class="changed">Changed</span><svg width="16" height="16" viewBox="0 0 24 24"><use href="#down"/></svg></span></div>
+        <div class="item"><span class="disc on"><svg width="18" height="18" viewBox="0 0 24 24"><use href="#phone"/></svg></span><div class="txt"><b>Android</b><span>Mixes it, may change the rate</span></div><span class="trail"><span class="changed">Changed</span><svg width="16" height="16" viewBox="0 0 24 24"><use href="#down"/></svg></span></div>
+        <div class="item"><span class="disc"><svg width="18" height="18" viewBox="0 0 24 24" color="#aaa"><use href="#spk"/></svg></span><div class="txt"><b>Phone speaker</b><span>Where you hear it</span></div></div>
+      </div>
+      <p class="foot">The light runs down the line while music plays.</p>
+    </div></div></div>
+
+  <!-- C -->
+  <div><p class="tag">C · Big summary</p><p class="sub">Like Apple's info sheets: a centered summary, the path as a small row of tiles, then the list.</p>
+    <div class="phone"><div class="scrim"></div><div class="sheet">
+      <div class="grab"></div>
+      <div class="bar"><span style="width:32px"></span><b>Sound path</b><span class="x"><svg width="14" height="14" viewBox="0 0 24 24"><use href="#close"/></svg></span></div>
+      <div class="hero">
+        <div class="big"><svg width="30" height="30" viewBox="0 0 24 24" color="var(--accent)"><use href="#wave"/></svg></div>
+        <span class="chip"><i></i>Playing now</span>
+        <div class="verdict" style="font-size:22px">Android may change the sound</div>
+        <p class="why" style="margin-bottom:12px">Android mixes it with other sounds and may change its rate.</p>
+        <div class="flow">
+          <span class="tile" style="background:#8e8e93"><svg width="20" height="20" viewBox="0 0 24 24"><use href="#file"/></svg></span><em>›</em>
+          <span class="tile" style="background:#af52de"><svg width="20" height="20" viewBox="0 0 24 24"><use href="#sliders"/></svg></span><em>›</em>
+          <span class="tile" style="background:#007aff"><svg width="20" height="20" viewBox="0 0 24 24"><use href="#phone"/></svg></span><em>›</em>
+          <span class="tile" style="background:#ff2d55"><svg width="20" height="20" viewBox="0 0 24 24"><use href="#spk"/></svg></span></div>
+      </div>
+      <div class="card">
+        <div class="item" style="min-height:48px"><div class="txt" style="padding-left:0"><b>Song file</b></div><span class="trail">Lossless · 24-bit</span></div>
+        <div class="item" style="min-height:48px"><div class="txt" style="padding-left:0"><b>Evanna</b></div><span class="trail"><span class="changed">EQ on</span></span></div>
+        <div class="item" style="min-height:48px"><div class="txt" style="padding-left:0"><b>Android</b></div><span class="trail"><span class="changed">Mixed</span></span></div>
+        <div class="item" style="min-height:48px"><div class="txt" style="padding-left:0"><b>Phone speaker</b></div><span class="trail">Phone volume</span></div>
+      </div>
+    </div></div></div>
+</div>
+<style>.card .item + .item::before { } .hero ~ .card .item + .item::before { left: 14px; }</style>
+</body></html>

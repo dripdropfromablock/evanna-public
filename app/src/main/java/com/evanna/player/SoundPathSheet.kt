@@ -33,6 +33,7 @@ import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -59,29 +60,44 @@ private const val PULSE_TRAVEL_MS = 2800f
  * the accent after a stop that changes the sound and flickers past lost sound. Tap a stop for the numbers behind it.
  */
 @Composable
-internal fun SoundPathSheet(path: SoundPath?, onOtherOutput: (() -> Unit)?, onClose: () -> Unit) {
+internal fun SoundPathSheet(path: SoundPath?, onOtherOutput: (() -> Unit)?, onClose: () -> Unit, origin: Offset? = null) {
     val colors = EvannaDesign.colorScheme
-    OutputSheet(origin = null, onDismissRequest = onClose, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    // A floating card that grows out of [origin] (the quality badge), as iOS 26 pops a card out of the control that opened it.
+    OutputSheet(origin = origin, onDismissRequest = onClose, shape = RoundedCornerShape(34.dp).continuous(),
         // Solid: Now Playing's words and controls must not show through the path's text.
-        containerColor = colors.surfaceContainer, scrimColor = Color.Black.copy(alpha = 0.5f),
-        dragHandle = {
-            Box(Modifier.padding(vertical = 10.dp).size(36.dp, 4.dp)
-                .background(colors.onSurfaceVariant.copy(alpha = 0.45f), CircleShape))
-        }, title = "Sound path") {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 22.dp, end = 22.dp, bottom = 24.dp)) {
-            Text("Sound path", style = EvannaDesign.typography.titleMedium, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.semantics { heading() })
+        containerColor = colors.surfaceContainer, scrimColor = Color.Black.copy(alpha = 0.5f), floating = true,
+        dragHandle = { close -> SheetHeader("Sound path", close) }, title = "Sound path") {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
             if (path == null) {
                 Text("Connecting to playback…", style = EvannaDesign.typography.bodyMedium, color = colors.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 16.dp))
+                    modifier = Modifier.padding(start = 4.dp, top = 4.dp))
                 return@Column
             }
-            PlayingChip(path.playing, Modifier.padding(top = 14.dp))
-            Text(path.verdict, style = EvannaDesign.typography.titleLarge.copy(fontSize = 24.sp, lineHeight = 29.sp, letterSpacing = (-0.3).sp),
-                fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp).semantics { heading() })
-            Text(path.why, style = EvannaDesign.typography.bodyMedium, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
-            Spacer(Modifier.height(18.dp))
+            PlayingChip(path.playing, Modifier.padding(start = 4.dp))
+            Text(path.verdict, style = EvannaDesign.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 27.sp, letterSpacing = (-0.3).sp),
+                fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 6.dp).semantics { heading() })
+            Text(path.why, style = EvannaDesign.typography.bodyMedium, color = colors.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp))
+            Spacer(Modifier.height(16.dp))
             PathLine(path, onOtherOutput)
+        }
+    }
+}
+
+/** The card's top bar: a centred title and a round ✕, as on iOS sheets. It is also where a swipe down starts. */
+@Composable
+private fun SheetHeader(title: String, onClose: () -> Unit) {
+    val colors = EvannaDesign.colorScheme
+    val press = remember { MutableInteractionSource() }
+    Box(Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 14.dp)) {
+        Text(title, style = EvannaDesign.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.align(Alignment.Center).semantics { heading() })
+        Box(Modifier.align(Alignment.CenterEnd).size(48.dp).controlFocus(press, CircleShape)
+            .clickable(press, indication = null, role = Role.Button, onClickLabel = null, onClick = onClose)
+            .semantics { contentDescription = "Close" }, contentAlignment = Alignment.Center) {
+            Box(Modifier.size(32.dp).background(colors.onSurface.copy(alpha = 0.12f), CircleShape).pressScale(press), contentAlignment = Alignment.Center) {
+                Icon(PlayerIcons.Close, contentDescription = null, tint = colors.onSurfaceVariant, modifier = Modifier.size(14.dp))
+            }
         }
     }
 }
@@ -89,8 +105,7 @@ internal fun SoundPathSheet(path: SoundPath?, onOtherOutput: (() -> Unit)?, onCl
 @Composable
 private fun PlayingChip(playing: Boolean, modifier: Modifier) {
     val colors = EvannaDesign.colorScheme
-    Row(modifier.background(colors.onSurface.copy(alpha = 0.09f), CircleShape).padding(horizontal = 10.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(Modifier.size(6.dp).background(if (playing) colors.primary else colors.onSurfaceVariant.copy(alpha = 0.6f), CircleShape))
         Text(if (playing) "Playing now" else "Not playing", style = EvannaDesign.typography.labelMedium, color = colors.onSurfaceVariant)
     }
@@ -113,8 +128,8 @@ private fun PathLine(path: SoundPath, onOtherOutput: (() -> Unit)?) {
             phase = (ms % PULSE_PERIOD_MS) / PULSE_TRAVEL_MS
         }
     }
-    // The disc sits 12 dp down and is 40 dp tall.
-    val discCenter = with(LocalDensity.current) { 32.dp.toPx() }
+    // The disc sits 14 dp down and is 34 dp tall.
+    val discCenter = with(LocalDensity.current) { 31.dp.toPx() }
     val accent = colors.primary
     val rail = colors.onSurface.copy(alpha = 0.16f)
     val lightAt: () -> Float? = lightAt@{
@@ -123,9 +138,10 @@ private fun PathLine(path: SoundPath, onOtherOutput: (() -> Unit)?) {
         val eased = if (t < 0.5f) 4 * t * t * t else 1 - (-2 * t + 2).pow(3) / 2
         centers.first() + (centers.last() - centers.first()) * eased
     }
-    Column(Modifier.fillMaxWidth().drawBehind {
+    // One rounded card, as iOS groups rows; the line runs through the discs' centres, 14 dp in plus half a disc.
+    Column(Modifier.fillMaxWidth().background(colors.onSurface.copy(alpha = 0.075f), RoundedCornerShape(22.dp).continuous()).drawBehind {
         if (centers.any { it.isNaN() }) return@drawBehind
-        val x = 20.dp.toPx()
+        val x = 31.dp.toPx()
         var after = StopState.SAME
         for (i in 0 until stops.size - 1) {
             if (stops[i].state == StopState.CHANGED || stops[i].state == StopState.PROBLEM) after = stops[i].state
@@ -147,9 +163,9 @@ private fun PathLine(path: SoundPath, onOtherOutput: (() -> Unit)?) {
         val tail = 64.dp.toPx()
         drawLine(Brush.verticalGradient(listOf(Color.Transparent, light.copy(alpha = strength), Color.Transparent), y - tail, y + 8.dp.toPx()),
             Offset(x, y - tail), Offset(x, y + 8.dp.toPx()), 6.dp.toPx(), StrokeCap.Round)
-    }) {
+    }.padding(horizontal = 14.dp)) {
         stops.forEachIndexed { index, stop ->
-            StopRow(stop, Modifier.onPlaced { centers[index] = it.positionInParent().y + discCenter },
+            StopRow(stop, index == 0, Modifier.onPlaced { centers[index] = it.positionInParent().y + discCenter },
                 lift = {
                     val y = lightAt()
                     val center = centers.getOrNull(index)
@@ -161,7 +177,7 @@ private fun PathLine(path: SoundPath, onOtherOutput: (() -> Unit)?) {
 }
 
 @Composable
-private fun StopRow(stop: SoundStop, modifier: Modifier, lift: androidx.compose.ui.unit.Density.() -> Float, onOtherOutput: (() -> Unit)?) {
+private fun StopRow(stop: SoundStop, first: Boolean, modifier: Modifier, lift: androidx.compose.ui.unit.Density.() -> Float, onOtherOutput: (() -> Unit)?) {
     val colors = EvannaDesign.colorScheme
     var open by rememberSaveable(stop.kind) { mutableStateOf(false) }
     val canOpen = stop.details.isNotEmpty()
@@ -176,18 +192,22 @@ private fun StopRow(stop: SoundStop, modifier: Modifier, lift: androidx.compose.
         StopState.PROBLEM -> ProblemAmber to OnProblemAmber
         else -> colors.surfaceContainerHigh to colors.onSurface
     }
-    Row(modifier.fillMaxWidth()) {
-        Box(Modifier.padding(top = 12.dp).size(40.dp).graphicsLayer {
+    val separator = colors.onSurface.copy(alpha = 0.1f)
+    // iOS row separators start where the words start and run to the card's edge.
+    Row(modifier.fillMaxWidth().drawBehind {
+        if (!first) drawLine(separator, Offset(48.dp.toPx(), 0f), Offset(size.width + 14.dp.toPx(), 0f), 1.dp.toPx())
+    }) {
+        Box(Modifier.padding(top = 14.dp).size(34.dp).graphicsLayer {
             val l = lift()
             scaleX = (1f + 0.1f * l) * discPress; scaleY = scaleX
         }.background(disc, CircleShape).then(if (stop.state == StopState.SAME || stop.state == StopState.END)
             Modifier.drawBehind { drawCircle(colors.onSurface.copy(alpha = if (stop.state == StopState.END) 0.16f else 0.28f), style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx())) }
             else Modifier), contentAlignment = Alignment.Center) {
             Icon(stop.kind.icon(), contentDescription = null, tint = if (stop.state == StopState.END) colors.onSurfaceVariant else ink,
-                modifier = Modifier.size(20.dp))
+                modifier = Modifier.size(18.dp))
         }
         Column(Modifier.weight(1f).padding(start = 14.dp)) {
-            Row(Modifier.fillMaxWidth().heightIn(min = 64.dp)
+            Row(Modifier.fillMaxWidth().heightIn(min = 62.dp)
                 .graphicsLayer { scaleX = rowPress; scaleY = rowPress; transformOrigin = TransformOrigin(0f, 0.5f) }
                 .then(if (canOpen) Modifier.controlFocus(press, RoundedCornerShape(12.dp))
                     .clickable(press, indication = null, role = Role.Button, onClickLabel = if (open) "Hide details" else "Show details") { open = !open }
@@ -195,18 +215,17 @@ private fun StopRow(stop: SoundStop, modifier: Modifier, lift: androidx.compose.
                 .semantics { if (stop.state == StopState.CHANGED) stateDescription = "Changed" else if (stop.state == StopState.PROBLEM) stateDescription = "Problem" }
                 .padding(top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(stop.title, style = EvannaDesign.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        when (stop.state) {
-                            StopState.CHANGED -> Tag("Changed", colors.primary)
-                            StopState.PROBLEM -> Tag("Problem", ProblemAmber)
-                            else -> {}
-                        }
-                    }
+                    Text(stop.title, style = EvannaDesign.typography.titleMedium, fontWeight = FontWeight.Medium)
                     Text(stop.value, style = EvannaDesign.typography.bodyMedium, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
                 }
+                // The state reads as trailing text, as iOS lists show a value, not as a pill beside the title.
+                when (stop.state) {
+                    StopState.CHANGED -> Text("Changed", style = EvannaDesign.typography.bodyMedium, color = colors.primary, modifier = Modifier.padding(start = 8.dp))
+                    StopState.PROBLEM -> Text("Problem", style = EvannaDesign.typography.bodyMedium, color = ProblemAmber, modifier = Modifier.padding(start = 8.dp))
+                    else -> {}
+                }
                 if (canOpen) Icon(PlayerIcons.ChevronDown, contentDescription = null, tint = colors.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 8.dp).size(20.dp).graphicsLayer { rotationZ = turn })
+                    modifier = Modifier.padding(start = 6.dp).size(16.dp).graphicsLayer { rotationZ = turn })
             }
             if (onOtherOutput != null) Button(onClick = onOtherOutput, modifier = Modifier.padding(bottom = 8.dp),
                 colors = ActionColors(ProblemAmber, OnProblemAmber)) { Text("Pick another output") }
@@ -220,12 +239,6 @@ private fun StopRow(stop: SoundStop, modifier: Modifier, lift: androidx.compose.
             }
         }
     }
-}
-
-@Composable
-private fun Tag(text: String, color: Color) {
-    Text(text, style = EvannaDesign.typography.labelSmall, fontWeight = FontWeight.Bold, color = color,
-        modifier = Modifier.background(color.copy(alpha = 0.18f), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp))
 }
 
 private fun StopKind.icon(): ImageVector = when (this) {
