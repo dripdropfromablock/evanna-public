@@ -16,7 +16,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -35,7 +35,7 @@ import kotlin.math.roundToInt
 @Composable
 internal fun AudioOutputSheet(
     state: PlayerPresentation,
-    origin: Offset?,
+    origin: Rect?,
     onAndroid: () -> Unit,
     onUsbVolume: (Int) -> Unit,
     onUsbVolumeSet: (Float, Long) -> Unit,
@@ -47,22 +47,19 @@ internal fun AudioOutputSheet(
     val colors = EvannaDesign.colorScheme
     val rowShape = RoundedCornerShape(14.dp)
     val android = state.route == "ANDROID"
+    // A floating card that grows out of the control that opened it ([origin]), like Sound path.
     OutputSheet(
-        origin = origin,
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        shape = RoundedCornerShape(34.dp).continuous(),
         containerColor = colors.surfaceContainer.copy(alpha = 0.74f),
         scrimColor = Color.Black.copy(alpha = 0.56f),
-        dragHandle = {
-            Box(Modifier.padding(vertical = 10.dp).size(32.dp, 4.dp)
-                .background(colors.onSurfaceVariant.copy(alpha = 0.45f), CircleShape))
-        },
+        floating = true,
+        from = origin,
+        dragHandle = { close -> SheetHeader("Audio output", close) },
     ) {
         OutputVolumeKeys(onVolumeKey)
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Audio output", style = EvannaDesign.typography.titleMedium, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp).semantics { heading() })
             OutputRow("This phone", if (android) "Android system output" else "Phone or Bluetooth",
                 PlayerIcons.Phone, selected = android, enabled = state.connected && !android, onClick = onAndroid)
             usbOutputs()
@@ -139,7 +136,7 @@ internal val PlayerPresentation.androidVolumeBypassed: Boolean
 
 @Composable
 internal fun AndroidMediaVolume(enabled: Boolean, modifier: Modifier = Modifier, stepButtons: Boolean = false,
-    showLevel: Boolean = true, onOpenOutput: ((Offset?) -> Unit)? = null,
+    showLevel: Boolean = true, onOpenOutput: ((Rect?) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle

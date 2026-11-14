@@ -38,6 +38,7 @@ import androidx.compose.ui.geometry.isFinite
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.toRect
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -53,6 +54,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -124,6 +126,14 @@ internal fun HorizontalDivider(modifier: Modifier = Modifier, color: Color = Eva
     Box(modifier.fillMaxWidth().height(1.dp).background(color))
 }
 
+/** This layout's box on screen, for a card to grow out of; null when it is not on screen. */
+internal fun LayoutCoordinates.screenBox(): Rect? {
+    if (!isAttached) return null
+    val start = localToScreen(Offset.Zero)
+    val end = localToScreen(Offset(size.width.toFloat(), size.height.toFloat()))
+    return if (start.isFinite && end.isFinite) Rect(start, end) else null
+}
+
 /** The part of a morphing card that shows: [box] in the card's own pixels, with [radius] corners. */
 internal data class MorphClip(val box: Rect, val radius: Float) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
@@ -132,7 +142,8 @@ internal data class MorphClip(val box: Rect, val radius: Float) : Shape {
 
 private class MenuPosition(
     private val chevronInset: Int,
-    private val onOrigin: (TransformOrigin) -> Unit,
+    /** The button's box in the menu's own pixels: the menu grows out of it. */
+    private val onAnchor: (Rect) -> Unit,
 ) : PopupPositionProvider {
     override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection,
         popupContentSize: IntSize,
@@ -140,19 +151,16 @@ private class MenuPosition(
         val maxX = (windowSize.width - popupContentSize.width).coerceAtLeast(0)
         val maxY = (windowSize.height - popupContentSize.height).coerceAtLeast(0)
         val x = if (layoutDirection == LayoutDirection.Ltr) anchorBounds.right - popupContentSize.width else anchorBounds.left
-        val y = if (anchorBounds.bottom <= maxY || anchorBounds.top < popupContentSize.height) anchorBounds.bottom
-            else anchorBounds.top - popupContentSize.height
+        // As on iOS 26, the menu opens over its button, so the button can grow into it. Low on the screen it opens upwards.
+        val y = if (anchorBounds.top <= maxY) anchorBounds.top else anchorBounds.bottom - popupContentSize.height
         val position = IntOffset(x.coerceIn(0, maxX), y.coerceIn(0, maxY))
-        // Wide triggers have a chevron at the trailing edge. Icon buttons use their center.
-        val originX = when {
-            anchorBounds.width <= popupContentSize.width -> anchorBounds.center.x
-            layoutDirection == LayoutDirection.Ltr -> anchorBounds.right - chevronInset
-            else -> anchorBounds.left + chevronInset
+        // Wide triggers grow from their chevron at the trailing edge; icon buttons from the whole button.
+        val box = if (anchorBounds.width <= popupContentSize.width) anchorBounds.toRect() else {
+            val centerX = if (layoutDirection == LayoutDirection.Ltr) anchorBounds.right - chevronInset else anchorBounds.left + chevronInset
+            val half = anchorBounds.height / 2f
+            Rect(centerX - half, anchorBounds.top.toFloat(), centerX + half, anchorBounds.bottom.toFloat())
         }
-        onOrigin(TransformOrigin(
-            (originX - position.x).toFloat() / popupContentSize.width.coerceAtLeast(1),
-            (anchorBounds.center.y - position.y).toFloat() / popupContentSize.height.coerceAtLeast(1),
-        ))
+        onAnchor(box.translate(-position.x.toFloat(), -position.y.toFloat()))
         return position
     }
 }
@@ -198,22 +206,28 @@ internal fun DropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit, modif
         label = "dropdown progress") { if (it) 1f else 0f }
     if (visibility.isIdle && !visibility.currentState) return
 
-    var origin by remember { mutableStateOf(TransformOrigin.Center) }
+    var anchor by remember { mutableStateOf<Rect?>(null) }
     val chevronInset = with(LocalDensity.current) { 24.dp.roundToPx() }
-    val position = remember(chevronInset) { MenuPosition(chevronInset) { origin = it } }
+    val position = remember(chevronInset) { MenuPosition(chevronInset) { anchor = it } }
     Popup(position, onDismissRequest = { if (expanded) onDismissRequest() }, properties = PopupProperties(focusable = expanded)) {
         Surface(modifier.widthIn(min = 220.dp, max = 300.dp).width(IntrinsicSize.Max).heightIn(max = 420.dp)
             .graphicsLayer {
-                transformOrigin = origin
-                alpha = (progress * 2f).coerceIn(0f, 1f)
-                scaleX = 0.55f + 0.45f * progress
-                scaleY = scaleX
+                // The button grows into the menu, as the quality badge grows into Sound path: only the edges move.
+                val box = anchor
+                alpha = (progress / 0.08f).coerceIn(0f, 1f)
+                clip = box != null && progress < 1f
+                if (box != null && progress < 1f) {
+                    val e = progress.coerceIn(0f, 1f)
+                    val start = minOf(box.width, box.height) / 2f
+                    this.shape = MorphClip(lerp(box, Rect(Offset.Zero, size), e), start + (24.dp.toPx() - start) * e)
+                }
             }.then(if (expanded) Modifier else Modifier.clearAndSetSemantics {}.blockTouches()),
             shape = shape,
             color = EvannaDesign.colorScheme.surfaceContainerHigh.copy(alpha = MENU_SURFACE_ALPHA),
             border = border, shadowElevation = 16.dp) {
             CompositionLocalProvider(LocalMenuChecks provides checkmarks) {
-                Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp), content = content)
+                Column(Modifier.graphicsLayer { alpha = ((progress - 0.5f) / 0.5f).coerceIn(0f, 1f) }
+                    .verticalScroll(rememberScrollState()).padding(vertical = 8.dp), content = content)
             }
         }
     }
@@ -495,7 +509,7 @@ private fun AlertButtons(dismiss: (@Composable () -> Unit)?, confirm: @Composabl
 internal const val SHEET_FROST_TINT = 0.62f
 
 @Composable
-internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: Shape, containerColor: Color, scrimColor: Color,
+internal fun OutputSheet(onDismissRequest: () -> Unit, shape: Shape, containerColor: Color, scrimColor: Color,
     dragHandle: @Composable (close: () -> Unit) -> Unit, title: String = "Audio output", floating: Boolean = false,
     from: Rect? = null, content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -518,7 +532,6 @@ internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: S
     Dialog(close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val view = LocalView.current
         SideEffect { (view.parent as? DialogWindowProvider)?.window?.setDimAmount(0f) }
-        var sheetCenter by remember { mutableStateOf<Offset?>(null) }
         var offset by remember { mutableFloatStateOf(0f) }
         val threshold = with(LocalDensity.current) { 56.dp.toPx() }
         suspend fun settle(velocity: Float) {
@@ -556,8 +569,6 @@ internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: S
             // Floating, the card sits in the middle with a gap on every side instead of resting on the bottom edge.
             Box(Modifier.align(if (floating) Alignment.Center else Alignment.BottomCenter).statusBarsPadding()
                 .then(if (floating) Modifier.navigationBarsPadding().padding(12.dp) else Modifier).onGloballyPositioned {
-                val center = it.localToScreen(Offset(it.size.width / 2f, it.size.height / 2f))
-                sheetCenter = center.takeIf { it.isFinite }
                 it.localToScreen(Offset.Zero).takeIf { at -> at.isFinite }?.let { at -> sheetTopLeft = at }
             }) {
                 Surface(Modifier.widthIn(max = 640.dp).fillMaxWidth().graphicsLayer {
@@ -571,12 +582,10 @@ internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: S
                         alpha = (shown / 0.08f).coerceAtMost(1f)
                         return@graphicsLayer
                     }
-                    val center = sheetCenter
-                    val from = if (origin != null && center != null) origin - center else Offset(0f, size.height / 2f)
-                    translationX = from.x * (1f - shown)
-                    translationY = from.y * (1f - shown) + offset * shown
-                    scaleX = 0.26f + 0.74f * shown
-                    scaleY = 0.10f + 0.90f * shown
+                    // Nothing to grow out of: the card pops in where it is, a little small at first.
+                    translationY = offset * shown
+                    scaleX = 0.92f + 0.08f * shown
+                    scaleY = scaleX
                     alpha = shown
                 }.nestedScroll(scroll).then(if (closing) Modifier.clearAndSetSemantics {} else Modifier
                     .semantics { paneTitle = title; dismiss { close(); true } })

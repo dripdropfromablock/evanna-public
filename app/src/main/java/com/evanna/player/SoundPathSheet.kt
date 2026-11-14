@@ -65,7 +65,7 @@ private const val PULSE_TRAVEL_MS = 2800f
 internal fun SoundPathSheet(path: SoundPath?, onOtherOutput: (() -> Unit)?, onClose: () -> Unit, origin: Rect? = null) {
     val colors = EvannaDesign.colorScheme
     // A floating card that morphs out of [origin] (the quality badge), as iOS 26 turns a control into what it opens.
-    OutputSheet(origin = origin?.center, onDismissRequest = onClose, shape = RoundedCornerShape(34.dp).continuous(),
+    OutputSheet(onDismissRequest = onClose, shape = RoundedCornerShape(34.dp).continuous(),
         // Solid: Now Playing's words and controls must not show through the path's text.
         containerColor = colors.surfaceContainer, scrimColor = Color.Black.copy(alpha = 0.5f), floating = true, from = origin,
         dragHandle = { close -> SheetHeader("Sound path", close) }, title = "Sound path") {
@@ -88,7 +88,7 @@ internal fun SoundPathSheet(path: SoundPath?, onOtherOutput: (() -> Unit)?, onCl
 
 /** The card's top bar: a centred title and a round ✕, as on iOS sheets. It is also where a swipe down starts. */
 @Composable
-private fun SheetHeader(title: String, onClose: () -> Unit) {
+internal fun SheetHeader(title: String, onClose: () -> Unit) {
     val colors = EvannaDesign.colorScheme
     val press = remember { MutableInteractionSource() }
     Box(Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 14.dp)) {

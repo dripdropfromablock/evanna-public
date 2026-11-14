@@ -121,7 +121,7 @@ private val SmallCoverShape = RoundedCornerShape(5.dp)
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionError: String?, onBack: () -> Unit,
-    onLibrary: () -> Unit, onOutput: (Offset?) -> Unit, onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit,
+    onLibrary: () -> Unit, onOutput: (Rect?) -> Unit, onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit,
     onSeek: (String?, Long) -> Unit, onShuffle: () -> Unit, onRepeat: () -> Unit, onUsbVolume: (Int) -> Unit,
     loadLyrics: suspend (String) -> Lyrics?, onUsbVolumeSet: (Float, Long) -> Unit, onSleep: (SleepMode, Int) -> Unit,
     onFavorite: (String, Boolean) -> Unit, onSelect: (String) -> Unit, onMove: (String, String) -> Unit, onRemove: (String) -> Unit,
@@ -355,7 +355,7 @@ private fun CompactHeader(state: PlayerPresentation, cover: Bitmap?, more: @Comp
 private fun PlayerControls(state: PlayerPresentation, actionError: String?, page: PlayerPage, onPage: (PlayerPage) -> Unit,
     lyrics: LyricsLoad, onSeek: (String?, Long) -> Unit, onSignal: (Rect?) -> Unit, onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit,
     onUsbVolume: (Int) -> Unit, onUsbVolumeSet: (Float, Long) -> Unit, onSleep: (SleepMode, Int) -> Unit,
-    onOutput: (Offset?) -> Unit, outputSheetOpen: Boolean) {
+    onOutput: (Rect?) -> Unit, outputSheetOpen: Boolean) {
     val lyricsOn = page == PlayerPage.LYRICS
     val toggleLyrics = { onPage(if (lyricsOn) PlayerPage.SONG else PlayerPage.LYRICS) }
     val directUsb = state.route == "DIRECT_USB"
@@ -400,7 +400,10 @@ private fun PlayerControls(state: PlayerPresentation, actionError: String?, page
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp), showLevel = androidVolume, onOpenOutput = onOutput)
             else {
                 Spacer(Modifier.weight(1f))
-                StripButton(PlayerIcons.Output, outputSheetOpen, "Sound output") { onOutput(null) }
+                // Audio output grows out of this button.
+                var outputBox by remember { mutableStateOf<Rect?>(null) }
+                StripButton(PlayerIcons.Output, outputSheetOpen, "Sound output",
+                    modifier = Modifier.onGloballyPositioned { outputBox = it.screenBox() }) { onOutput(outputBox) }
                 Spacer(Modifier.weight(1f))
             }
             val queueOn = page == PlayerPage.QUEUE
@@ -457,7 +460,7 @@ internal fun shortSourceQuality(source: String): String {
 @Composable
 internal fun PillSlider(value: Float, onValueChange: (Float) -> Unit, onValueChangeFinished: () -> Unit, valueRange: ClosedFloatingPointRange<Float>,
     enabled: Boolean, description: String, modifier: Modifier = Modifier,
-    interaction: MutableInteractionSource = remember { MutableInteractionSource() }, onOpenOutput: ((Offset?) -> Unit)? = null,
+    interaction: MutableInteractionSource = remember { MutableInteractionSource() }, onOpenOutput: ((Rect?) -> Unit)? = null,
 ) {
     // Apple Music's scrubber: it thickens as soon as a finger lands, with a little bounce, and stretches a touch wider.
     val dragging by interaction.collectIsDraggedAsState()
@@ -541,12 +544,12 @@ private fun TransportButton(icon: ImageVector, size: Dp, description: String, en
  */
 @Composable
 private fun StripButton(icon: ImageVector, on: Boolean, description: String, enabled: Boolean = true,
-    onClick: () -> Unit,
+    modifier: Modifier = Modifier, onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val glass = glassLiftOn()
     val contrast = increaseContrastOn()
-    Box(Modifier.size(48.dp).controlFocus(interaction, CircleShape)
+    Box(modifier.size(48.dp).controlFocus(interaction, CircleShape)
         .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description; if (enabled) stateDescription = if (on) "On" else "Off" }, contentAlignment = Alignment.Center) {
         if (contrast) Box(Modifier.size(44.dp).contrastPlatter(CircleShape, on))
@@ -559,7 +562,7 @@ private fun StripButton(icon: ImageVector, on: Boolean, description: String, ena
 /** USB hardware volume: the same pill as the seek bar, sent once on release, with step buttons on each side. */
 @Composable
 internal fun UsbVolume(state: PlayerPresentation, onAdjust: (Int) -> Unit, onSet: (Float, Long) -> Unit,
-    onOpenOutput: ((Offset?) -> Unit)? = null,
+    onOpenOutput: ((Rect?) -> Unit)? = null,
 ) {
     val gain = state.usbVolume
     if (gain == null) {

@@ -21,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -61,7 +62,7 @@ internal fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modi
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f, onValueChangeFinished: (() -> Unit)? = null,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     thumb: (@Composable (SliderPosition) -> Unit)? = null, track: (@Composable (SliderPosition) -> Unit)? = null,
-    onOpenOutput: ((Offset?) -> Unit)? = null,
+    onOpenOutput: ((Rect?) -> Unit)? = null,
 ) {
     val colors = EvannaDesign.colorScheme
     val dark = LocalLookStyle.current.look.dark
@@ -78,10 +79,7 @@ internal fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modi
     val position = SliderPosition(value.coerceIn(valueRange), valueRange)
     var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     fun showOutput() {
-        val origin = coordinates?.takeIf { it.isAttached }?.let {
-            it.localToScreen(Offset(it.size.width / 2f, it.size.height / 2f))
-        }?.takeIf { it.isFinite }
-        openOutput?.invoke(origin)
+        openOutput?.invoke(coordinates?.screenBox())
     }
     var thumbWidth by remember { mutableIntStateOf(0) }
     fun commit(value: Float) {

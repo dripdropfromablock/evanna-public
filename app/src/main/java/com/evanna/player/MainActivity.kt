@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -352,8 +353,8 @@ class MainActivity : ComponentActivity() {
             EvannaTheme(look, accent) {
                 var licenseIndex by rememberSaveable { mutableStateOf<Int?>(null) }
                 var showOutput by rememberSaveable { mutableStateOf(false) }
-                var outputOrigin by remember { mutableStateOf<Offset?>(null) }
-                val openOutput: (Offset?) -> Unit = { origin ->
+                var outputOrigin by remember { mutableStateOf<Rect?>(null) }
+                val openOutput: (Rect?) -> Unit = { origin ->
                     outputOrigin = origin
                     refreshDevices()
                     showOutput = true
