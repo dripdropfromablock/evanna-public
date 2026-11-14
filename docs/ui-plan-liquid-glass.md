@@ -1,6 +1,6 @@
 # Evanna UI plan: Liquid Glass, Apple rules, BitChord lessons
 
-Status: phases 0–3 built (phase 3 on 2026-11-14). Written 2026-11-13.
+Status: phases 0–4 built (phases 3 and 4 on 2026-11-14). Written 2026-11-13.
 Each phase gets a mockup first, then code, then emulator and phone checks (same flow as the sound path sheet).
 
 ## 1. What Apple's Liquid Glass actually is
@@ -92,10 +92,10 @@ Glass costs GPU time, and the M30s already drops frames.
 3. Hairline scrubber that thickens under the finger (Now Playing and EQ). Built: Now Playing's bar thickens from the first touch and stretches a little; EQ band sliders keep their knobs (precision) but the track thickens and the knob lifts.
 4. "Lift into glass" on key controls while pressed (play/pause, quality badge), on top of the current sink. Built for Previous, Play/Pause, Next and the quality badge (`ui/GlassLift.kt`). Drawn, not sampled; off with Liquid glass off.
 
-### Phase 4 — Menus and sheets
-1. Popover menus that pop out of the button tapped (song "…", sort, add folder).
-2. Long-press lift menu for songs and albums (BitChord `HeldContextMenu`).
-3. Output sheet and sound path sheet: glass chrome, frosted still behind (BitChord `PlayerFrost`).
+### Phase 4 — Menus and sheets (built)
+1. Popover menus that pop out of the button tapped (song "…", sort, add folder). Built: every menu grows from its button with a small overshoot.
+2. Long-press lift menu for songs and albums (BitChord `HeldContextMenu`). Built for songs (`LiftMenu`): the row lifts on its page colour, the page blurs (a still) and dims. Albums have no menu yet, so none lifts.
+3. Output sheet and sound path sheet: glass chrome, frosted still behind (BitChord `PlayerFrost`). Built (`ui/Frost.kt`): a 1/8-size PixelCopy of the window, box-blurred once, under a thinner tint and a lit rim. Works on Android 11 too; off with glass off or Reduce transparency on.
 
 ### Phase 5 — Now Playing
 1. Clear glass for the round buttons over the cover, with a dimming layer.

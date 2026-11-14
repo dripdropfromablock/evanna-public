@@ -1,6 +1,7 @@
 package com.evanna.player.ui
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloat
@@ -8,7 +9,9 @@ import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -24,9 +27,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.isFinite
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -141,6 +150,7 @@ private val MenuItemInset = 6.dp
 private val MenuShape = RoundedCornerShape(24.dp).continuous()
 private val MenuRowShape = RoundedCornerShape(16.dp).continuous()
 private val MenuCheckWidth = 28.dp
+private val MenuPop = spring<Float>(dampingRatio = 0.72f, stiffness = 420f)
 /** iOS menu text: 17 sp with slightly tight tracking. */
 private val MenuText = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.2).sp)
 
@@ -166,7 +176,8 @@ internal fun DropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit, modif
     val visibility = remember { MutableTransitionState(false) }
     visibility.targetState = expanded
     val transition = rememberTransition(visibility, label = "dropdown")
-    val progress by transition.animateFloat(transitionSpec = { if (targetState) EvannaMotion.enter else EvannaMotion.exit },
+    // iOS menus pop out of the button: under-damped on the way in (the small overshoot is the pop), quick on the way out.
+    val progress by transition.animateFloat(transitionSpec = { if (targetState) MenuPop else EvannaMotion.exit },
         label = "dropdown progress") { if (it) 1f else 0f }
     if (visibility.isIdle && !visibility.currentState) return
 
@@ -177,8 +188,8 @@ internal fun DropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit, modif
         Surface(modifier.widthIn(min = 220.dp, max = 300.dp).width(IntrinsicSize.Max).heightIn(max = 420.dp)
             .graphicsLayer {
                 transformOrigin = origin
-                alpha = progress
-                scaleX = 0.72f + 0.28f * progress
+                alpha = (progress * 2f).coerceIn(0f, 1f)
+                scaleX = 0.55f + 0.45f * progress
                 scaleY = scaleX
             }.then(if (expanded) Modifier else Modifier.clearAndSetSemantics {}.blockTouches()),
             shape = shape,
@@ -228,6 +239,142 @@ internal fun MenuSectionTitle(text: String) {
     val start = MenuItemInset + 10.dp + if (LocalMenuChecks.current) MenuCheckWidth else 6.dp
     Text(text, style = EvannaDesign.typography.labelMedium, fontSize = 13.sp, color = EvannaDesign.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = start, end = 16.dp, top = 4.dp, bottom = 2.dp).semantics { heading() })
+}
+
+/** A held row, as [LiftMenu] lifts it: its picture, and where it was on screen. */
+internal class Lifted(val picture: ImageBitmap, val bounds: Rect)
+
+private val LiftCardShape = RoundedCornerShape(20.dp).continuous()
+private val LiftPlatePad = 8.dp
+private val LiftPictureShape = RoundedCornerShape(12.dp).continuous()
+private val LiftMenuWidth = 260.dp
+
+private fun mix(from: Float, to: Float, t: Float) = from + (to - from) * t
+
+/**
+ * Apple Music's long-press menu (after BitChord's `HeldContextMenu`, GPL-3.0; docs/ui-plan-liquid-glass.md phase 4): the
+ * held row pops off the list on a plate, the page behind blurs and dims, and the actions hang off the row. [lifted] is
+ * non-null while the menu is wanted; the last one is kept so the row can settle back into the list. With glass off or
+ * Reduce transparency on, the page only dims. [onPicture] runs when the lifted row itself is tapped.
+ */
+@Composable
+internal fun LiftMenu(lifted: Lifted?, onDismiss: () -> Unit, onPicture: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
+    var last by remember { mutableStateOf<Lifted?>(null) }
+    SideEffect { if (lifted != null) last = lifted }
+    val open = lifted != null
+    val item = lifted ?: last ?: return
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(open) {
+        if (open) progress.animateTo(1f, MenuPop)
+        else {
+            progress.animateTo(0f, tween(220, easing = FastOutSlowInEasing))
+            last = null
+        }
+    }
+    val palette = EvannaDesign.colorScheme
+    val dark = LocalLookStyle.current.look.dark
+    val frost = frostOn()
+    val rim = menuRim()
+    val dismiss by rememberUpdatedState(onDismiss)
+    Dialog({ if (open) dismiss() }, DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        val view = LocalView.current
+        SideEffect { (view.parent as? DialogWindowProvider)?.window?.setDimAmount(0f) }
+        val still = rememberWindowStill(frost, radius = 4)
+        // The blur pushes the page back, so the dimming can be light; without it the dimming does all the work.
+        val scrim = Color.Black.copy(alpha = when {
+            still != null && dark -> 0.30f
+            still != null -> 0.10f
+            dark -> 0.62f
+            else -> 0.36f
+        })
+        // The row lifts on the page colour it was drawn on, as an iOS cell does, so it looks exactly as it did in the list.
+        val plate = palette.background
+        val insets = WindowInsets.safeDrawing
+        var overlayTopLeft by remember { mutableStateOf(Offset.Zero) }
+        Layout(content = {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = progress.value.coerceIn(0f, 1f) }
+                .drawBehind {
+                    still?.let { drawStill(it, overlayTopLeft) }
+                    drawRect(scrim)
+                }
+                .clickable(remember { MutableInteractionSource() }, indication = null, enabled = open) { dismiss() }
+                .semantics { contentDescription = "Close menu" })
+            Box(Modifier.shadow(20.dp, LiftCardShape, clip = false).clip(LiftCardShape).background(plate).border(rim, LiftCardShape)
+                .then(if (onPicture != null) Modifier.clickable(enabled = open, onClick = onPicture) else Modifier)
+                .padding(LiftPlatePad)) {
+                Image(item.picture, contentDescription = null, contentScale = ContentScale.FillBounds,
+                    modifier = Modifier.fillMaxSize().clip(LiftPictureShape))
+            }
+            Surface(Modifier.pointerInput(Unit) {}, shape = MenuShape, color = palette.surfaceContainerHigh, border = rim,
+                shadowElevation = 16.dp) {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp), content = content)
+            }
+        }, modifier = Modifier.fillMaxSize().onGloballyPositioned { coords ->
+            coords.localToScreen(Offset.Zero).takeIf { it.isFinite }?.let { overlayTopLeft = it }
+        }.then(if (open) Modifier else Modifier.blockTouches())) { measurables, constraints ->
+            val width = constraints.maxWidth
+            val height = constraints.maxHeight
+            val margin = 12.dp.roundToPx()
+            val gap = 10.dp.roundToPx()
+            val pad = LiftPlatePad.roundToPx()
+            val top = insets.getTop(this) + 8.dp.roundToPx()
+            val bottom = height - insets.getBottom(this) - 8.dp.roundToPx()
+            val page = measurables[0].measure(Constraints.fixed(width, height))
+            // The plate at the row's own size, so the picture on it is pixel for pixel the row; a full-width row is then
+            // scaled down just enough to clear the screen edges.
+            val itemBounds = item.bounds.translate(-overlayTopLeft)
+            val plateW = (itemBounds.width.roundToInt() + pad * 2).coerceAtLeast(1)
+            val plateH = (itemBounds.height.roundToInt() + pad * 2).coerceAtLeast(1)
+            val card = measurables[1].measure(Constraints.fixed(plateW, plateH))
+            val liftScale = ((width - margin * 2f) / plateW).coerceAtMost(1f)
+            val shownW = plateW * liftScale
+            val shownH = plateH * liftScale
+            val menuWidth = LiftMenuWidth.roundToPx().coerceAtMost(width - margin * 2).coerceAtLeast(0)
+            val menu = measurables[2].measure(Constraints(minWidth = menuWidth, maxWidth = menuWidth,
+                maxHeight = (bottom - top - shownH.roundToInt() - gap).coerceAtLeast(0)))
+            // The row stays where it was held when the menu fits below (or else above) it; only when neither fits does it
+            // climb to make room.
+            val shownLeft = (itemBounds.center.x - shownW / 2f)
+                .coerceIn(margin.toFloat(), (width - margin - shownW).coerceAtLeast(margin.toFloat()))
+            var shownTop = (itemBounds.center.y - shownH / 2f).coerceIn(top.toFloat(), (bottom - shownH).coerceAtLeast(top.toFloat()))
+            val below = when {
+                shownTop + shownH + gap + menu.height <= bottom -> true
+                shownTop - gap - menu.height >= top -> false
+                else -> { shownTop = (bottom - menu.height - gap - shownH).coerceAtLeast(top.toFloat()); true }
+            }
+            val centerX = shownLeft + shownW / 2f
+            val centerY = shownTop + shownH / 2f
+            // The menu hangs off the row's nearer edge.
+            val alignEnd = centerX > width / 2f
+            val menuX = (if (alignEnd) shownLeft + shownW - menuWidth else shownLeft).roundToInt()
+                .coerceIn(margin, (width - margin - menuWidth).coerceAtLeast(margin))
+            val menuY = if (below) (shownTop + shownH + gap).roundToInt() else (shownTop - gap - menu.height).roundToInt()
+            val fromX = itemBounds.center.x - centerX
+            val fromY = itemBounds.center.y - centerY
+            layout(width, height) {
+                page.place(0, 0)
+                card.placeWithLayer((centerX - plateW / 2f).roundToInt(), (centerY - plateH / 2f).roundToInt()) {
+                    val p = progress.value
+                    scaleX = mix(1f, liftScale, p)
+                    scaleY = scaleX
+                    translationX = mix(fromX, 0f, p)
+                    translationY = mix(fromY, 0f, p)
+                    // Quick: it starts over the very row it copies, so only the plate and shadow are new.
+                    alpha = (p * 3f).coerceIn(0f, 1f)
+                }
+                menu.placeWithLayer(menuX, menuY) {
+                    val p = progress.value
+                    alpha = ((p - 0.1f) / 0.9f).coerceIn(0f, 1f)
+                    // Grows out of the corner nearest the row, and travels with it.
+                    transformOrigin = TransformOrigin(if (alignEnd) 1f else 0f, if (below) 0f else 1f)
+                    scaleX = mix(0.55f, 1f, p)
+                    scaleY = scaleX
+                    translationX = mix(fromX, 0f, p)
+                    translationY = mix(fromY, 0f, p)
+                }
+            }
+        }
+    }
 }
 
 /** Menu rows for a set of options; the chosen one carries a checkmark. Use in a menu opened with checkmarks = true. */
@@ -327,6 +474,9 @@ private fun AlertButtons(dismiss: (@Composable () -> Unit)?, confirm: @Composabl
     }
 }
 
+/** A frosted sheet's tint over its blurred still: thin enough for the colours under it to show, thick enough for text. */
+internal const val SHEET_FROST_TINT = 0.62f
+
 @Composable
 internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: Shape, containerColor: Color, scrimColor: Color,
     dragHandle: @Composable () -> Unit, title: String = "Audio output", content: @Composable ColumnScope.() -> Unit,
@@ -339,6 +489,8 @@ internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: S
         progress.animateTo(if (closing) 0f else 1f, if (closing) EvannaMotion.exit else EvannaMotion.enter)
         if (closing) dismissSheet()
     }
+    val frost = frostOn()
+    val rim = menuRim()
     Dialog(close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val view = LocalView.current
         SideEffect { (view.parent as? DialogWindowProvider)?.window?.setDimAmount(0f) }
@@ -371,12 +523,16 @@ internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: S
                 }
             }
         }
+        // With glass on, the sheet is frosted glass: a blurred still of the page under it, a thinner tint and a lit rim.
+        val still = rememberWindowStill(frost)
+        var sheetTopLeft by remember { mutableStateOf(Offset.Zero) }
         Box(Modifier.fillMaxSize()) {
             Box(Modifier.matchParentSize().graphicsLayer { alpha = progress.value }
                 .background(scrimColor).clickable(onClick = close).semantics { contentDescription = "Dismiss ${title.lowercase()}" })
             Box(Modifier.align(Alignment.BottomCenter).statusBarsPadding().onGloballyPositioned {
                 val center = it.localToScreen(Offset(it.size.width / 2f, it.size.height / 2f))
                 sheetCenter = center.takeIf { it.isFinite }
+                it.localToScreen(Offset.Zero).takeIf { at -> at.isFinite }?.let { at -> sheetTopLeft = at }
             }) {
                 Surface(Modifier.widthIn(max = 640.dp).fillMaxWidth().graphicsLayer {
                     val shown = progress.value
@@ -388,8 +544,11 @@ internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: S
                     scaleY = 0.10f + 0.90f * shown
                     alpha = shown
                 }.nestedScroll(scroll).then(if (closing) Modifier.clearAndSetSemantics {} else Modifier
-                    .semantics { paneTitle = title; dismiss { close(); true } }),
-                    shape = shape, color = containerColor, border = evannaHairline(0.6f)) {
+                    .semantics { paneTitle = title; dismiss { close(); true } })
+                    // The still moves with the sheet while it opens or is dragged; it lines up again at rest.
+                    .then(if (still == null) Modifier else Modifier.clip(shape).drawBehind { drawStill(still, sheetTopLeft) }),
+                    shape = shape, color = if (still == null) containerColor else containerColor.copy(alpha = SHEET_FROST_TINT),
+                    border = if (still == null) evannaHairline(0.6f) else rim) {
                     Column(Modifier.navigationBarsPadding().imePadding()) {
                         Box(Modifier.fillMaxWidth().draggable(rememberDraggableState { delta -> offset = (offset + delta).coerceAtLeast(0f) },
                             orientation = Orientation.Vertical, onDragStopped = { velocity -> settle(velocity) }),

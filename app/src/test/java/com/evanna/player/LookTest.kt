@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.toArgb
 import com.evanna.player.ui.MENU_SURFACE_ALPHA
+import com.evanna.player.ui.SHEET_FROST_TINT
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -83,7 +84,9 @@ class LookTest {
                 val playerMenu = player.surfaceContainerHigh.copy(alpha = MENU_SURFACE_ALPHA).compositeOver(backdrop)
                 val outputSheet = player.surfaceContainer.copy(alpha = 0.74f).compositeOver(backdrop)
                 val selectedOutput = player.surfaceContainerHighest.copy(alpha = 0.72f).compositeOver(outputSheet)
-                for (surface in listOf(playerMenu, selectedOutput, player.surfaceContainerHigh)) {
+                // A frosted sheet: its thinner tint over the blurred still of the player.
+                val frostedSheet = player.surfaceContainer.copy(alpha = SHEET_FROST_TINT).compositeOver(backdrop)
+                for (surface in listOf(playerMenu, selectedOutput, player.surfaceContainerHigh, frostedSheet)) {
                     assertTrue("$look $seed overlay text over $surface",
                         contrastRatio(player.onSurfaceVariant.toArgb(), surface.toArgb()) >= 4.5)
                 }

@@ -16,6 +16,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.isFinite
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -46,15 +55,35 @@ internal fun LibrarySongRow(
     val canAct = song.available && enabled
     val context = LocalContext.current
     val personal = remember(context) { UserData.database(context) }
+    // The "…" button opens the menu off itself; a long press lifts the row and hangs the same menu off it.
     var menu by remember(song.id) { mutableStateOf(false) }
+    var lifted by remember(song.id) { mutableStateOf<Lifted?>(null) }
     var favorite by remember(song.id) { mutableStateOf<Boolean?>(null) }
+    val menuUp = menu || lifted != null
+    val picture = rememberGraphicsLayer()
+    val row = remember { RowPlace() }
+    val captures = rememberCoroutineScope()
     fun openMenu() {
         favorite = null
         menu = true
     }
-    LaunchedEffect(menu, canAct, song.id) {
-        if (!canAct) menu = false
-        else if (menu) personal.changes.collectLatest {
+    fun lift() {
+        val coords = row.coords?.takeIf { it.isAttached }
+        val at = coords?.localToScreen(Offset.Zero)
+        if (coords == null || at == null || !at.isFinite) return openMenu()
+        favorite = null
+        captures.launch {
+            val image = try { picture.toImageBitmap() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
+            if (image == null) openMenu() else lifted = Lifted(image, Rect(at, coords.size.toSize()))
+        }
+    }
+    fun close() {
+        menu = false
+        lifted = null
+    }
+    LaunchedEffect(menuUp, canAct, song.id) {
+        if (!canAct) close()
+        else if (menuUp) personal.changes.collectLatest {
             favorite = try {
                 withContext(Dispatchers.IO) { personal.isFavorite(song.id) }
             } catch (cancelled: CancellationException) {
@@ -71,8 +100,14 @@ internal fun LibrarySongRow(
         }
     }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        // The row records its own drawing, inside the press dip, so the lifted picture is the row at full size.
         Row(Modifier.weight(1f).clip(EvannaDesign.shapes.medium)
-            .combinedClickable(enabled = canAct, onLongClickLabel = "More options", onLongClick = ::openMenu, onClick = onPlay)
+            .combinedClickable(enabled = canAct, onLongClickLabel = "More options", onLongClick = ::lift, onClick = onPlay)
+            .onGloballyPositioned { row.coords = it }
+            .drawWithContent {
+                picture.record { this@drawWithContent.drawContent() }
+                drawLayer(picture)
+            }
             .alpha(if (song.available) 1f else 0.5f).padding(vertical = 6.dp, horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically, content = content)
         IconButton(onClick = addToQueue, enabled = canAct,
@@ -83,36 +118,41 @@ internal fun LibrarySongRow(
             IconButton(onClick = ::openMenu, enabled = canAct, modifier = Modifier.size(48.dp)) {
                 Icon(PlayerIcons.More, "More options for ${song.title}")
             }
-            LibrarySongMenu(expanded = menu && canAct, onDismiss = { menu = false }, favorite = favorite,
-                canOpenAlbum = onOpenAlbum != null,
-                onPlayNext = {
-                    menu = false
-                    onPlayNext(song.id) { success ->
-                        LocalLibrary.status = if (success) "${song.title} will play next."
-                        else "The song could not be added. Check folder access and the queue limit."
-                    }
-                },
-                onQueue = { menu = false; addToQueue() },
-                onFavorite = {
-                    val selected = favorite != true
-                    menu = false
-                    scope.launch {
-                        val success = withContext(NonCancellable + Dispatchers.IO) { personal.setFavorite(song.id, selected) }
-                        LocalLibrary.status = if (success) "Favorites updated." else "The favorite could not be changed."
-                    }
-                },
-                onPlaylist = { menu = false; onPlaylistSong(song.id) },
-                onAlbum = { menu = false; onOpenAlbum?.invoke() },
-                onTrackInfo = { menu = false; onTrackInfo() },
-            )
+            val items: @Composable ColumnScope.() -> Unit = {
+                SongMenuItems(favorite = favorite, canOpenAlbum = onOpenAlbum != null,
+                    onPlayNext = {
+                        close()
+                        onPlayNext(song.id) { success ->
+                            LocalLibrary.status = if (success) "${song.title} will play next."
+                            else "The song could not be added. Check folder access and the queue limit."
+                        }
+                    },
+                    onQueue = { close(); addToQueue() },
+                    onFavorite = {
+                        val selected = favorite != true
+                        close()
+                        scope.launch {
+                            val success = withContext(NonCancellable + Dispatchers.IO) { personal.setFavorite(song.id, selected) }
+                            LocalLibrary.status = if (success) "Favorites updated." else "The favorite could not be changed."
+                        }
+                    },
+                    onPlaylist = { close(); onPlaylistSong(song.id) },
+                    onAlbum = { close(); onOpenAlbum?.invoke() },
+                    onTrackInfo = { close(); onTrackInfo() },
+                )
+            }
+            DropdownMenu(menu && canAct, { menu = false }, Modifier.width(272.dp), content = items)
+            LiftMenu(lifted?.takeIf { canAct }, onDismiss = { lifted = null }, onPicture = { close(); onPlay() }, content = items)
         }
     }
 }
 
+/** Where a song row was last placed, kept outside composition: it changes on every scroll frame. */
+private class RowPlace { var coords: LayoutCoordinates? = null }
+
+/** The song actions: three quick ones side by side on top, as in iOS context menus, then rows with their icons at the end. */
 @Composable
-private fun LibrarySongMenu(
-    expanded: Boolean,
-    onDismiss: () -> Unit,
+private fun SongMenuItems(
     favorite: Boolean?,
     canOpenAlbum: Boolean,
     onPlayNext: () -> Unit,
@@ -122,8 +162,7 @@ private fun LibrarySongMenu(
     onAlbum: () -> Unit,
     onTrackInfo: () -> Unit,
 ) {
-    // iOS context menu: the three quick actions side by side on top, then rows with their icons at the end.
-    DropdownMenu(expanded, onDismiss, Modifier.width(272.dp)) {
+    Column {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             SongMenuAction("Play next", PlayerIcons.Next, onPlayNext, Modifier.weight(1f))
