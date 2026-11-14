@@ -24,6 +24,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
@@ -46,7 +47,9 @@ import androidx.compose.ui.unit.dp
 import com.evanna.player.EvannaDesign
 import com.evanna.player.LocalLookStyle
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 internal class SliderPosition(val value: Float, val valueRange: ClosedFloatingPointRange<Float>) {
     val fraction: Float get() = if (valueRange.endInclusive > valueRange.start)
@@ -191,16 +194,27 @@ internal fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modi
     }
 }
 
+/**
+ * iOS's activity indicator for work of unknown length: eight gray spokes, the brightest stepping round once every
+ * 0.8 s and the ones behind it fading. It sits in the middle of the room it is given.
+ */
 @Composable
-internal fun LinearProgressIndicator(modifier: Modifier = Modifier) {
-    val colors = EvannaDesign.colorScheme
-    val movement = rememberInfiniteTransition(label = "loading")
-    val fraction by movement.animateFloat(-0.3f, 1f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "loading segment")
-    Canvas(modifier.height(4.dp).progressSemantics()) {
-        val radius = CornerRadius(size.height / 2f)
-        drawRoundRect(colors.surfaceContainerHighest, cornerRadius = radius)
-        val start = fraction.coerceAtLeast(0f) * size.width
-        val end = (fraction + 0.3f).coerceIn(0f, 1f) * size.width
-        drawRoundRect(colors.primary, topLeft = Offset(start, 0f), size = Size(end - start, size.height), cornerRadius = radius)
+internal fun ActivityIndicator(modifier: Modifier = Modifier) {
+    val ink = EvannaDesign.colorScheme.onSurfaceVariant
+    val turn = rememberInfiniteTransition(label = "loading")
+    val step by turn.animateFloat(0f, SPOKES.toFloat(), infiniteRepeatable(tween(800, easing = LinearEasing)), label = "spinner step")
+    Box(modifier.heightIn(min = 32.dp).progressSemantics(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+        Canvas(Modifier.size(20.dp)) {
+            val lead = step.toInt() % SPOKES
+            val middle = Offset(size.width / 2f, size.height / 2f)
+            for (spoke in 0 until SPOKES) {
+                val angle = Math.toRadians(spoke * 360.0 / SPOKES - 90.0)
+                val way = Offset(cos(angle).toFloat(), sin(angle).toFloat())
+                val behind = Math.floorMod(lead - spoke, SPOKES)
+                drawLine(ink.copy(alpha = 1f - behind * 0.1f), middle + way * (size.width * 0.24f), middle + way * (size.width * 0.46f),
+                    strokeWidth = size.width * 0.11f, cap = StrokeCap.Round)
+            }
+        }
     }
 }
+private const val SPOKES = 8

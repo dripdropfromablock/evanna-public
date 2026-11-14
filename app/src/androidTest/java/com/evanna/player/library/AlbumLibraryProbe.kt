@@ -35,6 +35,11 @@ internal object AlbumLibraryProbe {
                 check(db.page(filter = filter.copy(albumArtist = null)).songs.single().id == id(350))
                 check(db.groups(LibraryGroupKind.ALBUM).groups.filter { it.value == album.title }.map { it.albumArtist }.toSet() == setOf("Artist A", "Artist B", null))
                 check(db.groups(LibraryGroupKind.ALBUM).groups.single { it.value == "Mix" }.let { it.count == 2 && it.artist == "Various" })
+                val listed = db.groups(LibraryGroupKind.ALBUM).groups
+                check(listed.indices.all { db.albumIndex(AlbumIdentity(listed[it].value, listed[it].albumArtist)) == it }) {
+                    "Album index disagrees with the album list"
+                }
+                check(db.albumIndex(AlbumIdentity("No such album", null)) == null)
                 check(db.albumSummary(album) == AlbumSummary("Artist A", null, true))
                 check(db.albumSummary(AlbumIdentity("Mix", "Various")) == AlbumSummary("Various", null, false))
                 check(db.albumArtworkSongs(album).all { it in expected } && db.albumArtworkSongs(album).size == 4)

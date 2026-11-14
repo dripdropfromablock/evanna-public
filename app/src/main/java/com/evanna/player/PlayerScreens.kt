@@ -31,16 +31,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import com.evanna.player.ui.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -95,7 +85,7 @@ internal fun routeLabel(route: String) = when (route) { "ANDROID" -> "Android au
 internal fun ScreenHeader(title: String, onBack: () -> Unit) {
     Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(top = 4.dp)) {
         IconButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterStart).semantics { contentDescription = "Back" }) {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null, tint = EvannaDesign.colorScheme.primary,
+            Icon(PlayerIcons.ChevronLeft, contentDescription = null, tint = EvannaDesign.colorScheme.primary,
                 modifier = Modifier.size(32.dp))
         }
         Text(title, style = EvannaDesign.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -327,7 +317,7 @@ internal fun MiniPlayer(state: PlayerPresentation, cover: Bitmap?, onOpen: () ->
             else {
                 IconButton(onClick = onPlayPause, enabled = state.connected && state.canPlayPause,
                     modifier = Modifier.size(48.dp).semantics { contentDescription = if (state.playing) "Pause playback" else "Play playback" }) {
-                    Icon(if (state.playing) PlayerIcons.Pause else Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(26.dp))
+                    Icon(if (state.playing) PlayerIcons.Pause else PlayerIcons.Play, contentDescription = null, modifier = Modifier.size(26.dp))
                 }
                 if (!compact) IconButton(onClick = onNext, enabled = canNext,
                     modifier = Modifier.size(48.dp).semantics { contentDescription = "Next" }) {

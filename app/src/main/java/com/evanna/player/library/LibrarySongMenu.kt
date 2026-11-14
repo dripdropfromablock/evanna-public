@@ -12,10 +12,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,7 +35,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -66,8 +61,6 @@ internal fun LibrarySongRow(
     song: LibrarySong, enabled: Boolean, scope: CoroutineScope, onPlay: () -> Unit,
     onAdd: (String, (Boolean) -> Unit) -> Unit, onPlayNext: (String, (Boolean) -> Unit) -> Unit,
     onPlaylistSong: (String) -> Unit, onTrackInfo: () -> Unit, onOpenAlbum: (() -> Unit)? = null,
-    /** The "+" (Add to queue) button beside "…". */
-    queueButton: Boolean = true,
     /** Swipe right for Play next, left for Add to queue. */
     swipeToQueue: Boolean = false,
     content: @Composable RowScope.() -> Unit,
@@ -161,10 +154,6 @@ internal fun LibrarySongRow(
             }
             .alpha(if (song.available) 1f else 0.5f).padding(vertical = 6.dp, horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically, content = content)
-        if (queueButton) IconButton(onClick = addToQueue, enabled = canAct,
-            modifier = Modifier.size(48.dp).semantics { contentDescription = "Add ${song.title} to queue" }) {
-            Icon(Icons.Filled.Add, contentDescription = null)
-        }
         Box {
             IconButton(onClick = ::openMenu, enabled = canAct, modifier = Modifier.size(48.dp)) {
                 Icon(PlayerIcons.More, "More options for ${song.title}")
@@ -238,7 +227,7 @@ private fun SongMenuItems(
             horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             SongMenuAction("Play next", PlayerIcons.Next, onPlayNext, Modifier.weight(1f))
             SongMenuAction("Add to queue", PlayerIcons.Queue, onQueue, Modifier.weight(1f))
-            SongMenuAction("Favorite", if (favorite == true) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+            SongMenuAction("Favorite", if (favorite == true) PlayerIcons.HeartFill else PlayerIcons.Heart,
                 onFavorite, Modifier.weight(1f), enabled = favorite != null, highlighted = favorite == true,
                 actionLabel = if (favorite == true) "Remove from favorites" else "Add to favorites")
         }

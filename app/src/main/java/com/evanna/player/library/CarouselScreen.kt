@@ -32,6 +32,7 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,8 +42,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -146,6 +145,23 @@ internal fun albumLength(ms: Long): String {
     }
 }
 
+/**
+ * Where the carousel last came to rest. The album itself is kept, not only its place in the list: a scan that adds or
+ * drops an album ahead of it shifts every place, and the place alone would then open on a neighbour.
+ */
+internal data class CarouselPlace(val album: AlbumIdentity?, val index: Int)
+
+private val CarouselPlaceSaver = listSaver<CarouselPlace, Any?>(
+    save = { listOf(it.index, it.album != null, it.album?.title, it.album?.albumArtist) },
+    restore = { CarouselPlace(if (it[1] == true) AlbumIdentity(it[2] as String?, it[3] as String?) else null, it[0] as Int) },
+)
+
+/** The album to open on: where the saved album sits now ([found]), or its old place once it is gone. */
+internal fun carouselStartAlbum(place: CarouselPlace, found: Int?, count: Int): Int =
+    (found ?: place.index).coerceIn(0, (count - 1).coerceAtLeast(0))
+
+private class CarouselCatalog(val albums: LibraryGroupPage, val start: Int)
+
 internal fun carouselAlbumIndex(page: Int, count: Int): Int = Math.floorMod(page, count)
 
 internal fun carouselStartPage(index: Int, count: Int): Int =
@@ -198,17 +214,25 @@ internal fun CarouselScreen(
     val revision = LocalLibrary.scansFinished
     val active = !LocalCovered.current
     var retry by remember { mutableIntStateOf(0) }
-    var lastAlbum by rememberSaveable { mutableIntStateOf(0) }
-    var catalog by remember(revision, retry) { mutableStateOf<Result<LibraryGroupPage>?>(null) }
+    var place by rememberSaveable(stateSaver = CarouselPlaceSaver) { mutableStateOf(CarouselPlace(null, 0)) }
+    var catalog by remember(revision, retry) { mutableStateOf<Result<CarouselCatalog>?>(null) }
     LaunchedEffect(active, revision, retry) {
-        if (active && catalog == null) catalog = readCarousel {
-            withContext(Dispatchers.IO) { database.groups(LibraryGroupKind.ALBUM, limit = CAROUSEL_ALBUM_BATCH) }
+        if (active && catalog == null) {
+            val saved = place
+            catalog = readCarousel {
+                withContext(Dispatchers.IO) {
+                    val albums = database.groups(LibraryGroupKind.ALBUM, limit = CAROUSEL_ALBUM_BATCH)
+                    val found = saved.album?.let(database::albumIndex)
+                    CarouselCatalog(albums, carouselStartAlbum(saved, found, albums.total))
+                }
+            }
         }
     }
-    val albums = catalog?.getOrNull()
-    if (albums != null && albums.total > 0) {
+    val loaded = catalog?.getOrNull()
+    val albums = loaded?.albums
+    if (loaded != null && albums != null && albums.total > 0) {
         key(revision, albums.total) {
-            CarouselBrowser(database, artwork, albums, revision, active, lastAlbum, { lastAlbum = it },
+            CarouselBrowser(database, artwork, albums, revision, active, loaded.start, { place = it },
                 bottomInset, onSelect, onAdd, onPlayNext, onPlaylistSong, nowPlaying)
         }
     } else {
@@ -235,13 +259,13 @@ internal fun CarouselScreen(
 @Composable
 private fun CarouselBrowser(
     database: LibraryDatabase, artwork: EmbeddedArtwork, albums: LibraryGroupPage, revision: Int,
-    active: Boolean, initialAlbum: Int, onSettled: (Int) -> Unit, bottomInset: Dp,
+    active: Boolean, initialAlbum: Int, onSettled: (CarouselPlace) -> Unit, bottomInset: Dp,
     onSelect: (LibraryContextRequest, (Boolean) -> Unit) -> Unit,
     onAdd: (String, (Boolean) -> Unit) -> Unit, onPlayNext: (String, (Boolean) -> Unit) -> Unit,
     onPlaylistSong: (String) -> Unit, nowPlaying: NowPlayingMark?,
 ) {
     val count = albums.total
-    val pager = rememberPagerState(initialPage = carouselStartPage(initialAlbum.coerceIn(0, count - 1), count)) {
+    val pager = rememberPagerState(initialPage = carouselStartPage(initialAlbum, count)) {
         if (count == 1) 1 else Int.MAX_VALUE
     }
     val scope = rememberCoroutineScope()
@@ -343,8 +367,9 @@ private fun CarouselBrowser(
             if (!rolling) (pages.keys - wanted).forEach { pages.remove(it) }
         }
     }
-    LaunchedEffect(active, settledIndex) {
-        if (active) onSettled(settledIndex)
+    LaunchedEffect(active, settledIndex, centeredAlbum) {
+        // Saved once the album has loaded, so a page still loading never wipes the album kept before it.
+        if (active && centeredAlbum != null) onSettled(CarouselPlace(centeredAlbum, settledIndex))
     }
     // A tick each time a new album comes to rest in the middle.
     val haptics = LocalHapticFeedback.current
@@ -761,20 +786,8 @@ private fun CarouselTracks(
                 Text(albumInfoLine(selection.summary.year, total, lengthMs), style = EvannaDesign.typography.bodySmall,
                     color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 // Play is the one tinted control, in the cover's colour; Shuffle stays neutral.
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { playAlbum(LibraryContextAction.PLAY_FIRST) }, enabled = canPlay,
-                        colors = ActionColors(colors.primary, colors.onPrimary), modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Play", fontWeight = FontWeight.SemiBold)
-                    }
-                    Button(onClick = { playAlbum(LibraryContextAction.SHUFFLE) }, enabled = canPlay,
-                        colors = ActionColors(colors.onSurface.copy(alpha = 0.12f), colors.onSurface), modifier = Modifier.weight(1f)) {
-                        Icon(PlayerIcons.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Shuffle", fontWeight = FontWeight.SemiBold)
-                    }
-                }
+                PlayShuffleButtons(enabled = canPlay, onPlay = { playAlbum(LibraryContextAction.PLAY_FIRST) },
+                    onShuffle = { playAlbum(LibraryContextAction.SHUFFLE) }, modifier = Modifier.padding(top = 8.dp))
             }
         }
         itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
@@ -786,7 +799,7 @@ private fun CarouselTracks(
             LibrarySongRow(song, enabled = active && !busy, scope = scope, onPlay = {
                 onSelect(LibraryContextRequest(filter, song.id, LibraryContextAction.PLAY_FROM)) { if (!it) onPlaybackFailed() }
             }, onAdd = onAdd, onPlayNext = onPlayNext, onPlaylistSong = onPlaylistSong, onTrackInfo = { onTrackInfo(song) },
-                queueButton = false, swipeToQueue = true) {
+                swipeToQueue = true) {
                 // The track number, or moving bars on the song that is playing; the album cover is already above.
                 Box(Modifier.width(28.dp).heightIn(min = 40.dp), contentAlignment = Alignment.Center) {
                     if (playingHere) PlayingBars(nowPlaying?.playing == true, colors.primary,

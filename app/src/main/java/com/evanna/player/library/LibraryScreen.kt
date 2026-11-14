@@ -11,14 +11,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.sp
 import com.evanna.player.EvannaType
@@ -50,7 +42,6 @@ import androidx.compose.ui.semantics.heading
 
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -324,17 +315,13 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
         verticalArrangement = Arrangement.spacedBy(8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(top = if (albumDetail) 0.dp else if (libraryHome) 6.dp else 8.dp, bottom = 24.dp + bottomInset, end = barRoom)) {
         // Grid items get a fixed full width; the Box lets the button keep its own width at the start.
+        // iOS back buttons name the page they return to: the artist an album was opened from, or the list.
+        val backLabel = parentKind?.let { parentName.ifBlank { null } } ?: view.label
         if (kind != null && !albumDetail) line { Box {
-            TextButton(onClick = { back() }, modifier = Modifier.heightIn(min = 48.dp),
-                colors = ButtonDefaults.textButtonColors(EvannaDesign.colorScheme.onSurface)) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Back to ${parentKind?.name?.lowercase() ?: view.label.lowercase()}")
-            }
+            BackButton(backLabel, ::back)
         } }
         if (albumDetail) line(edgeToEdge = true) {
             val colors = EvannaDesign.colorScheme
-            val ink = ButtonDefaults.textButtonColors(colors.onSurface)
             val dark = LocalLookStyle.current.look.dark
             val barScrim = if (dark) Color.Black else Color.White
             val backInk = if (dark) Color.White else Color.Black
@@ -348,12 +335,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                         0f to barScrim.copy(alpha = 0.85f), 0.25f to barScrim.copy(alpha = 0.65f),
                         0.62f to Color.Transparent, 1f to colors.background,
                     )))
-                    TextButton(onClick = { back() }, modifier = Modifier.statusBarsPadding().padding(start = 12.dp),
-                        colors = ButtonDefaults.textButtonColors(backInk)) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Back to ${parentKind?.name?.lowercase() ?: view.label.lowercase()}")
-                    }
+                    BackButton(backLabel, ::back, Modifier.statusBarsPadding().padding(start = 4.dp), tint = backInk)
                 }
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                     Text(groupName, style = EvannaDesign.typography.headlineSmall, fontWeight = FontWeight.Bold,
@@ -366,28 +348,11 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                             style = EvannaDesign.typography.bodyMedium,
                             color = muted, modifier = Modifier.padding(bottom = 8.dp))
                     }
-                    val play: @Composable (Modifier) -> Unit = { actionModifier ->
-                        Button(onClick = { onSelect(LibraryContextRequest(filter,null,LibraryContextAction.PLAY_FIRST)) { selectionFailed=!it } },
-                            colors = ActionColors(colors.surfaceContainerHighest.copy(alpha = 0.74f), colors.onSurface),
-                            enabled = !busy && !loading && (shown?.total ?: 0)>0, modifier = actionModifier.heightIn(min=48.dp)) {
-                            Icon(Icons.Filled.PlayArrow,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Play album")
-                        }
-                    }
-                    val shuffle: @Composable (Modifier) -> Unit = { actionModifier ->
-                        OutlinedButton(onClick = { onSelect(LibraryContextRequest(filter,null,LibraryContextAction.SHUFFLE)) { selectionFailed=!it } },
-                            colors = ink, enabled = !busy && !loading && (shown?.total ?: 0)>0, modifier = actionModifier.heightIn(min=48.dp)) {
-                            Icon(PlayerIcons.Shuffle,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Shuffle album")
-                        }
-                    }
-                    if (stackAlbumActions) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        play(Modifier.fillMaxWidth())
-                        shuffle(Modifier.fillMaxWidth())
-                    } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        play(Modifier.weight(1f))
-                        shuffle(Modifier.weight(1f))
-                    }
+                    PlayShuffleButtons(enabled = !busy && !loading && (shown?.total ?: 0) > 0, stacked = stackAlbumActions,
+                        onPlay = { onSelect(LibraryContextRequest(filter, null, LibraryContextAction.PLAY_FIRST)) { selectionFailed = !it } },
+                        onShuffle = { onSelect(LibraryContextRequest(filter, null, LibraryContextAction.SHUFFLE)) { selectionFailed = !it } })
                     TextButton(onClick = { onPlaylistAlbum(filter) }, enabled = !busy && !loading && (shown?.total ?: 0) > 0,
-                        modifier = Modifier.heightIn(min = 48.dp), colors = ink) { Text("Add album to playlist") }
+                        modifier = Modifier.heightIn(min = 48.dp)) { Text("Add album to playlist") }
                 }
             }
         } else line {
@@ -434,9 +399,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
             }
         }
         if (searchMode) line {
-            val shape = EvannaDesign.shapes.extraLarge
-            val colors = EvannaDesign.colorScheme
-            TextField(value = filter.search, onValueChange = ::updateSearch,
+            SearchField(value = filter.search, onValueChange = ::updateSearch,
                 placeholder = when {
                     kind != null -> "Search songs in this collection"
                     view == LibraryView.FOLDERS -> "Filter songs in a folder"
@@ -444,16 +407,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                     view == LibraryView.TRACKS -> "Search songs by title, artist or album"
                     else -> "Search ${view.label.lowercase()}"
                 },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = if (filter.search.isNotEmpty()) ({
-                    IconButton(onClick = { updateSearch("") }, modifier = Modifier.semantics { contentDescription = "Clear search" }) {
-                        Icon(Icons.Filled.Clear, contentDescription = null)
-                    }
-                }) else null,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
-                shape = shape,
-                colors = fieldColors(colors.surfaceContainerHighest, colors.surfaceContainerHighest),
                 modifier = Modifier.fillMaxWidth())
         }
         if (libraryHome || (searchMode && kind == null && !searchHome)) line {
@@ -536,12 +490,11 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
             }
         }
         if(kind in listOf(LibraryGroupKind.ARTIST,LibraryGroupKind.GENRE,LibraryGroupKind.COMPOSER)) {
-            line {Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                Button(onClick={onSelect(LibraryContextRequest(filter,null,LibraryContextAction.PLAY_FIRST)){selectionFailed=!it}},
-                    enabled=!busy && !loading && (shown?.total ?: 0)>0,modifier=Modifier.heightIn(min=48.dp)){Text("Play all")}
-                OutlinedButton(onClick={onSelect(LibraryContextRequest(filter,null,LibraryContextAction.SHUFFLE)){selectionFailed=!it}},
-                    enabled=!busy && !loading && (shown?.total ?: 0)>0,modifier=Modifier.heightIn(min=48.dp)){Text("Shuffle")}
-            }}
+            line {
+                PlayShuffleButtons(enabled = !busy && !loading && (shown?.total ?: 0) > 0, stacked = stackAlbumActions,
+                    onPlay = { onSelect(LibraryContextRequest(filter, null, LibraryContextAction.PLAY_FIRST)) { selectionFailed = !it } },
+                    onShuffle = { onSelect(LibraryContextRequest(filter, null, LibraryContextAction.SHUFFLE)) { selectionFailed = !it } })
+            }
             if(kind==LibraryGroupKind.ARTIST)line {ArtistAlbums(value,search,revision,!busy) {group ->
                 open(LibraryGroupKind.ALBUM,group.value,group.value ?: "Unknown album",group.albumArtist)
             }}
@@ -670,8 +623,8 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                 }
             }
             if (shown.total == 0 && !loading && shown.roots.isEmpty() && !searchMode && kind == null && view != LibraryView.FOLDERS) line { Box {
-                FilledTonalButton(onClick = { showMusicFolders = true }, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Button(onClick = { showMusicFolders = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Icon(PlayerIcons.Plus, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Manage music folders")
                 }
@@ -687,5 +640,48 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
     // As in the mockup the bar sits 2 dp from the screen edge, 14 dp into the page margin, with the letters 16 dp in.
     if(alphabetic && shown?.total!=0)AlphabeticIndex({rowsTop.intValue},
         Modifier.align(Alignment.TopEnd).offset(x=14.dp).padding(bottom=bottomInset), slim = searchMode) {jump=it}
+    }
+}
+
+/** An iOS back button: a chevron and the name of the page it returns to, in the accent colour or [tint]. */
+@Composable
+private fun BackButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier,
+    tint: Color = EvannaDesign.colorScheme.primary,
+) {
+    TextButton(onClick = onClick, modifier = modifier.heightIn(min = 48.dp), colors = ButtonDefaults.textButtonColors(tint)) {
+        Icon(PlayerIcons.ChevronLeft, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(2.dp))
+        Text(label, style = EvannaDesign.typography.bodyLarge, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 240.dp).clearAndSetSemantics { contentDescription = "Back to $label" })
+    }
+}
+
+/** Play in the accent colour and Shuffle in gray, side by side, or one above the other when [stacked]. */
+@Composable
+internal fun PlayShuffleButtons(enabled: Boolean, onPlay: () -> Unit, onShuffle: () -> Unit, modifier: Modifier = Modifier,
+    stacked: Boolean = false,
+) {
+    val colors = EvannaDesign.colorScheme
+    val play: @Composable (Modifier) -> Unit = { size ->
+        Button(onClick = onPlay, enabled = enabled, colors = ActionColors(colors.primary, colors.onPrimary), modifier = size) {
+            Icon(PlayerIcons.Play, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Play", fontWeight = FontWeight.SemiBold)
+        }
+    }
+    val shuffle: @Composable (Modifier) -> Unit = { size ->
+        Button(onClick = onShuffle, enabled = enabled, colors = ActionColors(colors.onSurface.copy(alpha = 0.12f), colors.onSurface),
+            modifier = size) {
+            Icon(PlayerIcons.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Shuffle", fontWeight = FontWeight.SemiBold)
+        }
+    }
+    if (stacked) Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        play(Modifier.fillMaxWidth())
+        shuffle(Modifier.fillMaxWidth())
+    } else Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        play(Modifier.weight(1f))
+        shuffle(Modifier.weight(1f))
     }
 }

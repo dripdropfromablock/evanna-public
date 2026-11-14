@@ -10,9 +10,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Check
 import com.evanna.player.ui.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -131,8 +128,8 @@ internal fun OutputRow(title: String, subtitle: String, icon: ImageVector, selec
             Text(title, style = EvannaDesign.typography.bodyMedium, fontWeight = FontWeight.Medium)
             Text(subtitle, style = EvannaDesign.typography.bodySmall, color = colors.onSurfaceVariant)
         }
-        if (selected) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-        else if (enabled) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null,
+        if (selected) Icon(PlayerIcons.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = colors.primary)
+        else if (enabled) Icon(PlayerIcons.ChevronRight, contentDescription = null,
             modifier = Modifier.size(16.dp), tint = colors.onSurfaceVariant)
     }
 }

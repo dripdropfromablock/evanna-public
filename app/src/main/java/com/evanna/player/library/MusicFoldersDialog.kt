@@ -47,7 +47,7 @@ internal fun MusicFoldersDialog(onDismiss: () -> Unit) {
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 when {
                     loadFailed -> item { Text("Couldn't load music folders.") }
-                    roots == null -> item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                    roots == null -> item { ActivityIndicator(Modifier.fillMaxWidth()) }
                     roots.orEmpty().isEmpty() -> item { Text("Add a folder from your phone or SD card.") }
                 }
                 items(roots.orEmpty(), key = { it.uri }) { root ->

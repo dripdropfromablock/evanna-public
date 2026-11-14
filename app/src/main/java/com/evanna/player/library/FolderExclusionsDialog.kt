@@ -41,10 +41,10 @@ internal fun FolderExclusionsDialog(root:LibraryRoot,onDismiss:()->Unit) {
         LazyColumn(Modifier.fillMaxWidth().heightIn(max=360.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             item {Text("Excluded songs disappear from this library folder. Music files and saved personal lists stay on your device.")}
             item {Text(LocalLibrary.status,style=EvannaDesign.typography.bodySmall)}
-            if(busy)item {LinearProgressIndicator(Modifier.fillMaxWidth())}
+            if(busy)item {ActivityIndicator(Modifier.fillMaxWidth())}
             item {Text(path.lastOrNull()?.name ?: root.name,style=EvannaDesign.typography.titleMedium,modifier=Modifier.semantics {heading()})}
             if(path.isNotEmpty())item {TextButton(onClick={path=path.dropLast(1)},enabled=!busy,modifier=Modifier.heightIn(min=48.dp)){Text("Back to parent folder")}}
-            if(shown==null && !failed)item {LinearProgressIndicator(Modifier.fillMaxWidth())}
+            if(shown==null && !failed)item {ActivityIndicator(Modifier.fillMaxWidth())}
             if(failed)item {Column {
                 Text("Folders could not be read. Reconnect folder access and try again.")
                 TextButton(onClick={retry++},modifier=Modifier.heightIn(min=48.dp)){Text("Retry folders")}

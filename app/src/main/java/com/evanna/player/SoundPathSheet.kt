@@ -15,8 +15,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -207,7 +205,7 @@ private fun StopRow(stop: SoundStop, modifier: Modifier, lift: androidx.compose.
                     }
                     Text(stop.value, style = EvannaDesign.typography.bodyMedium, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
                 }
-                if (canOpen) Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = colors.onSurfaceVariant,
+                if (canOpen) Icon(PlayerIcons.ChevronDown, contentDescription = null, tint = colors.onSurfaceVariant,
                     modifier = Modifier.padding(start = 8.dp).size(20.dp).graphicsLayer { rotationZ = turn })
             }
             if (onOtherOutput != null) Button(onClick = onOtherOutput, modifier = Modifier.padding(bottom = 8.dp),

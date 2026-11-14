@@ -4,7 +4,6 @@ import android.content.Intent
 import android.os.Build
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -15,13 +14,20 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.evanna.player.ActionRow
+import com.evanna.player.LocalLookStyle
 import com.evanna.player.ScreenBackHandler
+import com.evanna.player.SettingsCell
+import com.evanna.player.SettingsLink
+import com.evanna.player.SettingsSection
+import com.evanna.player.SwitchRow
 import kotlinx.coroutines.*
 import java.time.Instant
 
 @Composable
-internal fun CrashReportsScreen(onBack: () -> Unit) {
+internal fun CrashReportsScreen(onBack: () -> Unit, bottomInset: Dp = 0.dp) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var reports by remember { mutableStateOf<List<Incident>>(emptyList()) }
@@ -45,41 +51,56 @@ internal fun CrashReportsScreen(onBack: () -> Unit) {
     ScreenBackHandler(true) { if (selected != null) { selected = null; preview = null } else onBack() }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         com.evanna.player.ScreenHeader("Diagnostics") { if (selected != null) { selected = null; preview = null } else onBack() }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Save reports on this device", modifier = Modifier.weight(1f))
-            Switch(checked = recording, onCheckedChange = {
-                recording = it; CrashRecorder.setEnabled(it)
-                status = if (it) "Recording enabled for new events." else "Recording disabled. Existing reports remain until deleted or expired."
-            })
-        }
-        Text("No automatic uploads. Private media details and arbitrary exception messages are omitted.", style = EvannaDesign.typography.bodySmall)
-        Text(if (Build.VERSION.SDK_INT >= 31) "System/native traces are included only when available and safely parsed."
-            else if (Build.VERSION.SDK_INT >= 30) "Android exit reasons are supported. Native stacks need Android 12 or newer."
-            else "Only JVM crashes and unknown previous exits can be recorded on this Android version.", style = EvannaDesign.typography.bodySmall)
-        if (status.isNotEmpty()) Text(status)
         val report = reports.firstOrNull { it.id == selected }
         if (selected == null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { task { refresh(); status = "History refreshed." } }, enabled = !busy) { Text("Refresh") }
-                OutlinedButton(onClick = { task {
-                    withContext(Dispatchers.IO) { CrashRecorder.store.deleteAll() }; refresh()
-                    status = if (reports.isEmpty()) "Reports deleted." else "Some reports could not be deleted."
-                } }, enabled = !busy && reports.isNotEmpty()) { Text("Delete all") }
-            }
-            if (reports.isEmpty()) Text(if (busy) "Loading reports…" else "No saved reports.")
-            LazyColumn(state = reportsScroll, modifier = Modifier.weight(1f)) {
-                items(reports, key = { it.id }) { incident ->
-                    TextButton(onClick = { selected = incident.id; preview = null; status = "" }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                        Column(Modifier.fillMaxWidth()) { Text(incident.kind.label()); Text("${Instant.ofEpochMilli(incident.timestamp)} · UTC", style = EvannaDesign.typography.bodySmall) }
+            // The same inset groups as Settings: the switch with its notes, the saved reports, then the list actions.
+            val notes = listOf("No automatic uploads. Private media details and arbitrary exception messages are omitted.",
+                if (Build.VERSION.SDK_INT >= 31) "System/native traces are included only when available and safely parsed."
+                else if (Build.VERSION.SDK_INT >= 30) "Android exit reasons are supported. Native stacks need Android 12 or newer."
+                else "Only JVM crashes and unknown previous exits can be recorded on this Android version.")
+            LazyColumn(state = reportsScroll, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(24.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp + bottomInset)) {
+                item(key = "recording") {
+                    SettingsSection(footer = (listOfNotNull(status.ifEmpty { null }) + notes).joinToString("\n\n")) {
+                        row {
+                            SwitchRow("Save reports on this device", checked = recording) {
+                                recording = it; CrashRecorder.setEnabled(it)
+                                status = if (it) "Recording enabled for new events." else "Recording disabled. Existing reports remain until deleted or expired."
+                            }
+                        }
+                    }
+                }
+                item(key = "reports") {
+                    SettingsSection("Saved reports") {
+                        if (reports.isEmpty()) row { SettingsCell { Text(if (busy) "Loading reports…" else "No saved reports.",
+                            color = EvannaDesign.colorScheme.onSurfaceVariant) } }
+                        for (incident in reports) row(incident.id) {
+                            SettingsLink(incident.kind.label(), subtitle = "${Instant.ofEpochMilli(incident.timestamp)} · UTC") {
+                                selected = incident.id; preview = null; status = ""
+                            }
+                        }
+                    }
+                }
+                item(key = "actions") {
+                    SettingsSection {
+                        row { ActionRow("Refresh", enabled = !busy) { task { refresh(); status = "History refreshed." } } }
+                        row {
+                            ActionRow("Delete all", enabled = !busy && reports.isNotEmpty(), destructive = true) { task {
+                                withContext(Dispatchers.IO) { CrashRecorder.store.deleteAll() }; refresh()
+                                status = if (reports.isEmpty()) "Reports deleted." else "Some reports could not be deleted."
+                            } }
+                        }
                     }
                 }
             }
         } else if (report == null) {
             Text("This report is unavailable. It may have expired or been deleted.")
         } else {
+            if (status.isNotEmpty()) Text(status)
             Text(report.kind.label(), style = EvannaDesign.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { task { withContext(Dispatchers.IO) { CrashRecorder.store.delete(report.id) }; selected = null; preview = null; refresh() } }, enabled = !busy) { Text("Delete") }
+                OutlinedButton(onClick = { task { withContext(Dispatchers.IO) { CrashRecorder.store.delete(report.id) }; selected = null; preview = null; refresh() } },
+                    enabled = !busy, colors = ButtonDefaults.textButtonColors(AppleColors.red(LocalLookStyle.current.look.dark))) { Text("Delete") }
                 if (preview == null) Button(onClick = { preview = report }, enabled = !busy) { Text("Preview export") }
                 else Button(onClick = { task {
                     val snapshot = checkNotNull(preview)

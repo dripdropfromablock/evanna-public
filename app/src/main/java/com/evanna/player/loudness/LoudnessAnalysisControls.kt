@@ -33,7 +33,7 @@ internal fun LoudnessAnalysisControls() {
             },style=RowTitleStyle)
             if(progress.checked>0)Text("${progress.checked} checked · ${progress.measured} measured · ${progress.cached} already saved · ${progress.changed} changed · ${progress.failed} unavailable",
                 style=RowNoteStyle,color=muted)
-            if(active)LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical=4.dp))
+            if(active)ActivityIndicator(Modifier.fillMaxWidth().padding(vertical=4.dp))
         } }
         row(key="action") {
             if(active)ActionRow("Cancel analysis",onClick=LibraryLoudnessAnalysis::cancel)

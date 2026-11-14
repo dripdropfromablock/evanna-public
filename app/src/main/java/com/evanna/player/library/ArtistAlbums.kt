@@ -94,7 +94,7 @@ internal fun ArtistAlbums(artist:String?,search:String,revision:Int,enabled:Bool
             if(failed) {
                 Text("Albums could not be read. Your library was kept.")
                 TextButton(onClick={retry++},modifier=Modifier.heightIn(min=48.dp)){Text("Retry albums")}
-            }else if(loaded!=offset)LinearProgressIndicator(Modifier.fillMaxWidth())
+            }else if(loaded!=offset)ActivityIndicator(Modifier.fillMaxWidth())
             LazyRow(Modifier.fillMaxWidth(),state=scroll,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                 items(groups,key={AlbumIdentity(it.value,it.albumArtist).key}) {group ->
                     LibraryAlbumCard(group,revision,Modifier.width(156.dp),enabled){onOpen(group)}

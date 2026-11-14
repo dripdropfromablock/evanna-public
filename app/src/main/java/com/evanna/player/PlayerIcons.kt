@@ -1,6 +1,7 @@
 package com.evanna.player
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -8,6 +9,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathBuilder
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 /** Player icons that material-icons-core lacks. Plain shapes drawn here; Icon tints them. */
 internal object PlayerIcons {
@@ -223,6 +227,46 @@ internal object PlayerIcons {
     val Refresh = icon("Refresh") {
         thin(2f) { moveTo(19.5f, 12f); arcToRelative(7.5f, 7.5f, 0f, true, true, -2.2f, -5.3f) }
         thin(2f) { moveTo(17.9f, 2.9f); lineTo(17.5f, 6.9f); lineTo(13.5f, 6.6f) }
+    }
+    /** Back (chevron.left). */
+    val ChevronLeft = icon("Chevron left") { thin(2.6f) { moveTo(15f, 5f); lineTo(8f, 12f); lineTo(15f, 19f) } }
+    val ChevronUp = icon("Chevron up") { thin(2.6f) { moveTo(5f, 15.5f); lineTo(12f, 8.5f); lineTo(19f, 15.5f) } }
+    val ChevronDown = icon("Chevron down") { thin(2.6f) { moveTo(5f, 8.5f); lineTo(12f, 15.5f); lineTo(19f, 8.5f) } }
+    /** A play triangle with softened corners (play.fill). */
+    val Play = icon("Play") {
+        path(fill = ink, stroke = ink, strokeLineWidth = 2f, strokeLineJoin = StrokeJoin.Round) {
+            moveTo(7.5f, 4.8f); lineTo(19.2f, 12f); lineTo(7.5f, 19.2f); close()
+        }
+    }
+    private fun PathBuilder.heart() {
+        moveTo(12f, 20.2f)
+        curveTo(12f, 20.2f, 3f, 14.6f, 3f, 8.7f)
+        curveTo(3f, 6f, 5.1f, 3.9f, 7.7f, 3.9f)
+        curveTo(9.5f, 3.9f, 11.1f, 4.9f, 12f, 6.4f)
+        curveTo(12.9f, 4.9f, 14.5f, 3.9f, 16.3f, 3.9f)
+        curveTo(18.9f, 3.9f, 21f, 6f, 21f, 8.7f)
+        curveTo(21f, 14.6f, 12f, 20.2f, 12f, 20.2f)
+        close()
+    }
+    /** Favorite, off (heart). */
+    val Heart = icon("Heart") { thin(2f) { heart() } }
+    /** Favorite, on (heart.fill). */
+    val HeartFill = icon("Heart filled") { path(fill = ink) { heart() } }
+    /** A filled cog with a round hole (gearshape.fill): the Settings tab. */
+    val Gear = icon("Gear") {
+        path(fill = ink, pathFillType = PathFillType.EvenOdd) {
+            fun at(radius: Float, degrees: Float) = (degrees * PI / 180).let { 12f + radius * cos(it).toFloat() to 12f + radius * sin(it).toFloat() }
+            for (tooth in 0 until 8) {
+                val middle = tooth * 45f
+                listOf(8.3f to middle - 16f, 10.7f to middle - 8.5f, 10.7f to middle + 8.5f, 8.3f to middle + 16f)
+                    .forEachIndexed { index, (radius, degrees) ->
+                        val (x, y) = at(radius, degrees)
+                        if (tooth == 0 && index == 0) moveTo(x, y) else lineTo(x, y)
+                    }
+            }
+            close()
+            moveTo(15.4f, 12f); arcToRelative(3.4f, 3.4f, 0f, true, true, -6.8f, 0f); arcToRelative(3.4f, 3.4f, 0f, true, true, 6.8f, 0f); close()
+        }
     }
     /** A heartbeat line: signal checks (waveform.path.ecg). */
     val Pulse = icon("Pulse") { thin(2f) { moveTo(2.5f, 12.5f); horizontalLineTo(7f); lineTo(9.25f, 6.5f); lineTo(13f, 18f); lineTo(15.5f, 10f); lineTo(17f, 12.5f); horizontalLineTo(21.5f) } }

@@ -5,9 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
 import com.evanna.player.EvannaDesign
+import com.evanna.player.PlayerIcons
 import com.evanna.player.ui.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -62,7 +61,7 @@ internal fun PersonalSongsScreen(view:PersonalView,onBack:()->Unit,onPlay:(Strin
             Button(onClick={onPlay(null,false){if(!it)message="No available songs could start. Check output, access and Strict conversion permission."}},enabled=shown.isNotEmpty(),modifier=Modifier.heightIn(min=48.dp)){Text(if(view==PersonalView.FAVORITES)"Play favorites" else "Play list")}
             OutlinedButton(onClick={onPlay(null,true){if(!it)message="This list could not start."}},enabled=shown.isNotEmpty(),modifier=Modifier.heightIn(min=48.dp)){Text(if(view==PersonalView.FAVORITES)"Shuffle favorites" else "Shuffle list")}
         }}
-        if(loaded!=request && failed!=request)item {LinearProgressIndicator(Modifier.fillMaxWidth())}
+        if(loaded!=request && failed!=request)item {ActivityIndicator(Modifier.fillMaxWidth())}
         if(shown.isEmpty() && loaded==request)item {Text(if(view==PersonalView.FAVORITES)"No favorites yet. Use the heart in Now Playing or a song's menu." else "No qualifying plays yet. Listen to songs in your library to build this list.")}
         items(shown,key={it.first.id}) {(personal,song)->Column {
             val id=personal.id
@@ -75,7 +74,7 @@ internal fun PersonalSongsScreen(view:PersonalView,onBack:()->Unit,onPlay:(Strin
                 try {if(!withContext(NonCancellable+Dispatchers.IO){store.setFavorite(id,false)})message="The favorite could not be changed."}
                 finally {removing=null}
             }}},enabled=removing==null,modifier=Modifier.heightIn(min=48.dp).semantics {contentDescription="Remove ${song?.title ?: "unavailable song"} from favorites"}) {
-                Icon(Icons.Filled.Favorite, contentDescription = null, modifier = Modifier.size(16.dp))
+                Icon(PlayerIcons.HeartFill, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Remove favorite")
             }

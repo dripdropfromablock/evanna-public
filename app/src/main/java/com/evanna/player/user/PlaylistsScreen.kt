@@ -114,7 +114,7 @@ internal fun PlaylistsScreen(onBack:()->Unit,onPlay:(Long,Long,Boolean,Int,(Bool
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
         item {ScreenHeader(if(adding)"Add to playlist" else selected?.takeIf {it.id==selectedId}?.name ?: "Playlists") {if(selectedId!=null)selectedId=null else onBack()}}
         message?.let {item {Text(it,style=EvannaDesign.typography.bodyMedium)}}
-        if(!loaded || busy)item {LinearProgressIndicator(Modifier.fillMaxWidth())}
+        if(!loaded || busy)item {ActivityIndicator(Modifier.fillMaxWidth())}
         item {TextButton(onClick={revision++},enabled=!busy,modifier=Modifier.heightIn(min=48.dp)){Text("Reload playlists")}}
         if(selectedId==null) {
             item {Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {

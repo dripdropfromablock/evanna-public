@@ -149,6 +149,14 @@ internal class LibraryDatabase(context: Context, name: String = "library.db",pri
     fun groups(kind: LibraryGroupKind, search: String = "", limit: Int = 100, offset: Int = 0,sort:LibrarySort=LibrarySort.TITLE): LibraryGroupPage {
         return groupPage(kind,LibraryFilter(search),limit,offset,sort)
     }
+    /** Where [album] sits in the full album list in title order, as [groups] pages it; null once it is gone. */
+    fun albumIndex(album: AlbumIdentity): Int? {
+        val (query, arguments) = groupQuery(LibraryGroupKind.ALBUM, LibraryFilter(), LibrarySort.TITLE)
+        readableDatabase.rawQuery(query, arguments.toTypedArray()).use { c ->
+            while (c.moveToNext()) if (c.stringOrNull(0) == album.title && c.stringOrNull(3) == album.albumArtist) return c.position
+        }
+        return null
+    }
     fun albumsForArtist(artist:String?,search:String="",limit:Int=100,offset:Int=0):LibraryGroupPage =
         groupPage(LibraryGroupKind.ALBUM,LibraryFilter(search,LibraryGroupKind.ARTIST,artist),limit,offset,LibrarySort.YEAR)
 

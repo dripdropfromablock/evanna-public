@@ -39,9 +39,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import com.evanna.player.ui.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -413,7 +410,7 @@ class MainActivity : ComponentActivity() {
                     PlayerScreen.APPEARANCE, PlayerScreen.SETTINGS_TOOLS -> SettingsScreen(shown, ::back, dockInset, openNotices)
                     PlayerScreen.DECODE -> LocalDecodeScreen(onBack = ::back)
                     PlayerScreen.EQUALIZER -> com.evanna.player.equalizer.EqualizerScreen(::back,dockInset)
-                    PlayerScreen.DIAGNOSTICS -> CrashReportsScreen(onBack = ::back)
+                    PlayerScreen.DIAGNOSTICS -> CrashReportsScreen(onBack = ::back, bottomInset = dockInset)
                     PlayerScreen.NOTICES -> Column(Modifier.fillMaxSize()) {
                         val entry = licenseIndex?.let(licenseFiles::get)
                         // Hoisted so Back from a license restores the list's exact scroll spot.
@@ -539,8 +536,8 @@ class MainActivity : ComponentActivity() {
                         if (!keyboard) CompositionLocalProvider(LocalGlass provides glass) { PlayerDock(dockTab, ::selectTab,
                             listOf(Triple(PlayerScreen.CAROUSEL, "Carousel", PlayerIcons.AlbumCarousel),
                                 Triple(PlayerScreen.LIBRARY, "Library", musicNote),
-                                Triple(PlayerScreen.OUTPUT, "Settings", Icons.Filled.Settings)),
-                            Icons.Filled.Search, playerUi.hasSong, dockFolded, { dockFolded = false },
+                                Triple(PlayerScreen.OUTPUT, "Settings", PlayerIcons.Gear)),
+                            PlayerIcons.Search, playerUi.hasSong, dockFolded, { dockFolded = false },
                             Modifier.align(Alignment.BottomCenter).onSizeChanged { dockHeight = it.height }
                                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
                                 .padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) { compact ->

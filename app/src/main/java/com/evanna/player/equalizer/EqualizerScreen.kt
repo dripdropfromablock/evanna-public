@@ -12,8 +12,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -104,7 +102,7 @@ internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
     Column(Modifier.fillMaxSize()) {
         FilledIconButton(onClick = onBack, modifier = Modifier.size(48.dp), colors = IconButtonDefaults.filledIconButtonColors(
             containerColor = p.card, contentColor = p.text)) {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Back", modifier = Modifier.size(28.dp))
+            Icon(PlayerIcons.ChevronLeft, contentDescription = "Back", modifier = Modifier.size(24.dp))
         }
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(top = 10.dp, bottom = 24.dp + bottomInset),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {

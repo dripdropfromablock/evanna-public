@@ -33,14 +33,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import com.evanna.player.ui.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -314,7 +306,7 @@ private fun SongPage(state: PlayerPresentation, cover: Bitmap?, onFavorite: (Str
                 Text(state.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", style = SongTitle, color = Pv2, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Row(Modifier.offset(x = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                PlayerHeaderButton(if (state.favorite == true) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                PlayerHeaderButton(if (state.favorite == true) PlayerIcons.HeartFill else PlayerIcons.Heart,
                     description = when (state.favorite) {
                         true -> "Remove from favorites"
                         false -> "Add to favorites"
@@ -365,7 +357,7 @@ private fun PlayerControls(state: PlayerPresentation, actionError: String?, page
         Row(Modifier.fillMaxWidth().padding(top = 12.dp).height(64.dp), horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically) {
             TransportButton(PlayerIcons.Previous, 36.dp, "Previous", state.connected && state.canPrevious, onClick = onPrevious)
-            TransportButton(if (state.playing) PlayerIcons.Pause else if (state.ended) Icons.Filled.Refresh else Icons.Filled.PlayArrow, 52.dp,
+            TransportButton(if (state.playing) PlayerIcons.Pause else if (state.ended) PlayerIcons.Refresh else PlayerIcons.Play, 52.dp,
                 if (state.playing) "Pause playback" else "Play playback", state.connected && state.canPlayPause,
                 tint = EvannaDesign.colorScheme.primary, onClick = onPlayPause)
             TransportButton(PlayerIcons.Next, 36.dp, "Next", state.connected && state.canNext, onClick = onNext)
@@ -905,9 +897,9 @@ private fun QueueRow(item: PlayerQueueItem, played: Boolean, state: PlayerPresen
             Text(item.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", style = RowArtist, color = Pv2, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (!played) {
-            RowButton(Icons.Filled.KeyboardArrowUp, "Move ${item.title} up", state.connected && up != null) { up?.invoke() }
-            RowButton(Icons.Filled.KeyboardArrowDown, "Move ${item.title} down", state.connected && down != null) { down?.invoke() }
-            RowButton(Icons.Filled.Close, "Remove ${item.title} from queue", state.connected && remove != null) { remove?.invoke() }
+            RowButton(PlayerIcons.ChevronUp, "Move ${item.title} up", state.connected && up != null) { up?.invoke() }
+            RowButton(PlayerIcons.ChevronDown, "Move ${item.title} down", state.connected && down != null) { down?.invoke() }
+            RowButton(PlayerIcons.Close, "Remove ${item.title} from queue", state.connected && remove != null) { remove?.invoke() }
         }
     }
 }
