@@ -1,0 +1,217 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Now Playing icons + Carousel tab</title>
+<style>
+  body { margin: 0; background: #1b1b1d; color: #eee; font: 15px/1.3 Roboto, "Segoe UI", sans-serif; padding: 28px 36px 40px; width: 1240px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 18px; margin: 34px 0 12px; }
+  .note { color: #9a9aa0; font-size: 13px; margin: 0 0 14px; }
+  .row { display: flex; gap: 34px; align-items: flex-start; }
+  .tag { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: #ccc; }
+  .phone { width: 390px; height: 800px; border-radius: 38px; overflow: hidden; position: relative;
+    background: radial-gradient(120% 80% at 30% 20%, #6b5a40 0%, #574632 45%, #3f3426 100%); color: #fff; }
+  .grab { width: 36px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.35); margin: 14px auto 0; }
+  .cover { width: 330px; height: 330px; margin: 40px auto 0; border-radius: 10px;
+    background: repeating-linear-gradient(90deg, #e9dcc3 0 18px, #dccdb0 18px 26px, #efe4cf 26px 44px); box-shadow: 0 14px 30px rgba(0,0,0,.35); }
+  .pad { padding: 0 30px; }
+  .head { display: flex; align-items: center; margin-top: 34px; }
+  .title { flex: 1; font-weight: 700; font-size: 21px; line-height: 1.2; } .title span { color: rgba(255,255,255,.6); display: block; }
+  .lyr { margin-top: 26px; font-size: 14px; font-weight: 600; }
+  .seek { height: 7px; border-radius: 4px; background: rgba(255,255,255,.22); margin-top: 8px; position: relative; }
+  .seek i { position: absolute; left: 0; top: 0; bottom: 0; width: 40%; border-radius: 4px; background: #fff; }
+  .times { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 12px; color: rgba(255,255,255,.6); font-weight: 600; }
+  .badge { background: rgba(255,255,255,.14); color: #fff; padding: 3px 7px; border-radius: 5px; }
+  .transport { display: flex; justify-content: space-evenly; align-items: center; height: 76px; margin-top: 16px; }
+  .vol { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+  .vol .bar { flex: 1; height: 7px; border-radius: 4px; background: rgba(255,255,255,.22); position: relative; }
+  .vol .bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 55%; border-radius: 4px; background: rgba(255,255,255,.85); }
+  .strip { display: flex; justify-content: space-between; align-items: center; margin-top: 28px; }
+  svg { display: block; }
+  /* now */
+  .ring { width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.07);
+    display: flex; align-items: center; justify-content: center; margin-left: 10px; }
+  .ring.big { width: 54px; height: 54px; margin: 0; }
+  /* new */
+  .dot { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,.17); display: flex; align-items: center; justify-content: center; margin-left: 14px; }
+  .dot.on { background: rgba(255,255,255,.88); }
+  .bare { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; }
+  .callouts { width: 360px; font-size: 14px; color: #ccc; }
+  .callouts table { border-collapse: collapse; width: 100%; } .callouts td { padding: 7px 6px; border-bottom: 1px solid #333; vertical-align: top; }
+  .callouts td:first-child { color: #fff; font-weight: 600; width: 110px; }
+  /* dock */
+  .docks { display: grid; grid-template-columns: repeat(4, 280px); gap: 22px; }
+  .card { background: #0f0f10; border-radius: 18px; padding: 16px; }
+  .card.light { background: #f2f2f7; color: #111; }
+  .dock { display: flex; align-items: center; gap: 10px; }
+  .tabs { flex: 1; height: 62px; border-radius: 31px; background: rgba(40,40,44,.95); border: 1px solid rgba(255,255,255,.08);
+    display: flex; padding: 4px; box-sizing: border-box; }
+  .light .tabs, .light .search { background: #fff; border-color: rgba(0,0,0,.08); }
+  .tab { flex: 1; border-radius: 27px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 10px; color: #98989f; }
+  .tab.sel { background: rgba(255,255,255,.12); color: #ff4f6d; } .light .tab.sel { background: rgba(0,0,0,.06); color: #e8264a; }
+  .light .tab { color: #8a8a8e; }
+  .search { width: 62px; height: 62px; border-radius: 50%; background: rgba(40,40,44,.95); border: 1px solid rgba(255,255,255,.08); display: flex; align-items: center; justify-content: center; color: #98989f; }
+  .big { display: flex; gap: 22px; align-items: center; justify-content: center; margin-top: 16px; color: #fff; }
+  .light .big { color: #111; }
+  .name { font-weight: 600; margin-bottom: 10px; } .sub { color: #8a8a8e; font-size: 12px; margin-top: 10px; }
+</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <!-- 24-unit icons, same grid as PlayerIcons.kt -->
+    <path id="heart" d="M12 20.2C12 20.2 3 14.6 3 8.7C3 6 5.1 3.9 7.7 3.9C9.5 3.9 11.1 4.9 12 6.4C12.9 4.9 14.5 3.9 16.3 3.9C18.9 3.9 21 6 21 8.7C21 14.6 12 20.2 12 20.2Z"/>
+    <g id="more"><circle cx="5.5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="18.5" cy="12" r="1.9"/></g>
+    <!-- old transport -->
+    <path id="oldPrev" d="M21 6L11 12L21 18Z M12 6L2 12L12 18Z"/>
+    <path id="oldNext" d="M3 6L13 12L3 18Z M12 6L22 12L12 18Z"/>
+    <path id="oldPause" d="M6 5H10V19H6Z M14 5H18V19H14Z"/>
+    <!-- new transport: soft corners -->
+    <path id="newNext" d="M2.8 6.6L11.6 12L2.8 17.4Z M12.2 6.6L21 12L12.2 17.4Z" stroke-linejoin="round" stroke-width="1.8"/>
+    <path id="newPrev" d="M21.2 6.6L12.4 12L21.2 17.4Z M11.8 6.6L3 12L11.8 17.4Z" stroke-linejoin="round" stroke-width="1.8"/>
+    <g id="newPause"><rect x="6" y="4" width="4.4" height="16" rx="1.4"/><rect x="13.6" y="4" width="4.4" height="16" rx="1.4"/></g>
+    <!-- speakers -->
+    <path id="spk" d="M4 9.2H7L11.6 5.4C12 5.1 12.5 5.4 12.5 5.9V18.1C12.5 18.6 12 18.9 11.6 18.6L7 14.8H4C3.4 14.8 3 14.4 3 13.8V10.2C3 9.6 3.4 9.2 4 9.2Z"/>
+    <!-- bottom strip, old -->
+    <g id="oldLyrics" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 4H19Q21 4 21 6V15Q21 17 19 17H10L6 20.5V17H5Q3 17 3 15V6Q3 4 5 4Z"/><path d="M7.5 8.5H16.5"/><path d="M7.5 12.5H13.5"/></g>
+    <g id="oldQueue" fill="none" stroke-width="2" stroke-linecap="round"><path d="M4 6H16M4 11H16M4 16H11"/><path d="M15 14V20.5L20.2 17.25Z" stroke="none" fill="currentColor"/></g>
+    <!-- bottom strip, new -->
+    <g id="quote"><path fill="none" stroke-width="1.9" stroke-linejoin="round" d="M6 3.8H18Q21 3.8 21 6.8V13.6Q21 16.6 18 16.6H11.2L7 20.2V16.6H6Q3 16.6 3 13.6V6.8Q3 3.8 6 3.8Z"/>
+      <path stroke="none" d="M9.3 7.6a1.7 1.7 0 1 1 0 3.4q-.2 0 -.3 0q.2 1 1.1 1.7q-2.8 -.3 -2.6 -3.4a1.8 1.8 0 0 1 1.8 -1.7Z M14.6 7.6a1.7 1.7 0 1 1 0 3.4q-.2 0 -.3 0q.2 1 1.1 1.7q-2.8 -.3 -2.6 -3.4a1.8 1.8 0 0 1 1.8 -1.7Z"/></g>
+    <g id="speakerBox" fill="none" stroke-width="1.9"><rect x="5.5" y="2.8" width="13" height="18.4" rx="3"/>
+      <circle cx="12" cy="14.6" r="3.3"/><circle cx="12" cy="7.4" r="1.3" fill="currentColor" stroke="none"/></g>
+    <g id="bullets"><circle cx="4.6" cy="6" r="1.55"/><circle cx="4.6" cy="12" r="1.55"/><circle cx="4.6" cy="18" r="1.55"/>
+      <path d="M9 6H20.2M9 12H20.2M9 18H20.2" fill="none" stroke-width="2" stroke-linecap="round"/></g>
+    <!-- tab icons -->
+    <path id="note" transform="translate(2 -1) scale(.5)" d="M13 11L36 7L36 31C36 39 23 41 23 34C23 29 29 27 32 28L32 16L17 19L17 35C17 43 4 45 4 38C4 33 10 31 13 32Z"/>
+    <path id="gear" fill-rule="evenodd" d="M19.98 9.71 L22.58 10.42 L22.58 13.58 L19.98 14.29 L19.26 16.02 L20.6 18.36 L18.36 20.6 L16.02 19.26 L14.29 19.98 L13.58 22.58 L10.42 22.58 L9.71 19.98 L7.98 19.26 L5.64 20.6 L3.4 18.36 L4.74 16.02 L4.02 14.29 L1.42 13.58 L1.42 10.42 L4.02 9.71 L4.74 7.98 L3.4 5.64 L5.64 3.4 L7.98 4.74 L9.71 4.02 L10.42 1.42 L13.58 1.42 L14.29 4.02 L16.02 4.74 L18.36 3.4 L20.6 5.64 L19.26 7.98Z M15.4 12a3.4 3.4 0 1 0 -6.8 0a3.4 3.4 0 1 0 6.8 0Z"/>
+    <g id="carOld" fill="none" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8.5 4.5H15.5Q17 4.5 17 6V18Q17 19.5 15.5 19.5H8.5Q7 19.5 7 18V6Q7 4.5 8.5 4.5Z"/>
+      <path d="M4.5 7L2.5 8.2V15.8L4.5 17"/><path d="M19.5 7L21.5 8.2V15.8L19.5 17"/><circle cx="12" cy="12" r="2.5"/></g>
+    <!-- A: cover flow, a square cover with two tilted covers -->
+    <g id="carA" stroke-linejoin="round" stroke-width="1.2">
+      <rect x="6.2" y="5.2" width="11.6" height="13.6" rx="2.4" stroke="none"/>
+      <path d="M4.6 6.9L1.4 8.6V15.4L4.6 17.1Z"/><path d="M19.4 6.9L22.6 8.6V15.4L19.4 17.1Z"/></g>
+    <!-- B: stacked covers -->
+    <g id="carB"><rect x="3" y="7.6" width="18" height="14" rx="2.8"/>
+      <path d="M5.4 5H18.6M7.8 2.4H16.2" fill="none" stroke-width="1.7" stroke-linecap="round"/></g>
+    <!-- C: a cover with a record sliding out -->
+    <g id="carC"><rect x="2.4" y="5.2" width="13.6" height="13.6" rx="2.4"/><path d="M17.6 5.9A6.4 6.4 0 0 1 17.6 18.1Z"/></g>
+    <g id="search" fill="none" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.4 15.4L20.5 20.5"/></g>
+  </defs>
+</svg>
+
+<h1>Now Playing icons + Carousel tab</h1>
+<p class="note">Left: how it is now. Middle: new, after your Apple Music shot. Cover and words are stand-ins.</p>
+
+<h2>1 · Now Playing</h2>
+<div class="row">
+  <div>
+    <p class="tag">Now</p>
+    <div class="phone">
+      <div class="grab"></div><div class="cover"></div>
+      <div class="pad">
+        <div class="head"><div class="title">Classic<span>Drake</span></div>
+          <div class="ring"><svg width="22" height="22" viewBox="0 0 24 24"><use href="#heart" fill="none" stroke="#fff" stroke-width="2"/></svg></div>
+          <div class="ring"><svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><use href="#more"/></svg></div></div>
+        <div class="lyr">v1:So let me know if I should stick around ›</div>
+        <div class="seek"><i></i></div>
+        <div class="times"><span>1:10</span><span class="badge">FLAC · 44.1 kHz · 16-bit</span><span>−1:48</span></div>
+        <div class="transport">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="#fff"><use href="#oldPrev"/></svg>
+          <svg width="52" height="52" viewBox="0 0 24 24" fill="#d9c4a4"><use href="#oldPause"/></svg>
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="#fff"><use href="#oldNext"/></svg></div>
+        <div class="vol">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="rgba(255,255,255,.55)"><path d="M3 9H7L12 5V19L7 15H3Z"/><path d="M15.5 9Q17.5 12 15.5 15" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2"/></svg>
+          <div class="bar"><i style="width:0"></i></div>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M3 9H7L12 5V19L7 15H3Z"/><path d="M15.5 9Q17.5 12 15.5 15M18 6Q22 12 18 18" fill="none" stroke="#fff" stroke-width="2"/></svg></div>
+        <div class="strip">
+          <div class="ring big"><svg width="24" height="24" viewBox="0 0 24 24" stroke="#fff"><use href="#oldLyrics"/></svg></div>
+          <div class="ring big"><svg width="24" height="24" viewBox="0 0 24 24" stroke="#fff" color="#fff"><use href="#oldQueue"/></svg></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <p class="tag">New</p>
+    <div class="phone">
+      <div class="grab"></div><div class="cover"></div>
+      <div class="pad">
+        <div class="head"><div class="title">Classic<span>Drake</span></div>
+          <div class="dot"><svg width="18" height="18" viewBox="0 0 24 24"><use href="#heart" fill="none" stroke="#fff" stroke-width="2.2"/></svg></div>
+          <div class="dot"><svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><use href="#more"/></svg></div></div>
+        <div class="lyr">v1:So let me know if I should stick around ›</div>
+        <div class="seek"><i></i></div>
+        <div class="times"><span>1:10</span><span class="badge">FLAC · 44.1 kHz · 16-bit</span><span>−1:48</span></div>
+        <div class="transport">
+          <svg width="42" height="42" viewBox="0 0 24 24" fill="#fff" stroke="#fff"><use href="#newPrev"/></svg>
+          <svg width="58" height="58" viewBox="0 0 24 24" fill="#fff"><use href="#newPause"/></svg>
+          <svg width="42" height="42" viewBox="0 0 24 24" fill="#fff" stroke="#fff"><use href="#newNext"/></svg></div>
+        <div class="vol">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="rgba(255,255,255,.6)"><use href="#spk"/></svg>
+          <div class="bar"><i></i></div>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="rgba(255,255,255,.6)"><use href="#spk"/>
+            <path d="M15.3 9.4Q16.6 12 15.3 14.6M17.9 7.4Q20.2 12 17.9 16.6M20.4 5.4Q23.4 12 20.4 18.6" fill="none" stroke="rgba(255,255,255,.6)" stroke-width="1.7" stroke-linecap="round"/></svg></div>
+        <div class="strip">
+          <div class="bare"><svg width="27" height="27" viewBox="0 0 24 24" fill="rgba(255,255,255,.6)" stroke="rgba(255,255,255,.6)"><use href="#quote"/></svg></div>
+          <div class="bare"><svg width="27" height="27" viewBox="0 0 24 24" stroke="rgba(255,255,255,.6)" color="rgba(255,255,255,.6)"><use href="#speakerBox"/></svg></div>
+          <div class="bare"><svg width="27" height="27" viewBox="0 0 24 24" fill="rgba(255,255,255,.6)" stroke="rgba(255,255,255,.6)"><use href="#bullets"/></svg></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callouts">
+    <p class="tag">What changes</p>
+    <table>
+      <tr><td>Heart, More</td><td>Smaller soft circles. No ring line.</td></tr>
+      <tr><td>Heart on</td><td>White circle, dark heart. <span style="display:inline-flex;vertical-align:middle;margin-left:6px" class="dot on"><svg width="18" height="18" viewBox="0 0 24 24" fill="#3f3426"><use href="#heart"/></svg></span></td></tr>
+      <tr><td>Play, skip</td><td>All white. Soft corners. A bit bigger.</td></tr>
+      <tr><td>Volume</td><td>Solid speakers, three waves.</td></tr>
+      <tr><td>Lyrics</td><td>Quote bubble. No circle.</td></tr>
+      <tr><td>Middle (new)</td><td>Speaker box. Opens the sound output sheet.</td></tr>
+      <tr><td>Queue</td><td>Dot list. No circle.</td></tr>
+      <tr><td>Open page</td><td>Its icon turns white. <span style="display:inline-flex;vertical-align:middle;margin-left:6px"><svg width="22" height="22" viewBox="0 0 24 24" fill="#fff" stroke="#fff"><use href="#quote"/></svg></span></td></tr>
+    </table>
+  </div>
+</div>
+
+<h2>2 · Carousel tab icon</h2>
+<p class="note">Library and Settings icons are solid. The Carousel one is thin lines, so it looks off. All three new ones are solid.</p>
+<div class="docks">
+  <div class="card"><div class="name">Now</div>
+    <div class="dock"><div class="tabs">
+      <div class="tab sel"><svg width="26" height="26" viewBox="0 0 24 24" stroke="currentColor"><use href="#carOld"/></svg>Carousel</div>
+      <div class="tab"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><use href="#note"/></svg>Library</div>
+      <div class="tab"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><use href="#gear"/></svg>Settings</div></div>
+      <div class="search"><svg width="24" height="24" viewBox="0 0 24 24" stroke="currentColor"><use href="#search"/></svg></div></div>
+    <div class="big"><svg width="64" height="64" viewBox="0 0 24 24" stroke="currentColor"><use href="#carOld"/></svg></div>
+    <div class="sub">Thin lines. Odd ring in the middle.</div></div>
+  <div class="card"><div class="name">A · Cover Flow</div>
+    <div class="dock"><div class="tabs">
+      <div class="tab sel"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor"><use href="#carA"/></svg>Carousel</div>
+      <div class="tab"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><use href="#note"/></svg>Library</div>
+      <div class="tab"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><use href="#gear"/></svg>Settings</div></div>
+      <div class="search"><svg width="24" height="24" viewBox="0 0 24 24" stroke="currentColor"><use href="#search"/></svg></div></div>
+    <div class="big"><svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor"><use href="#carA"/></svg></div>
+    <div class="sub">One cover, two tilted beside it. Like the screen.</div></div>
+  <div class="card"><div class="name">B · Stack</div>
+    <div class="dock"><div class="tabs">
+      <div class="tab sel"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor"><use href="#carB"/></svg>Carousel</div>
+      <div class="tab"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><use href="#note"/></svg>Library</div>
+      <div class="tab"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><use href="#gear"/></svg>Settings</div></div>
+      <div class="search"><svg width="24" height="24" viewBox="0 0 24 24" stroke="currentColor"><use href="#search"/></svg></div></div>
+    <div class="big"><svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor"><use href="#carB"/></svg></div>
+    <div class="sub">A pile of albums. Apple's album look.</div></div>
+  <div class="card"><div class="name">C · Record</div>
+    <div class="dock"><div class="tabs">
+      <div class="tab sel"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><use href="#carC"/></svg>Carousel</div>
+      <div class="tab"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><use href="#note"/></svg>Library</div>
+      <div class="tab"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><use href="#gear"/></svg>Settings</div></div>
+      <div class="search"><svg width="24" height="24" viewBox="0 0 24 24" stroke="currentColor"><use href="#search"/></svg></div></div>
+    <div class="big"><svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor"><use href="#carC"/></svg></div>
+    <div class="sub">A cover with a record sliding out.</div></div>
+</div>
+<div class="docks" style="margin-top:22px">
+  <div class="card light"><div class="name">Now · Light</div><div class="big"><svg width="48" height="48" viewBox="0 0 24 24" stroke="currentColor"><use href="#carOld"/></svg><svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor"><use href="#note"/></svg><svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor"><use href="#gear"/></svg></div></div>
+  <div class="card light"><div class="name">A · Light</div><div class="big"><svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor"><use href="#carA"/></svg><svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor"><use href="#note"/></svg><svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor"><use href="#gear"/></svg></div></div>
+  <div class="card light"><div class="name">B · Light</div><div class="big"><svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor"><use href="#carB"/></svg><svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor"><use href="#note"/></svg><svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor"><use href="#gear"/></svg></div></div>
+  <div class="card light"><div class="name">C · Light</div><div class="big"><svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor"><use href="#carC"/></svg><svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor"><use href="#note"/></svg><svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor"><use href="#gear"/></svg></div></div>
+</div>
+</body></html>

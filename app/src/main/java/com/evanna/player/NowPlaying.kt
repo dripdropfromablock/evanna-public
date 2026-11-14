@@ -241,7 +241,7 @@ private fun NoSong(state: PlayerPresentation, onLibrary: () -> Unit, modifier: M
 private fun MoreButton(items: List<Pair<String, () -> Unit>>) {
     var open by remember { mutableStateOf(false) }
     Box {
-        PlayerHeaderButton(PlayerIcons.More, "More options", 18.dp, showCircle = true) { open = true }
+        PlayerHeaderButton(PlayerIcons.More, "More options") { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             for ((label, action) in items) DropdownMenuItem(text = { Text(label) }, onClick = { open = false; action() })
         }
@@ -249,12 +249,12 @@ private fun MoreButton(items: List<Pair<String, () -> Unit>>) {
 }
 
 /**
- * Favorite and More beside the title. With glass on, each sits in a 36 dp circle of clear glass, as in iOS 26; without
- * it, More keeps its flat 28 dp circle and Favorite has none.
+ * Favorite and More beside the title: an 18 dp glyph in a soft 32 dp circle with no rim, as in iOS 26 Apple Music.
+ * [on] (a favorite) turns the circle white and the glyph dark.
  */
 @Composable
-private fun PlayerHeaderButton(icon: ImageVector, description: String, size: Dp,
-    enabled: Boolean = true, showCircle: Boolean = false, onClick: () -> Unit,
+private fun PlayerHeaderButton(icon: ImageVector, description: String,
+    enabled: Boolean = true, on: Boolean = false, onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val glass = glassLiftOn()
@@ -263,10 +263,13 @@ private fun PlayerHeaderButton(icon: ImageVector, description: String, size: Dp,
         .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
         if (contrast) Box(Modifier.size(36.dp).contrastPlatter(CircleShape))
-        else if (glass) Box(Modifier.size(36.dp).glassPlatter(GlassKind.CLEAR, CircleShape).liftIntoGlass(interaction, CircleShape, outset = 3.dp))
-        else if (showCircle) Box(Modifier.size(28.dp).background(Pv4, CircleShape))
-        Icon(icon, contentDescription = null, tint = if (enabled) Pv1 else Pv3,
-            modifier = Modifier.size(if (glass || contrast) minOf(size, 20.dp) else size).pressScale(interaction))
+        else Box(Modifier.size(32.dp).background(Color.White.copy(alpha = if (on) 0.88f else 0.17f), CircleShape)
+            .then(if (glass) Modifier.liftIntoGlass(interaction, CircleShape, outset = 3.dp) else Modifier))
+        Icon(icon, contentDescription = null, tint = when {
+            !enabled -> Pv3
+            on && !contrast -> Color.Black.copy(alpha = 0.72f)
+            else -> Pv1
+        }, modifier = Modifier.size(18.dp).pressScale(interaction))
     }
 }
 
@@ -312,8 +315,8 @@ private fun SongPage(state: PlayerPresentation, cover: Bitmap?, onFavorite: (Str
                         false -> "Add to favorites"
                         null -> "Favorites unavailable"
                     },
-                    size = 24.dp,
                     enabled = state.connected && state.favorite != null,
+                    on = state.favorite == true,
                 ) {
                     state.id?.let { onFavorite(it, state.favorite != true) }
                 }
@@ -354,13 +357,12 @@ private fun PlayerControls(state: PlayerPresentation, actionError: String?, page
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 32.dp, end = 32.dp, top = 8.dp, bottom = 10.dp)) {
         if (!lyricsOn) LyricsPreview(lyrics, state.positionMs, toggleLyrics)
         SeekBar(state, onSeek, onSignal)
-        Row(Modifier.fillMaxWidth().padding(top = 12.dp).height(64.dp), horizontalArrangement = Arrangement.SpaceEvenly,
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp).height(68.dp), horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically) {
-            TransportButton(PlayerIcons.Previous, 36.dp, "Previous", state.connected && state.canPrevious, onClick = onPrevious)
-            TransportButton(if (state.playing) PlayerIcons.Pause else if (state.ended) PlayerIcons.Refresh else PlayerIcons.Play, 52.dp,
-                if (state.playing) "Pause playback" else "Play playback", state.connected && state.canPlayPause,
-                tint = EvannaDesign.colorScheme.primary, onClick = onPlayPause)
-            TransportButton(PlayerIcons.Next, 36.dp, "Next", state.connected && state.canNext, onClick = onNext)
+            TransportButton(PlayerIcons.Previous, 40.dp, "Previous", state.connected && state.canPrevious, onClick = onPrevious)
+            TransportButton(if (state.playing) PlayerIcons.Pause else if (state.ended) PlayerIcons.Refresh else PlayerIcons.Play, 56.dp,
+                if (state.playing) "Pause playback" else "Play playback", state.connected && state.canPlayPause, onClick = onPlayPause)
+            TransportButton(PlayerIcons.Next, 40.dp, "Next", state.connected && state.canNext, onClick = onNext)
         }
         if (directUsb) UsbVolume(state, onUsbVolume, onUsbVolumeSet, onOpenOutput = onOutput)
         else if (!compact) AndroidMediaVolume(enabled = volumeEnabled,
@@ -388,9 +390,13 @@ private fun PlayerControls(state: PlayerPresentation, actionError: String?, page
                 enabled = lyricsOn || lyrics is LyricsLoad.Ready, onClick = toggleLyrics)
             if (compact && !directUsb) AndroidMediaVolume(enabled = volumeEnabled,
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp), showLevel = androidVolume, onOpenOutput = onOutput)
-            else Spacer(Modifier.weight(1f))
+            else {
+                Spacer(Modifier.weight(1f))
+                StripButton(PlayerIcons.Output, outputSheetOpen, "Sound output") { onOutput(null) }
+                Spacer(Modifier.weight(1f))
+            }
             val queueOn = page == PlayerPage.QUEUE
-            StripButton(PlayerIcons.Queue, queueOn, "Queue · ${state.queue.size} songs") {
+            StripButton(PlayerIcons.QueueList, queueOn, "Queue · ${state.queue.size} songs") {
                 onPage(if (queueOn) PlayerPage.SONG else PlayerPage.QUEUE)
             }
         }
@@ -504,23 +510,20 @@ private fun SeekBar(state: PlayerPresentation, onSeek: (String?, Long) -> Unit, 
     }
 }
 
-/**
- * A plain transport icon that shrinks a little while pressed, over a glass circle that lifts in under the finger.
- * Only Play/Pause takes a [tint] (the cover's accent): Apple colours the one main action and leaves the rest neutral.
- */
+/** A plain white transport icon that shrinks a little while pressed, over a glass circle that lifts in under the finger. */
 @Composable
-private fun TransportButton(icon: ImageVector, size: Dp, description: String, enabled: Boolean, tint: Color = Pv1, onClick: () -> Unit) {
+private fun TransportButton(icon: ImageVector, size: Dp, description: String, enabled: Boolean, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     Box(Modifier.size(size + 12.dp).liftIntoGlass(interaction, CircleShape, outset = 4.dp).controlFocus(interaction, CircleShape)
         .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = null, tint = if (enabled) tint else Pv3, modifier = Modifier.size(size).pressScale(interaction))
+        Icon(icon, contentDescription = null, tint = if (enabled) Pv1 else Pv3, modifier = Modifier.size(size).pressScale(interaction))
     }
 }
 
 /**
- * Player strip buttons (Lyrics, Queue) share a 48 dp touch target and highlight the open control. With glass on, each is
- * a 44 dp circle of regular glass that brightens while its page is open.
+ * Player strip buttons (Lyrics, Output, Queue): bare 26 dp glyphs on a 48 dp touch target, as in iOS 26 Apple Music.
+ * The open one turns bright white; the rest stay grey. Increase contrast keeps a platter behind each.
  */
 @Composable
 private fun StripButton(icon: ImageVector, on: Boolean, description: String, enabled: Boolean = true,
@@ -529,21 +532,13 @@ private fun StripButton(icon: ImageVector, on: Boolean, description: String, ena
     val interaction = remember { MutableInteractionSource() }
     val glass = glassLiftOn()
     val contrast = increaseContrastOn()
-    val round = glass || contrast
-    val platter = Color.White.copy(alpha = 0.22f)
-    val shape = if (round) CircleShape else RoundedCornerShape(10.dp)
-    Box(Modifier.size(48.dp).controlFocus(interaction, if (round) CircleShape else RoundedCornerShape(12.dp))
+    Box(Modifier.size(48.dp).controlFocus(interaction, CircleShape)
         .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description; if (enabled) stateDescription = if (on) "On" else "Off" }, contentAlignment = Alignment.Center) {
-        Box(Modifier.size(if (round) 44.dp else 40.dp)
-            .then(when {
-                contrast -> Modifier.contrastPlatter(shape, on)
-                glass -> Modifier.glassPlatter(GlassKind.REGULAR, shape, on).liftIntoGlass(interaction, shape, outset = 2.dp)
-                else -> Modifier.clip(shape).background(if (on) platter else Color.Transparent)
-            }),
-            contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp).pressScale(interaction), tint = if (enabled) Pv1 else Pv3)
-        }
+        if (contrast) Box(Modifier.size(44.dp).contrastPlatter(CircleShape, on))
+        else if (glass) Box(Modifier.size(44.dp).liftIntoGlass(interaction, CircleShape, outset = 2.dp))
+        Icon(icon, contentDescription = null, modifier = Modifier.size(26.dp).pressScale(interaction),
+            tint = if (!enabled) Pv3 else if (on) Pv1 else Pv2)
     }
 }
 

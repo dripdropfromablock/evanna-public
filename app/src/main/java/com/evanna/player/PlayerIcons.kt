@@ -20,8 +20,21 @@ internal object PlayerIcons {
         ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply(build).build()
     private fun ImageVector.Builder.line(block: PathBuilder.() -> Unit) = path(stroke = ink, strokeLineWidth = 2f,
         strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round, pathBuilder = block)
+    /** A solid speaker with soft corners (speaker.fill). */
     private fun ImageVector.Builder.speaker() = path(fill = ink) {
-        moveTo(3f, 9f); horizontalLineTo(7f); lineTo(12f, 5f); verticalLineTo(19f); lineTo(7f, 15f); horizontalLineTo(3f); close()
+        moveTo(4f, 9.2f); horizontalLineTo(7f); lineTo(11.6f, 5.4f); quadTo(12.5f, 4.9f, 12.5f, 5.9f); verticalLineTo(18.1f)
+        quadTo(12.5f, 19.1f, 11.6f, 18.6f); lineTo(7f, 14.8f); horizontalLineTo(4f); quadTo(3f, 14.8f, 3f, 13.8f)
+        verticalLineTo(10.2f); quadTo(3f, 9.2f, 4f, 9.2f); close()
+    }
+    /** Two triangles; the stroke in the fill colour rounds their corners. */
+    private fun ImageVector.Builder.skip(vararg points: Float) = path(fill = ink, stroke = ink, strokeLineWidth = 1.8f,
+        strokeLineJoin = StrokeJoin.Round) {
+        for (i in points.indices step 6) { moveTo(points[i], points[i + 1]); lineTo(points[i + 2], points[i + 3]); lineTo(points[i + 4], points[i + 5]); close() }
+    }
+    private fun PathBuilder.roundRect(left: Float, top: Float, right: Float, bottom: Float, r: Float) {
+        moveTo(left + r, top); horizontalLineTo(right - r); quadTo(right, top, right, top + r); verticalLineTo(bottom - r)
+        quadTo(right, bottom, right - r, bottom); horizontalLineTo(left + r); quadTo(left, bottom, left, bottom - r)
+        verticalLineTo(top + r); quadTo(left, top, left + r, top); close()
     }
     private fun ImageVector.Builder.loop() {
         line { moveTo(4f, 12f); verticalLineTo(9f); quadTo(4f, 7f, 6f, 7f); horizontalLineTo(19f) }
@@ -30,24 +43,9 @@ internal object PlayerIcons {
         line { moveTo(8f, 14f); lineTo(5f, 17f); lineTo(8f, 20f) }
     }
 
-    val Pause = icon("Pause") {
-        path(fill = ink) {
-            moveTo(6f, 5f); horizontalLineTo(10f); verticalLineTo(19f); horizontalLineTo(6f); close()
-            moveTo(14f, 5f); horizontalLineTo(18f); verticalLineTo(19f); horizontalLineTo(14f); close()
-        }
-    }
-    val Next = icon("Next") {
-        path(fill = ink) {
-            moveTo(3f, 6f); lineTo(13f, 12f); lineTo(3f, 18f); close()
-            moveTo(12f, 6f); lineTo(22f, 12f); lineTo(12f, 18f); close()
-        }
-    }
-    val Previous = icon("Previous") {
-        path(fill = ink) {
-            moveTo(21f, 6f); lineTo(11f, 12f); lineTo(21f, 18f); close()
-            moveTo(12f, 6f); lineTo(2f, 12f); lineTo(12f, 18f); close()
-        }
-    }
+    val Pause = icon("Pause") { path(fill = ink) { roundRect(6f, 4f, 10.4f, 20f, 1.4f); roundRect(13.6f, 4f, 18f, 20f, 1.4f) } }
+    val Next = icon("Next") { skip(2.8f, 6.6f, 11.6f, 12f, 2.8f, 17.4f, 12.2f, 6.6f, 21f, 12f, 12.2f, 17.4f) }
+    val Previous = icon("Previous") { skip(21.2f, 6.6f, 12.4f, 12f, 21.2f, 17.4f, 11.8f, 6.6f, 3f, 12f, 11.8f, 17.4f) }
     val Phone = icon("Phone") {
         line {
             moveTo(8f, 3f); horizontalLineTo(16f); quadTo(18f, 3f, 18f, 5f); verticalLineTo(19f)
@@ -79,15 +77,32 @@ internal object PlayerIcons {
         line { moveTo(17f, 4f); lineTo(20f, 7f); lineTo(17f, 10f) }
         line { moveTo(17f, 14f); lineTo(20f, 17f); lineTo(17f, 20f) }
     }
-    /** A speech bubble with two text lines. */
+    /** A speech bubble with two quote marks (quote.bubble). */
     val Lyrics = icon("Lyrics") {
-        line {
-            moveTo(5f, 4f); horizontalLineTo(19f); quadTo(21f, 4f, 21f, 6f); verticalLineTo(15f); quadTo(21f, 17f, 19f, 17f)
-            horizontalLineTo(10f); lineTo(6f, 20.5f); verticalLineTo(17f); horizontalLineTo(5f); quadTo(3f, 17f, 3f, 15f)
-            verticalLineTo(6f); quadTo(3f, 4f, 5f, 4f); close()
+        path(stroke = ink, strokeLineWidth = 1.9f, strokeLineJoin = StrokeJoin.Round) {
+            moveTo(6f, 3.8f); horizontalLineTo(18f); quadTo(21f, 3.8f, 21f, 6.8f); verticalLineTo(13.6f); quadTo(21f, 16.6f, 18f, 16.6f)
+            horizontalLineTo(11.2f); lineTo(7f, 20.2f); verticalLineTo(16.6f); horizontalLineTo(6f); quadTo(3f, 16.6f, 3f, 13.6f)
+            verticalLineTo(6.8f); quadTo(3f, 3.8f, 6f, 3.8f); close()
         }
-        line { moveTo(7.5f, 8.5f); horizontalLineTo(16.5f) }
-        line { moveTo(7.5f, 12.5f); horizontalLineTo(13.5f) }
+        path(fill = ink) {
+            for (x in listOf(9.3f, 14.6f)) {
+                moveTo(x, 7.6f); arcToRelative(1.7f, 1.7f, 0f, true, true, 0f, 3.4f); quadToRelative(-0.2f, 0f, -0.3f, 0f)
+                quadToRelative(0.2f, 1f, 1.1f, 1.7f); quadToRelative(-2.8f, -0.3f, -2.6f, -3.4f); arcToRelative(1.8f, 1.8f, 0f, false, true, 1.8f, -1.7f); close()
+            }
+        }
+    }
+    /** A hi-fi speaker box: where the sound goes. */
+    val Output = icon("Output") {
+        thin { roundRect(5.5f, 2.8f, 18.5f, 21.2f, 3f) }
+        thin { moveTo(15.3f, 14.6f); arcToRelative(3.3f, 3.3f, 0f, true, true, -6.6f, 0f); arcToRelative(3.3f, 3.3f, 0f, true, true, 6.6f, 0f); close() }
+        path(fill = ink) { moveTo(10.7f, 7.4f); arcToRelative(1.3f, 1.3f, 0f, true, true, 2.6f, 0f); arcToRelative(1.3f, 1.3f, 0f, true, true, -2.6f, 0f); close() }
+    }
+    /** Three dots and lines (list.bullet): the Now Playing queue page. */
+    val QueueList = icon("Queue list") {
+        path(fill = ink) {
+            for (y in listOf(6f, 12f, 18f)) { moveTo(3.05f, y); arcToRelative(1.55f, 1.55f, 0f, true, true, 3.1f, 0f); arcToRelative(1.55f, 1.55f, 0f, true, true, -3.1f, 0f); close() }
+        }
+        line { moveTo(9f, 6f); horizontalLineTo(20.2f); moveTo(9f, 12f); horizontalLineTo(20.2f); moveTo(9f, 18f); horizontalLineTo(20.2f) }
     }
     val LibraryLayout = icon("Library layout") {
         for (top in listOf(4f, 14f)) for (left in listOf(4f, 14f)) {
@@ -101,15 +116,12 @@ internal object PlayerIcons {
         }
     }
 
+    /** Cover Flow: one cover face on, a tilted cover each side. Solid, like the Library and Settings tabs. */
     val AlbumCarousel = icon("Album carousel") {
-        path(stroke = ink, strokeLineWidth = 1.55f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round) {
-            moveTo(8.5f, 4.5f); horizontalLineTo(15.5f); quadTo(17f, 4.5f, 17f, 6f)
-            verticalLineTo(18f); quadTo(17f, 19.5f, 15.5f, 19.5f); horizontalLineTo(8.5f)
-            quadTo(7f, 19.5f, 7f, 18f); verticalLineTo(6f); quadTo(7f, 4.5f, 8.5f, 4.5f); close()
-            moveTo(4.5f, 7f); lineTo(2.5f, 8.2f); verticalLineTo(15.8f); lineTo(4.5f, 17f)
-            moveTo(19.5f, 7f); lineTo(21.5f, 8.2f); verticalLineTo(15.8f); lineTo(19.5f, 17f)
-            moveTo(9.5f, 12f); arcToRelative(2.5f, 2.5f, 0f, false, true, 5f, 0f)
-            arcToRelative(2.5f, 2.5f, 0f, false, true, -5f, 0f); close()
+        path(fill = ink) { roundRect(6.2f, 5.2f, 17.8f, 18.8f, 2.4f) }
+        path(fill = ink, stroke = ink, strokeLineWidth = 1.2f, strokeLineJoin = StrokeJoin.Round) {
+            moveTo(4.6f, 6.9f); lineTo(1.4f, 8.6f); verticalLineTo(15.4f); lineTo(4.6f, 17.1f); close()
+            moveTo(19.4f, 6.9f); lineTo(22.6f, 8.6f); verticalLineTo(15.4f); lineTo(19.4f, 17.1f); close()
         }
     }
 
@@ -274,10 +286,13 @@ internal object PlayerIcons {
     val Bluetooth = icon("Bluetooth") { line { moveTo(7f, 7f); lineTo(17f, 17f); lineTo(12f, 22f); verticalLineTo(2f); lineTo(17f, 7f); lineTo(7f, 17f) } }
     val Repeat = icon("Repeat") { loop() }
     val RepeatOne = icon("RepeatOne") { loop(); line { moveTo(10.75f, 10.5f); lineTo(12.25f, 9.5f); verticalLineTo(14.5f) } }
-    val VolumeDown = icon("VolumeDown") { speaker(); line { moveTo(15.5f, 9f); quadTo(17.5f, 12f, 15.5f, 15f) } }
+    val VolumeDown = icon("VolumeDown") { speaker() }
     val VolumeUp = icon("VolumeUp") {
         speaker()
-        line { moveTo(15.5f, 9f); quadTo(17.5f, 12f, 15.5f, 15f) }
-        line { moveTo(18f, 6f); quadTo(22f, 12f, 18f, 18f) }
+        path(stroke = ink, strokeLineWidth = 1.7f, strokeLineCap = StrokeCap.Round) {
+            moveTo(15.3f, 9.4f); quadTo(16.6f, 12f, 15.3f, 14.6f)
+            moveTo(17.9f, 7.4f); quadTo(20.2f, 12f, 17.9f, 16.6f)
+            moveTo(20.4f, 5.4f); quadTo(23.4f, 12f, 20.4f, 18.6f)
+        }
     }
 }
