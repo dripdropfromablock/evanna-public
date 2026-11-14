@@ -166,12 +166,12 @@ internal fun AppUpdatePrompt(
         AlertDialog(
             onDismissRequest = { snooze(1) },
             title = { Text("Remind me in") },
-            text = { Column {
+            text = {},
+            confirmButton = {
                 TextButton(onClick = { snooze(1) }) { Text("1 hour") }
                 TextButton(onClick = { snooze(24) }) { Text("1 day") }
                 TextButton(onClick = { snooze(168) }) { Text("1 week") }
-            } },
-            confirmButton = {},
+            },
         )
     } else {
         AlertDialog(

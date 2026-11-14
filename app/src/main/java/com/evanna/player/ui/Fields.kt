@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -50,7 +51,9 @@ internal fun TextField(value: String, onValueChange: (String) -> Unit, modifier:
 internal fun OutlinedTextField(value: String, onValueChange: (String) -> Unit, label: String,
     modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false,
 ) = InputField(value, onValueChange, modifier, label, null, null, null, KeyboardOptions.Default, KeyboardActions.Default,
-    EvannaDesign.shapes.small, FieldColors(Color.Transparent, Color.Transparent), enabled, outlined = true, isError = isError)
+    FieldShape, FieldColors(Color.Transparent, Color.Transparent), enabled, outlined = true, isError = isError)
+
+private val FieldShape = RoundedCornerShape(12.dp).continuous()
 
 /**
  * The iOS search field: a gray capsule with a magnifier, placeholder text and, once there is text, a round clear button.
@@ -99,37 +102,37 @@ private fun InputField(value: String, onValueChange: (String) -> Unit, modifier:
     keyboardActions: KeyboardActions, shape: Shape, colors: FieldColors, enabled: Boolean, outlined: Boolean, isError: Boolean,
 ) {
     val palette = EvannaDesign.colorScheme
-    val type = EvannaDesign.typography
+    val dark = LocalLookStyle.current.look.dark
     var focused by remember { mutableStateOf(false) }
     val ink = if (enabled) palette.onSurface else palette.onSurface.copy(alpha = 0.38f)
-    val labelInk = when {
-        isError -> palette.error
-        focused -> palette.primary
-        else -> palette.onSurfaceVariant
+    // iOS fields have no floating label: the label is the placeholder, and TalkBack still reads it.
+    val hint = label ?: placeholder
+    // An outlined field is the iOS text field: a gray rounded box, no outline, no focus colour.
+    val fill = when {
+        outlined -> AppleColors.fill(dark)
+        focused -> colors.focused
+        else -> colors.unfocused
     }
-    val raised = label != null && (focused || value.isNotEmpty())
-    val hint = if (raised) placeholder else label ?: placeholder
+    val style = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.2).sp)
     val selection = remember(palette.primary) { TextSelectionColors(palette.primary, palette.primary.copy(alpha = 0.35f)) }
     CompositionLocalProvider(LocalTextSelectionColors provides selection, LocalContentColor provides palette.onSurfaceVariant) {
         BasicTextField(value = value, onValueChange = onValueChange, enabled = enabled, singleLine = true,
-            textStyle = type.bodyLarge.copy(color = ink), cursorBrush = SolidColor(palette.primary),
+            textStyle = style.copy(color = ink), cursorBrush = SolidColor(palette.primary),
             keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
             modifier = modifier.onFocusChanged { focused = it.isFocused }.semantics {
-                (label ?: placeholder)?.let { contentDescription = it }
+                hint?.let { contentDescription = it }
                 if (isError) error("Invalid value")
             },
             decorationBox = { input ->
-                Row(Modifier.heightIn(min = 56.dp).clip(shape).background(if (focused) colors.focused else colors.unfocused)
-                    .then(if (outlined) Modifier.border(if (focused) 2.dp else 1.dp, if (enabled) labelInk else palette.outlineVariant, shape) else Modifier)
+                Row(Modifier.heightIn(min = 48.dp).clip(shape).background(fill)
+                    .then(if (isError) Modifier.border(1.dp, AppleColors.red(dark), shape) else Modifier)
                     .padding(start = if (leadingIcon == null) 14.dp else 12.dp, end = if (trailingIcon == null) 14.dp else 0.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     leadingIcon?.let { it(); Spacer(Modifier.width(12.dp)) }
-                    Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                        if (raised && label != null) Text(label, color = labelInk, style = type.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Box {
-                            if (value.isEmpty() && hint != null) Text(hint, color = palette.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            input()
-                        }
+                    Box(Modifier.weight(1f).padding(vertical = 10.dp)) {
+                        if (value.isEmpty() && hint != null) Text(hint, color = palette.onSurfaceVariant, style = style,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        input()
                     }
                     trailingIcon?.invoke()
                 }

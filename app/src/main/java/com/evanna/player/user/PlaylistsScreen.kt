@@ -110,7 +110,7 @@ internal fun PlaylistsScreen(onBack:()->Unit,onPlay:(Long,Long,Boolean,Int,(Bool
     delete?.let {list ->AlertDialog(onDismissRequest={delete=null},title={Text("Delete playlist?")},
         text={Text("Only this saved list is removed. Your music files stay on the device.")},
         confirmButton={TextButton(onClick={delete=null;operate {check(withContext(Dispatchers.IO){database.deletePlaylist(list.id,list.revision)});selectedId=null;revision++}}){Text("Delete playlist")}},
-        dismissButton={TextButton(onClick={delete=null}){Text("Cancel")}})}
+        dismissButton={TextButton(onClick={delete=null}){Text("Cancel")}},destructive=true)}
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
         item {ScreenHeader(if(adding)"Add to playlist" else selected?.takeIf {it.id==selectedId}?.name ?: "Playlists") {if(selectedId!=null)selectedId=null else onBack()}}
         message?.let {item {Text(it,style=EvannaDesign.typography.bodyMedium)}}

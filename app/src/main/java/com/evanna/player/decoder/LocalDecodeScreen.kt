@@ -93,6 +93,9 @@ internal fun LocalDecodeScreen(onBack: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         com.evanna.player.ScreenHeader("Check a local audio file") { cancel(); onBack() }
         Text("Decodes up to 10 seconds without playing sound. This checks file decoding; it does not verify DAC playback.")
+        // The field shows its label only while empty, so the label also sits above it.
+        Text("Start time in whole seconds (0–600)", style = EvannaDesign.typography.bodySmall,
+            color = EvannaDesign.colorScheme.onSurfaceVariant)
         OutlinedTextField(value = startSeconds, onValueChange = { startSeconds = it.take(3) },
             label = "Start time in whole seconds (0–600)", enabled = !busy,
             modifier = Modifier.fillMaxWidth())

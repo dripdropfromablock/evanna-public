@@ -271,15 +271,18 @@ private fun PlayerHeaderButton(icon: ImageVector, description: String, size: Dp,
 
 @Composable
 private fun SleepDialog(state: PlayerPresentation, onSleep: (SleepMode, Int) -> Unit, onClose: () -> Unit) {
+    // The choices are the alert's own buttons, stacked as on iOS, with Cancel at the bottom.
     AlertDialog(onDismissRequest = onClose, title = { Text("Sleep timer") },
-        text = { Column(Modifier.verticalScroll(rememberScrollState())) {
-            Text("Playback pauses; your queue stays. No fade-out.")
-            for (minutes in listOf(15, 30, 45, 60, 90)) TextButton(onClick = { onSleep(SleepMode.MINUTES, minutes); onClose() },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("$minutes minutes") }
-            for (mode in listOf(SleepMode.SONG, SleepMode.ALBUM)) TextButton(onClick = { onSleep(mode, 0); onClose() }, enabled = state.hasSong,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (mode == SleepMode.SONG) "End of this song" else "End of this album") }
-        } },
-        confirmButton = { TextButton(onClick = onClose) { Text("Close") } })
+        text = { Text("Playback pauses; your queue stays. No fade-out.") },
+        confirmButton = {
+            for (minutes in listOf(15, 30, 45, 60, 90)) TextButton(onClick = { onSleep(SleepMode.MINUTES, minutes); onClose() }) {
+                Text("$minutes minutes")
+            }
+            for (mode in listOf(SleepMode.SONG, SleepMode.ALBUM)) TextButton(onClick = { onSleep(mode, 0); onClose() }, enabled = state.hasSong) {
+                Text(if (mode == SleepMode.SONG) "End of this song" else "End of this album")
+            }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } }, prominent = false)
 }
 
 /** Page 1: the big cover, then title and artist with Favorite and More. The cover shrinks a little while paused. */

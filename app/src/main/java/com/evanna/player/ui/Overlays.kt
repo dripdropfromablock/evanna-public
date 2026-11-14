@@ -5,6 +5,7 @@ import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -36,6 +37,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -47,6 +49,8 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -243,35 +247,81 @@ internal fun <T : Any> DropdownChoices(options: List<T>, selected: T?, expanded:
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+private val AlertShape = RoundedCornerShape(34.dp).continuous()
+private val AlertTitle = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.2).sp, fontWeight = FontWeight.SemiBold)
+private val AlertMessage = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = (-0.1).sp)
+private val AlertButtonGap = 8.dp
+
+/**
+ * An iOS 26 alert: a round, opaque panel with the title and message at the leading edge, over a light dim. The buttons
+ * are capsules: two that fit sit side by side (Cancel leading); otherwise they stack with Cancel at the bottom.
+ * The confirm button is accent-filled when it answers a Cancel ([prominent]), red-lettered when [destructive].
+ * Several buttons may share the confirm slot, as a list of choices.
+ */
 @Composable
 internal fun AlertDialog(onDismissRequest: () -> Unit, title: @Composable () -> Unit, text: @Composable () -> Unit,
     confirmButton: @Composable () -> Unit, dismissButton: (@Composable () -> Unit)? = null,
     containerColor: Color = EvannaDesign.colorScheme.surfaceContainerHigh,
+    destructive: Boolean = false, prominent: Boolean = dismissButton != null && !destructive,
 ) {
     val palette = EvannaDesign.colorScheme
-    Dialog(onDismissRequest) {
+    val dark = LocalLookStyle.current.look.dark
+    val rim = menuRim()
+    val confirmRole = when {
+        destructive -> AlertRole.DESTRUCTIVE
+        prominent -> AlertRole.PROMINENT
+        else -> AlertRole.PLAIN
+    }
+    Dialog(onDismissRequest, DialogProperties(usePlatformDefaultWidth = false)) {
+        val view = LocalView.current
+        // iOS dims less than Android: the page stays visible around the alert.
+        SideEffect { (view.parent as? DialogWindowProvider)?.window?.setDimAmount(if (dark) 0.5f else 0.3f) }
         val progress = remember { Animatable(0f) }
-        LaunchedEffect(Unit) { progress.animateTo(1f, EvannaMotion.enter) }
-        Surface(Modifier.fillMaxWidth().graphicsLayer {
-            alpha = progress.value
-            scaleX = 0.96f + 0.04f * progress.value
-            scaleY = scaleX
-            translationY = 8.dp.toPx() * (1f - progress.value)
-        }, shape = EvannaDesign.shapes.extraLarge, color = containerColor) {
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                CompositionLocalProvider(LocalContentColor provides palette.onSurface) {
-                    ProvideTextStyle(EvannaDesign.typography.titleLarge, title)
-                }
-                Box(Modifier.weight(1f, fill = false)) {
-                    CompositionLocalProvider(LocalContentColor provides palette.onSurfaceVariant) {
-                        ProvideTextStyle(EvannaDesign.typography.bodyMedium, text)
+        LaunchedEffect(Unit) { progress.animateTo(1f, spring(dampingRatio = 0.86f, stiffness = 520f)) }
+        Box(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 24.dp), contentAlignment = Alignment.Center) {
+            // iOS alerts grow in from slightly larger, not up from below.
+            Surface(Modifier.widthIn(max = 320.dp).fillMaxWidth().graphicsLayer {
+                alpha = progress.value.coerceIn(0f, 1f)
+                scaleX = 1.08f - 0.08f * progress.value
+                scaleY = scaleX
+            }, shape = AlertShape, color = containerColor, border = rim, shadowElevation = 24.dp) {
+                Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 22.dp, bottom = 14.dp)) {
+                    Column(Modifier.weight(1f, fill = false).padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CompositionLocalProvider(LocalContentColor provides palette.onSurface) {
+                            ProvideTextStyle(AlertTitle, title)
+                            Box(Modifier.weight(1f, fill = false)) { ProvideTextStyle(AlertMessage, text) }
+                        }
                     }
+                    Spacer(Modifier.height(20.dp))
+                    AlertButtons(dismissButton, confirmButton, confirmRole)
                 }
-                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                    dismissButton?.invoke()
-                    confirmButton()
-                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlertButtons(dismiss: (@Composable () -> Unit)?, confirm: @Composable () -> Unit, confirmRole: AlertRole) {
+    Layout(contents = listOf(
+        { CompositionLocalProvider(LocalAlertRole provides AlertRole.CANCEL) { dismiss?.invoke() } },
+        { CompositionLocalProvider(LocalAlertRole provides confirmRole) { confirm() } },
+    ), Modifier.fillMaxWidth()) { (cancel, actions), constraints ->
+        val buttons = cancel + actions
+        val width = constraints.maxWidth
+        val gap = AlertButtonGap.roundToPx()
+        if (buttons.isEmpty()) return@Layout layout(width, 0) {}
+        val share = (width - gap * (buttons.size - 1)) / buttons.size
+        if (buttons.size <= 2 && buttons.all { it.maxIntrinsicWidth(Constraints.Infinity) <= share }) {
+            val placed = buttons.map { it.measure(Constraints.fixedWidth(share)) }
+            val height = placed.maxOf { it.height }
+            layout(width, height) { placed.forEachIndexed { i, p -> p.placeRelative(i * (share + gap), (height - p.height) / 2) } }
+        } else {
+            // Stacked, the chosen action is on top and Cancel at the bottom.
+            val placed = (actions + cancel).map { it.measure(Constraints.fixedWidth(width)) }
+            val height = placed.sumOf { it.height } + gap * (placed.size - 1)
+            layout(width, height) {
+                var y = 0
+                for (p in placed) { p.placeRelative(0, y); y += p.height + gap }
             }
         }
     }

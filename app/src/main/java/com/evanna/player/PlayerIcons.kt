@@ -219,6 +219,11 @@ internal object PlayerIcons {
         thin(2f) { moveTo(20.5f, 12f); arcToRelative(8.5f, 8.5f, 0f, true, true, -17f, 0f); arcToRelative(8.5f, 8.5f, 0f, true, true, 17f, 0f); close() }
         path(fill = ink) { moveTo(12f, 3.5f); arcTo(8.5f, 8.5f, 0f, false, false, 12f, 20.5f); close() }
     }
+    /** A circular arrow: rescan (arrow.clockwise). */
+    val Refresh = icon("Refresh") {
+        thin(2f) { moveTo(19.5f, 12f); arcToRelative(7.5f, 7.5f, 0f, true, true, -2.2f, -5.3f) }
+        thin(2f) { moveTo(17.9f, 2.9f); lineTo(17.5f, 6.9f); lineTo(13.5f, 6.6f) }
+    }
     /** A heartbeat line: signal checks (waveform.path.ecg). */
     val Pulse = icon("Pulse") { thin(2f) { moveTo(2.5f, 12.5f); horizontalLineTo(7f); lineTo(9.25f, 6.5f); lineTo(13f, 18f); lineTo(15.5f, 10f); lineTo(17f, 12.5f); horizontalLineTo(21.5f) } }
 

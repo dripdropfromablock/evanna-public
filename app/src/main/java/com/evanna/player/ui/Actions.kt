@@ -29,7 +29,9 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -50,24 +52,56 @@ internal object IconButtonDefaults {
     fun filledIconButtonColors(containerColor: Color, contentColor: Color) = ActionColors(containerColor, contentColor)
 }
 
+/** How a button looks in an alert's button row: an iOS capsule. [NONE] everywhere else. */
+internal enum class AlertRole { NONE, PROMINENT, PLAIN, CANCEL, DESTRUCTIVE }
+internal val LocalAlertRole = staticCompositionLocalOf { AlertRole.NONE }
+private val AlertButtonText = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.2).sp, textAlign = TextAlign.Center)
+
 @Composable
 private fun Action(
     onClick: () -> Unit, modifier: Modifier, enabled: Boolean, colors: ActionColors, outlined: Boolean = false,
     content: @Composable RowScope.() -> Unit,
 ) {
+    val role = LocalAlertRole.current
+    if (role != AlertRole.NONE) return AlertAction(onClick, modifier, enabled, role, content)
     val palette = EvannaDesign.colorScheme
     val ink = if (enabled) colors.content else palette.onSurface.copy(alpha = 0.38f)
-    val fill = if (enabled || colors.container == Color.Transparent) colors.container else palette.onSurface.copy(alpha = 0.10f)
+    // Outlined buttons are iOS bordered buttons: a capsule tinted with their text colour, no outline.
+    val container = if (outlined) colors.content.copy(alpha = 0.14f) else colors.container
+    val fill = if (enabled || container == Color.Transparent) container else palette.onSurface.copy(alpha = 0.10f)
     Row(
         // The click comes before the pill's shape and fill, so the whole pill sinks on press (PressIndication).
         modifier.heightIn(min = 48.dp).padding(vertical = 4.dp).widthIn(min = 56.dp)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick).clip(CircleShape).background(fill)
-            .then(if (outlined) Modifier.border(1.dp, if (enabled) palette.outline else palette.outlineVariant, CircleShape) else Modifier)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = if (outlined) 16.dp else 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
     ) {
         CompositionLocalProvider(LocalContentColor provides ink) {
             ProvideTextStyle(EvannaDesign.typography.labelLarge) { content() }
+        }
+    }
+}
+
+/** An iOS 26 alert button: a full-width capsule, gray, accent-filled when [AlertRole.PROMINENT], red text when destructive. */
+@Composable
+private fun AlertAction(onClick: () -> Unit, modifier: Modifier, enabled: Boolean, role: AlertRole, content: @Composable RowScope.() -> Unit) {
+    val palette = EvannaDesign.colorScheme
+    val dark = LocalLookStyle.current.look.dark
+    val fill = if (role == AlertRole.PROMINENT) palette.primary else AppleColors.strongFill(dark)
+    val ink = when (role) {
+        AlertRole.PROMINENT -> palette.onPrimary
+        AlertRole.DESTRUCTIVE -> AppleColors.red(dark)
+        else -> palette.onSurface
+    }
+    Row(modifier.fillMaxWidth().heightIn(min = 48.dp).graphicsLayer { alpha = if (enabled) 1f else 0.4f }
+        .clickable(enabled = enabled, role = Role.Button, onClick = onClick).clip(CircleShape).background(fill)
+        .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        CompositionLocalProvider(LocalContentColor provides ink) {
+            // Plain choices read lighter than Cancel and the main action, as in iOS.
+            ProvideTextStyle(AlertButtonText.copy(fontWeight = if (role == AlertRole.PLAIN) FontWeight.Normal else FontWeight.SemiBold)) {
+                content()
+            }
         }
     }
 }

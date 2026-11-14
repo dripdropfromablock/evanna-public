@@ -5,9 +5,7 @@ import android.os.storage.StorageManager
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
 import com.evanna.player.PlayerIcons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -115,7 +113,7 @@ internal fun FolderSourceActions(root: LibraryRoot, enabled: Boolean, onSubfolde
     val context = LocalContext.current
     var menu by remember(root.uri) { mutableStateOf(false) }
     IconButton(onClick = { LocalLibrary.scan(context, Uri.parse(root.uri)) }, enabled = enabled) {
-        Icon(Icons.Filled.Refresh, "Rescan ${root.name}")
+        Icon(PlayerIcons.Refresh, "Rescan ${root.name}")
     }
     Box {
         IconButton(onClick = { menu = true }, enabled = enabled) { Icon(PlayerIcons.More, "Manage ${root.name}") }
@@ -138,5 +136,6 @@ internal fun RemoveMusicFolderDialog(root: LibraryRoot, busy: Boolean, onDismiss
                 modifier = Modifier.heightIn(min = 48.dp)) { Text("Remove folder") }
         },
         dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") } },
+        destructive = true,
     )
 }
