@@ -13,6 +13,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.progressSemantics
 import androidx.compose.foundation.shape.CircleShape
@@ -60,7 +61,10 @@ internal fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modi
     onOpenOutput: ((Offset?) -> Unit)? = null,
 ) {
     val colors = EvannaDesign.colorScheme
-    val empty = AppleColors.strongFill(LocalLookStyle.current.look.dark)
+    val dark = LocalLookStyle.current.look.dark
+    val empty = AppleColors.strongFill(dark)
+    val glass = glassLiftOn()
+    val lift = rememberLift(interactionSource)
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val change by rememberUpdatedState(onValueChange)
     val finish by rememberUpdatedState(onValueChangeFinished)
@@ -91,6 +95,8 @@ internal fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modi
             // The tap detector consumes down, but a horizontal drag can still take over at touch slop.
             val down = awaitFirstDown(requireUnconsumed = !hasOutputAction)
             var drag: DragInteraction.Start? = null
+            // A press from the first touch, so the bar thickens and the knob lifts before the finger moves.
+            val press = PressInteraction.Press(down.position).also { interactionSource.tryEmit(it) }
             try {
                 while (true) {
                     val touch = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
@@ -116,6 +122,7 @@ internal fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modi
                 }
             } finally {
                 drag?.let { interactionSource.tryEmit(DragInteraction.Cancel(it)) }
+                interactionSource.tryEmit(PressInteraction.Release(press))
             }
         }
     }
@@ -137,8 +144,7 @@ internal fun Slider(value: Float, onValueChange: (Float) -> Unit, modifier: Modi
             }
         }
         Box(Modifier.onSizeChanged { thumbWidth = it.width }) {
-            if (thumb != null) thumb(position) else Box(Modifier.size(38.dp, 24.dp)
-                .shadow(3.dp, CircleShape).background(Color.White, CircleShape))
+            if (thumb != null) thumb(position) else GlassThumb(lift, glass && active, dark)
         }
     }, modifier = modifier.fillMaxWidth().heightIn(min = 48.dp)
         // A disabled default slider fades as one piece, as iOS does, so the track never shows through the knob.

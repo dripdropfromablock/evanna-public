@@ -1,6 +1,9 @@
 package com.evanna.player.equalizer
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -122,26 +125,10 @@ internal fun EqCard(modifier: Modifier = Modifier, content: @Composable ColumnSc
     }
 }
 
-/** Graphic | Parametric: a solid segmented control. */
+/** Graphic | Parametric: the app's iOS segmented control. */
 @Composable
 internal fun EqSegments(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier,
-    enabled: Boolean = true) {
-    val p = eqPalette()
-    val outer = RoundedCornerShape(9.dp)
-    val position by animateFloatAsState(selected.toFloat(), EvannaMotion.enter, label = "EQ segment selection")
-    Row(modifier.fillMaxWidth().heightIn(min = 32.dp).height(IntrinsicSize.Min).clip(outer)
-        .background(p.segment).padding(2.dp)
-        .slidingSelectionPill(options.size, { position }) { p.text.copy(alpha = SELECTION_PILL_ALPHA) }
-        .selectableGroup().graphicsLayer { alpha = if (enabled) 1f else 0.6f }) {
-        options.forEachIndexed { index, label ->
-            Box(Modifier.weight(1f).fillMaxHeight().clip(CircleShape)
-                .selectable(index == selected, enabled = enabled, role = Role.Tab) { onSelect(index) },
-                contentAlignment = Alignment.Center) {
-                Text(label, style = eqText(13.sp, 18.sp, FontWeight.Medium), color = p.text, maxLines = 1)
-            }
-        }
-    }
-}
+    enabled: Boolean = true) = SingleChoiceSegmentedButtonRow(options, selected, onSelect, modifier, enabled)
 
 /** Band types: a filled capsule, accent-filled when selected. */
 @Composable
@@ -354,15 +341,18 @@ internal fun EqHSlider(name: String, valueText: String, position: Float, centere
             Text(valueText, style = eqText(13.sp, 18.sp, FontWeight.Medium, tabular = true), color = p.text)
         }
         // The track sits 9 dp under the row, as drawn; the slider's 48 dp touch area reaches over its neighbours.
+        // Held, the track thickens and the knob lifts into glass, as the other sliders do.
+        val interaction = remember { MutableInteractionSource() }
+        val lift = rememberLift(interaction)
+        val glass = glassLiftOn()
+        val dark = LocalLookStyle.current.look.dark
+        val trackHeight by animateDpAsState(if (lift.value > 0.5f && enabled) 6.dp else 4.dp, label = "EQ track height")
         Box(Modifier.fillMaxWidth().height(13.dp)) {
-            Slider(value = position.coerceIn(0f, 1f), onValueChange = onPosition, enabled = enabled,
-                thumb = {
-                    Box(Modifier.size(if (p.whiteThumbs) 20.dp else 16.dp).then(if (p.whiteThumbs) Modifier.shadow(2.dp, CircleShape) else Modifier)
-                        .background(if (p.whiteThumbs) Color.White else p.accent, CircleShape))
-                },
+            Slider(value = position.coerceIn(0f, 1f), onValueChange = onPosition, enabled = enabled, interactionSource = interaction,
+                thumb = { GlassThumb(lift, glass && enabled, dark, DpSize(20.dp, 20.dp)) },
                 track = { state ->
-                    Canvas(Modifier.fillMaxWidth().height(4.dp)) {
-                        val f = state.value.coerceIn(0f, 1f); val r = CornerRadius(2.dp.toPx())
+                    Canvas(Modifier.fillMaxWidth().height(trackHeight)) {
+                        val f = state.value.coerceIn(0f, 1f); val r = CornerRadius(size.height / 2f)
                         drawRoundRect(p.track, cornerRadius = r)
                         val from = if (centered) min(f, 0.5f) else 0f; val to = if (centered) max(f, 0.5f) else f
                         drawRoundRect(p.accent, Offset(size.width * from, 0f), Size(size.width * (to - from), size.height), r)

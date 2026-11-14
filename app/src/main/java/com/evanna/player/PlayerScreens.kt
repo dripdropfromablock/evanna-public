@@ -71,6 +71,8 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -247,13 +249,19 @@ internal fun ActionRow(label: String, enabled: Boolean = true, destructive: Bool
 /** A Settings row with a title, an optional short note and a switch; the whole row toggles it. */
 @Composable
 internal fun SwitchRow(title: String, note: String? = null, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+    // One press source for the row and its switch: a press anywhere on the row lifts the knob.
+    val interaction = remember { MutableInteractionSource() }
+    val haptics = LocalHapticFeedback.current
     Row(Modifier.fillMaxWidth().heightIn(min = 52.dp)
-        .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
+        .toggleable(checked, interaction, LocalIndication.current, enabled = enabled, role = Role.Switch,
+            onValueChange = { haptics.toggle(it); onChange(it) })
         .semantics(mergeDescendants = true) {}
         .padding(horizontal = rowPadding(), vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically) {
         RowText(title, note, enabled, Modifier.weight(1f))
-        Box(Modifier.padding(start = 12.dp).clearAndSetSemantics {}) { Switch(checked = checked, onCheckedChange = onChange, enabled = enabled) }
+        Box(Modifier.padding(start = 12.dp).clearAndSetSemantics {}) {
+            Switch(checked = checked, onCheckedChange = onChange, enabled = enabled, interactionSource = interaction)
+        }
     }
 }
 

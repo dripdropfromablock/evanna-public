@@ -1,8 +1,11 @@
 package com.evanna.player.ui
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -28,6 +31,11 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -39,6 +47,8 @@ import androidx.compose.ui.unit.sp
 import com.evanna.player.EvannaDesign
 import com.evanna.player.EvannaMotion
 import com.evanna.player.LocalLookStyle
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 internal class ActionColors(val container: Color, val content: Color)
@@ -184,31 +194,47 @@ internal object AppleColors {
     fun separator(dark: Boolean) = if (dark) Color(0xFF545458).copy(alpha = 0.6f) else Color(0xFF3C3C43).copy(alpha = 0.29f)
 }
 
+/** The tick a switch gives when it flips, as iOS does. */
+internal fun HapticFeedback.toggle(on: Boolean) =
+    performHapticFeedback(if (on) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+
 /**
- * The iOS 26 switch: a 64 × 28 dp capsule, green when on, with a white oval knob that stretches while it is held.
+ * The iOS 26 switch: a 64 × 28 dp capsule, green when on, with a white oval knob. Held, the knob stretches and, with
+ * Liquid glass on, swells into clear glass that shows the track through it. It ticks when it flips. Pass the row's
+ * [interactionSource] when a whole row toggles it, so the knob lifts for a press anywhere on the row.
  * The 48 dp touch area stays.
  */
 @Composable
-internal fun Switch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+internal fun Switch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
+    interactionSource: MutableInteractionSource? = null,
+) {
     val dark = LocalLookStyle.current.look.dark
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
+    val interaction = interactionSource ?: remember { MutableInteractionSource() }
+    val lift = rememberLift(interaction)
+    val glass = glassLiftOn()
+    val haptics = LocalHapticFeedback.current
     val progress by animateFloatAsState(if (checked) 1f else 0f, spring(dampingRatio = 0.8f, stiffness = 520f), label = "switch")
-    val stretch by animateFloatAsState(if (pressed && enabled) 1f else 0f, spring(stiffness = 700f), label = "switch hold")
     val on = AppleColors.green(dark)
     val off = AppleColors.strongFill(dark)
     Box(modifier.sizeIn(minWidth = 64.dp, minHeight = 48.dp)
-        .toggleable(checked, interaction, indication = null, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange),
+        .toggleable(checked, interaction, indication = null, enabled = enabled, role = Role.Switch,
+            onValueChange = { haptics.toggle(it); onCheckedChange(it) }),
         contentAlignment = Alignment.Center) {
         Box(Modifier.size(64.dp, 28.dp).graphicsLayer { alpha = if (enabled) 1f else 0.5f }
             .drawBehind { drawRoundRect(lerp(off, on, progress), cornerRadius = CornerRadius(size.height / 2f)) }) {
             Box(Modifier.offset { IntOffset((2.dp.toPx() + 22.dp.toPx() * progress).roundToInt(), 2.dp.roundToPx()) }
                 .graphicsLayer {
-                    // Held, the knob grows towards the middle from the side it rests on.
-                    transformOrigin = TransformOrigin(progress, 0.5f)
-                    scaleX = 1f + 0.18f * stretch
+                    val held = if (enabled) lift.value else 0f
+                    val clear = if (glass) held.coerceIn(0f, 1f) else 0f
+                    // Held, the knob stretches; as glass it also swells past the track's edges.
+                    scaleX = 1f + (if (glass) 0.34f else 0.18f) * held
+                    scaleY = 1f + (if (glass) 0.3f else 0f) * held
+                    // A shadow under clear glass would show through it as a smudge.
+                    shadowElevation = 2.dp.toPx() * (1f - clear)
+                    shape = CircleShape
                 }
-                .size(38.dp, 24.dp).shadow(2.dp, CircleShape).background(Color.White, CircleShape))
+                .size(38.dp, 24.dp)
+                .drawBehind { drawGlassKnob(if (glass && enabled) lift.value else 0f, dark) })
         }
     }
 }
@@ -223,9 +249,17 @@ internal fun Modifier.slidingSelectionPill(count: Int, position: () -> Float, co
         cornerRadius = CornerRadius(minOf(width, size.height) / 2f))
 }
 
+private val SegmentSpring = spring<Float>(dampingRatio = 0.85f, stiffness = 500f)
+
+/** Where a sliding capsule centres under a finger [x] from the start edge: 0 is the first segment, count − 1 the last. */
+internal fun segmentUnder(x: Float, width: Float, count: Int): Float =
+    if (width <= 0f || count < 1) 0f else (x / width * count - 0.5f).coerceIn(0f, (count - 1).toFloat())
+
 /**
  * The iOS 26 segmented control: a gray capsule track with a raised capsule on the choice (white in light, gray in dark)
- * and no separators. It draws 36 dp tall inside a 48 dp touch row.
+ * and no separators. It draws 36 dp tall inside a 48 dp touch row. Tap a segment, or slide the capsule along with a
+ * finger: it ticks at each segment and picks the one it is let go on. While held, with Liquid glass on, the capsule
+ * swells into clear glass.
  */
 @Composable
 internal fun SingleChoiceSegmentedButtonRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier,
@@ -233,29 +267,85 @@ internal fun SingleChoiceSegmentedButtonRow(options: List<String>, selected: Int
 ) {
     val colors = EvannaDesign.colorScheme
     val dark = LocalLookStyle.current.look.dark
-    val position by animateFloatAsState(selected.toFloat(), spring(dampingRatio = 0.85f, stiffness = 500f), label = "segment selection")
+    val glass = glassLiftOn()
+    val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val count = options.size
+    val pill = remember { Animatable(selected.toFloat()) }
+    // Where the capsule sits while a finger slides it, in segments from the start edge; null when not sliding.
+    var slideAt by remember { mutableStateOf<Float?>(null) }
+    var held by remember { mutableStateOf(false) }
+    val lift by animateFloatAsState(if (held && enabled && glass) 1f else 0f,
+        spring(dampingRatio = 0.72f, stiffness = 650f), label = "segment lift")
+    LaunchedEffect(selected) { if (slideAt == null) pill.animateTo(selected.toFloat(), SegmentSpring) }
+    val current by rememberUpdatedState(selected)
+    val pick by rememberUpdatedState(onSelect)
+    val choose = { index: Int ->
+        if (index != current) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); pick(index) }
+    }
     val track = AppleColors.fill(dark)
     val thumb = if (dark) Color(0xFF636366) else Color.White
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val slide = if (!enabled || count < 2) Modifier else Modifier.pointerInput(count, rtl) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            held = true
+            var sliding = false
+            var lastSlot = -1
+            try {
+                while (true) {
+                    val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) break
+                    val travel = change.position - down.position
+                    if (!sliding) {
+                        // A vertical move is the list scrolling; let it go.
+                        if (abs(travel.y) > viewConfiguration.touchSlop && abs(travel.y) > abs(travel.x)) break
+                        if (abs(travel.x) < viewConfiguration.touchSlop) continue
+                        sliding = true
+                    }
+                    // Consuming the slide cancels the tap on the segment it started on.
+                    change.consume()
+                    val x = if (rtl) size.width - change.position.x else change.position.x
+                    val at = segmentUnder(x, size.width.toFloat(), count)
+                    slideAt = at
+                    val slot = at.roundToInt()
+                    if (lastSlot >= 0 && slot != lastSlot) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    lastSlot = slot
+                }
+            } finally {
+                held = false
+                slideAt?.let { at ->
+                    val index = at.roundToInt()
+                    scope.launch { pill.snapTo(at); slideAt = null; pill.animateTo(index.toFloat(), SegmentSpring) }
+                    if (index != current) pick(index)
+                }
+            }
+        }
+    }
     Row(modifier.fillMaxWidth().heightIn(min = 48.dp).height(IntrinsicSize.Min)
         .graphicsLayer { alpha = if (enabled) 1f else 0.5f }
+        .then(slide)
         .drawBehind {
             val inset = 6.dp.toPx()
             val height = size.height - 2 * inset
             drawRoundRect(track, Offset(0f, inset), Size(size.width, height), CornerRadius(height / 2f))
             if (selected !in options.indices) return@drawBehind
             val pad = 2.dp.toPx()
-            val width = (size.width - 2 * pad) / options.size
-            val slot = if (layoutDirection == LayoutDirection.Ltr) position else options.size - 1 - position
-            val knob = Size(width, height - 2 * pad)
+            val width = (size.width - 2 * pad) / count
+            val position = slideAt ?: pill.value
+            val slot = if (layoutDirection == LayoutDirection.Ltr) position else count - 1 - position
+            val rest = Size(width, height - 2 * pad)
+            // Lifted, the capsule grows a little wider and past the track's top and bottom.
+            val knob = Size(rest.width * (1f + 0.06f * lift), rest.height + 6.dp.toPx() * lift)
+            val at = Offset(pad + width * slot - (knob.width - rest.width) / 2, inset + pad - (knob.height - rest.height) / 2)
             val corner = CornerRadius(knob.height / 2f)
-            val at = Offset(pad + width * slot, inset + pad)
-            if (!dark) drawRoundRect(Color.Black.copy(alpha = 0.08f), at + Offset(0f, 1.dp.toPx()), knob, corner)
-            drawRoundRect(thumb, at, knob, corner)
+            if (!dark) drawRoundRect(Color.Black.copy(alpha = 0.08f * (1f - lift)), at + Offset(0f, 1.dp.toPx()), knob, corner)
+            if (lift > 0.01f) drawGlassKnob(lift, dark, at, knob, thumb) else drawRoundRect(thumb, at, knob, corner)
         }
         .selectableGroup()) {
         options.forEachIndexed { index, label ->
             Box(Modifier.weight(1f).fillMaxHeight()
-                .selectable(index == selected, enabled = enabled, role = Role.RadioButton, onClick = { onSelect(index) })
+                .selectable(index == selected, enabled = enabled, role = Role.RadioButton, onClick = { choose(index) })
                 .padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
                 Text(label, style = EvannaDesign.typography.labelLarge, fontSize = 14.sp,
                     fontWeight = if (index == selected) FontWeight.SemiBold else FontWeight.Medium, color = colors.onSurface, maxLines = 1)

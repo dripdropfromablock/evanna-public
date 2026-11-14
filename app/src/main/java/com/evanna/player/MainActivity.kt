@@ -469,6 +469,10 @@ class MainActivity : ComponentActivity() {
                 val glass = remember(glassTier, pageBackdrop, reduceTransparency) {
                     GlassContext(glassTier, pageBackdrop.takeIf { glassTier.samplesBackdrop }, reduceTransparency)
                 }
+                // Controls everywhere read the tier, so pressed controls only lift into glass while glass is on.
+                // Only the dock gets the recorded page to sample.
+                val glassControls = remember(glassTier, reduceTransparency) { GlassContext(glassTier, null, reduceTransparency) }
+                CompositionLocalProvider(LocalGlass provides glassControls) {
                 Surface(Modifier.fillMaxSize(), color = EvannaDesign.colorScheme.background) {
                 Box(Modifier.fillMaxSize().onSizeChanged { motion.travelPx = it.height }) {
                     // The app under the sheet is never taken apart, so closing Now Playing finds the tab exactly as it was.
@@ -593,6 +597,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                }
                 }
                 }
             }

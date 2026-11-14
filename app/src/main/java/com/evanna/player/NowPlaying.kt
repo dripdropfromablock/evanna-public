@@ -9,6 +9,7 @@ import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -443,9 +444,15 @@ internal fun PillSlider(value: Float, onValueChange: (Float) -> Unit, onValueCha
     enabled: Boolean, description: String, modifier: Modifier = Modifier,
     interaction: MutableInteractionSource = remember { MutableInteractionSource() }, onOpenOutput: ((Offset?) -> Unit)? = null,
 ) {
+    // Apple Music's scrubber: it thickens as soon as a finger lands, with a little bounce, and stretches a touch wider.
     val dragging by interaction.collectIsDraggedAsState()
-    val height by animateDpAsState(if (dragging) 12.dp else 7.dp, label = "pill height")
-    Box(modifier.height(7.dp), contentAlignment = Alignment.Center) {
+    val pressed by interaction.collectIsPressedAsState()
+    val held = (dragging || pressed) && enabled
+    val bounce = spring<Float>(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)
+    val height by animateDpAsState(if (held) 12.dp else 7.dp, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMediumLow),
+        label = "pill height")
+    val stretch by animateFloatAsState(if (held) 1f else 0f, bounce, label = "pill stretch")
+    Box(modifier.height(7.dp).graphicsLayer { scaleX = 1f + 0.025f * stretch }, contentAlignment = Alignment.Center) {
         Slider(value = value, onValueChange = onValueChange, onValueChangeFinished = onValueChangeFinished, valueRange = valueRange,
             enabled = enabled, interactionSource = interaction, onOpenOutput = onOpenOutput, thumb = { Spacer(Modifier.size(0.dp)) },
             track = { slider ->
@@ -485,7 +492,8 @@ private fun SeekBar(state: PlayerPresentation, onSeek: (String?, Long) -> Unit, 
                 val badgePress = remember { MutableInteractionSource() }
                 Text(remember(state.sourceQuality) { shortSourceQuality(state.sourceQuality) }, style = Badge, color = Pv1,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp).clip(RoundedCornerShape(5.dp)).background(Pv4)
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp)
+                        .liftIntoGlass(badgePress, RoundedCornerShape(10.dp), outset = 5.dp).clip(RoundedCornerShape(5.dp)).background(Pv4)
                         .controlFocus(badgePress, RoundedCornerShape(5.dp))
                         .clickable(badgePress, indication = null, role = Role.Button, onClick = onSignal)
                         .semantics { contentDescription = "Audio quality details" }
@@ -495,11 +503,11 @@ private fun SeekBar(state: PlayerPresentation, onSeek: (String?, Long) -> Unit, 
     }
 }
 
-/** A plain transport icon that shrinks a little while pressed. */
+/** A plain transport icon that shrinks a little while pressed, over a glass circle that lifts in under the finger. */
 @Composable
 private fun TransportButton(icon: ImageVector, size: Dp, description: String, enabled: Boolean, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
-    Box(Modifier.size(size + 12.dp).controlFocus(interaction, CircleShape)
+    Box(Modifier.size(size + 12.dp).liftIntoGlass(interaction, CircleShape, outset = 4.dp).controlFocus(interaction, CircleShape)
         .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
         Icon(icon, contentDescription = null, tint = if (enabled) Pv1 else Pv3, modifier = Modifier.size(size).pressScale(interaction))
