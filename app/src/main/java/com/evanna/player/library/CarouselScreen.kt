@@ -3,10 +3,15 @@ package com.evanna.player.library
 import android.graphics.Bitmap
 import android.os.Build
 import android.util.LruCache
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -34,6 +39,14 @@ import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import kotlinx.coroutines.flow.drop
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlendMode
@@ -70,9 +83,7 @@ import kotlin.random.Random
 
 private const val CAROUSEL_ALBUM_BATCH = 48
 private const val CAROUSEL_FLING_PAGES = 12
-private val CarouselCardShape = RoundedCornerShape(20.dp)
 private val CarouselCoverShape = RoundedCornerShape(14.dp)
-private val CarouselCoverInset = 7.dp
 private const val CAROUSEL_BACKDROP_SIZE = 48
 
 private class CarouselBackdrops {
@@ -96,6 +107,42 @@ private class CarouselBackdrops {
         }
         images.put(album, blurred)
         changes++
+    }
+}
+
+/** The song Now Playing shows, matched to album tracks by title and album (queue ids are not library ids). */
+internal data class NowPlayingMark(val title: String, val album: String?, val playing: Boolean) {
+    fun matches(song: LibrarySong) = song.title == title && (album.isNullOrBlank() || song.album == album)
+}
+
+/**
+ * The line under a track in an album: nothing when the album's own artist made it, "feat. …" when they are joined by
+ * guests ("Yeat, Gunna" on a Yeat album), and the artist as it is when someone else made it.
+ */
+internal fun trackGuests(artist: String?, albumArtist: String?): String? {
+    val who = artist?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val main = albumArtist?.trim()?.takeIf { it.isNotEmpty() } ?: return who
+    if (who.equals(main, ignoreCase = true)) return null
+    for (join in listOf(", ", " & ", " x ", " feat. ", " ft. ", " featuring ", " with ", "; ", " / ")) {
+        if (who.length > main.length + join.length && who.startsWith(main + join, ignoreCase = true)) {
+            return "feat. " + who.substring(main.length + join.length).trim()
+        }
+    }
+    return who
+}
+
+/** "2023 · 22 songs · 1 h 12 min"; the length only once every track's length is known. */
+internal fun albumInfoLine(year: Int?, songs: Int, lengthMs: Long?): String = listOfNotNull(
+    year?.toString(), if (songs == 1) "1 song" else "$songs songs", lengthMs?.takeIf { it > 0 }?.let(::albumLength),
+).joinToString(" · ")
+
+/** An album's length to the nearest minute: "38 min", "1 h", "1 h 12 min". */
+internal fun albumLength(ms: Long): String {
+    val minutes = (ms + 30_000) / 60_000
+    return when {
+        minutes < 60 -> "$minutes min"
+        minutes % 60 == 0L -> "${minutes / 60} h"
+        else -> "${minutes / 60} h ${minutes % 60} min"
     }
 }
 
@@ -143,6 +190,7 @@ internal fun CarouselScreen(
     onAdd: (String, (Boolean) -> Unit) -> Unit,
     onPlayNext: (String, (Boolean) -> Unit) -> Unit,
     onPlaylistSong: (String) -> Unit,
+    nowPlaying: NowPlayingMark? = null,
 ) {
     val context = LocalContext.current
     val database = remember(context) { LocalLibrary.database(context) }
@@ -161,7 +209,7 @@ internal fun CarouselScreen(
     if (albums != null && albums.total > 0) {
         key(revision, albums.total) {
             CarouselBrowser(database, artwork, albums, revision, active, lastAlbum, { lastAlbum = it },
-                bottomInset, onSelect, onAdd, onPlayNext, onPlaylistSong)
+                bottomInset, onSelect, onAdd, onPlayNext, onPlaylistSong, nowPlaying)
         }
     } else {
         Column(Modifier.fillMaxSize().statusBarsPadding().padding(bottom = bottomInset)) {
@@ -190,7 +238,7 @@ private fun CarouselBrowser(
     active: Boolean, initialAlbum: Int, onSettled: (Int) -> Unit, bottomInset: Dp,
     onSelect: (LibraryContextRequest, (Boolean) -> Unit) -> Unit,
     onAdd: (String, (Boolean) -> Unit) -> Unit, onPlayNext: (String, (Boolean) -> Unit) -> Unit,
-    onPlaylistSong: (String) -> Unit,
+    onPlaylistSong: (String) -> Unit, nowPlaying: NowPlayingMark?,
 ) {
     val count = albums.total
     val pager = rememberPagerState(initialPage = carouselStartPage(initialAlbum.coerceIn(0, count - 1), count)) {
@@ -297,6 +345,13 @@ private fun CarouselBrowser(
     }
     LaunchedEffect(active, settledIndex) {
         if (active) onSettled(settledIndex)
+    }
+    // A tick each time a new album comes to rest in the middle.
+    val haptics = LocalHapticFeedback.current
+    LaunchedEffect(pager) {
+        snapshotFlow { pager.settledPage }.drop(1).collect {
+            haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
+        }
     }
     LaunchedEffect(active, centeredAlbum, selectionRetry) {
         val album = centeredAlbum ?: return@LaunchedEffect
@@ -448,26 +503,28 @@ private fun CarouselBrowser(
                             val pageOffset = remember(pager, page) {
                                 { ((page - pager.currentPage) - pager.currentPageOffsetFraction).coerceIn(-3f, 3f) }
                             }
-                            CarouselAlbumCard(group, group?.identity()?.let(covers::get)?.bitmap, cardWidth, captionHeight,
+                            CarouselAlbumCard(group, group?.identity()?.let(covers::get)?.bitmap, cardWidth,
                                 pageOffset = pageOffset, modifier = Modifier.graphicsLayer {
                                 if (progress > 0f && page == pager.settledPage) alpha = 0f
                                 if (!reducedMotion) {
+                                    // Cover Flow: the covers either side turn to face the middle and step back.
                                     val offset = pageOffset()
                                     val distance = abs(offset)
-                                    val scale = 1f - distance.coerceAtMost(2f) * 0.075f
+                                    val scale = 1f - distance.coerceAtMost(2f) * 0.1f
                                     scaleX = scale
                                     scaleY = scale
-                                    rotationY = -offset.coerceIn(-1.25f, 1.25f) * 14f
+                                    rotationY = -offset.coerceIn(-1f, 1f) * 38f
                                     cameraDistance = size.width * 4f
                                 }
                             }, onClick = { if (progress == 0f) moveTo(page) },
                                 onDoubleClick = if (page == pager.settledPage) ({ playFocusedAlbum(page) }) else null)
                         }
+                        CarouselCaption(centered, captionHeight)
                     }
                     if (progress > 0f) {
                         ExpandingCarouselAlbum(
                             centered, centeredCover?.bitmap, progress, captionHeight,
-                            coverHeight = lerpDp(cardWidth - CarouselCoverInset * 2, pinnedHeight, progress),
+                            coverHeight = lerpDp(cardWidth, pinnedHeight, progress),
                             modifier = Modifier.align(Alignment.TopCenter).offset(y = lerpDp(57.dp, 0.dp, progress))
                                 .width(headerWidth).height(headerHeight).semantics {
                                     if (!trackList.canScrollBackward) customActions = listOf(
@@ -497,7 +554,8 @@ private fun CarouselBrowser(
                             TextButton(onClick = { selectionRetry++ }) { Text("Retry loading tracks") }
                         visibleSelection == null -> Text("Loading tracks…", modifier = Modifier.padding(vertical = 12.dp))
                         else -> key(visibleSelection.album.key) {
-                            CarouselTracks(visibleSelection, centeredCover?.bitmap, database, active, bottomInset, scope, trackList,
+                        // Play, Shuffle and the album line lead the list; the title stays under the covers above.
+                            CarouselTracks(visibleSelection, nowPlaying, database, active, bottomInset, scope, trackList,
                                 Modifier.nestedScroll(headerScroll), onSelect, onAdd,
                                 onPlayNext, onPlaylistSong, { trackInfo = it }, { playbackFailed = true })
                         }
@@ -545,13 +603,10 @@ private fun CarouselHeader(enabled: Boolean, onRoll: () -> Unit) {
     }
 }
 
-private fun carouselGlassRim(strength: Float) = Brush.linearGradient(listOf(
-    Color.White.copy(alpha = 0.54f * strength),
-    Color.White.copy(alpha = 0.16f * strength),
-    Color.White.copy(alpha = 0.10f * strength),
-    Color.White.copy(alpha = 0.20f * strength),
-))
-
+/**
+ * The centred album growing into the full-width cover at the top of its track list. It starts as the floating cover with
+ * its caption under it, exactly as the carousel shows it, and ends edge to edge with the caption over the cover's foot.
+ */
 @Composable
 private fun ExpandingCarouselAlbum(
     group: LibraryGroup?, cover: Bitmap?, progress: Float, captionHeight: Dp, coverHeight: Dp, modifier: Modifier,
@@ -559,8 +614,7 @@ private fun ExpandingCarouselAlbum(
     val colors = EvannaDesign.colorScheme
     val listColor = colors.surfaceContainer
     val glass = 1f - progress
-    val inset = CarouselCoverInset * glass
-    val frame = RoundedCornerShape(20.dp * glass)
+    val frame = RoundedCornerShape(14.dp * glass)
     val coverShape = RoundedCornerShape(14.dp * glass)
     val fade = Brush.verticalGradient(
         0f to Color.Transparent,
@@ -568,12 +622,9 @@ private fun ExpandingCarouselAlbum(
         0.72f to listColor.copy(alpha = progress * 0.90f),
         1f to listColor.copy(alpha = progress),
     )
-    Surface(modifier, shape = frame,
-        color = lerp(colors.surfaceContainerHigh.copy(alpha = 0.62f), listColor, progress),
-        border = if (glass > 0f) BorderStroke(1.dp, carouselGlassRim(glass)) else null) {
+    Surface(modifier, shape = frame, color = lerp(Color.Transparent, listColor, progress)) {
         Box(Modifier.fillMaxSize()) {
-            val coverModifier = Modifier.padding(start = inset, end = inset, top = inset)
-                .fillMaxWidth().height(coverHeight)
+            val coverModifier = Modifier.fillMaxWidth().height(coverHeight)
             if (cover == null) ArtworkImage(null, coverModifier, coverShape)
             else {
                 val image = remember(cover) { cover.asImageBitmap() }
@@ -581,28 +632,35 @@ private fun ExpandingCarouselAlbum(
             }
             Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .height(maxOf(coverHeight * 0.55f, captionHeight * 2f)).background(fade))
-            Column(Modifier.align(Alignment.BottomStart)
-                .padding(horizontal = lerpDp(13.dp, 16.dp, progress), vertical = lerpDp(7.dp, 12.dp, progress))
-                .height(captionHeight).padding(top = 6.dp * (1f - progress)),
-                verticalArrangement = Arrangement.Center) {
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = lerpDp(0.dp, 12.dp, progress))
+                .height(captionHeight),
+                verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 CarouselAlbumLabel(group, heading = true)
             }
         }
     }
 }
 
+/**
+ * One album in the carousel: the cover alone, floating on a soft shadow, with no card around it. Covers away from the
+ * middle soften and darken; the centred album's title sits under the carousel ([CarouselCaption]).
+ */
 @Composable
 private fun CarouselAlbumCard(
-    group: LibraryGroup?, shown: Bitmap?, width: Dp, captionHeight: Dp,
+    group: LibraryGroup?, shown: Bitmap?, width: Dp,
     pageOffset: () -> Float, modifier: Modifier, onClick: () -> Unit, onDoubleClick: (() -> Unit)?,
 ) {
-    val colors = EvannaDesign.colorScheme
-    Surface(modifier.width(width).combinedClickable(interactionSource = null, indication = null,
-        enabled = group != null, onClick = onClick, onDoubleClick = onDoubleClick),
-        shape = CarouselCardShape, color = colors.surfaceContainerHigh.copy(alpha = 0.62f),
-        border = BorderStroke(1.dp, carouselGlassRim(1f))) {
-        Column(Modifier.padding(CarouselCoverInset)) {
-            val cover = Modifier.fillMaxWidth().aspectRatio(1f)
+    Box(modifier.width(width).aspectRatio(1f).shadow(14.dp, CarouselCoverShape, clip = false)
+        .combinedClickable(interactionSource = null, indication = null,
+            enabled = group != null, onClick = onClick, onDoubleClick = onDoubleClick)) {
+        run {
+            val dim = Modifier.drawWithContent {
+                drawContent()
+                val away = abs(pageOffset()).coerceAtMost(1f)
+                if (away > 0.01f) drawRect(Color.Black.copy(alpha = 0.42f * away))
+            }
+            val cover = Modifier.fillMaxSize()
 
             if (Build.VERSION.SDK_INT >= 31) {
                 val density = LocalDensity.current
@@ -617,7 +675,7 @@ private fun CarouselAlbumCard(
                     shape = CarouselCoverShape
                     clip = true
                     renderEffect = blurSteps[blurStep]
-                }, CarouselCoverShape)
+                }.then(dim), CarouselCoverShape)
             } else {
                 val soften by remember(pageOffset) { derivedStateOf { abs(pageOffset()) >= 0.60f } }
                 val softened = remember(shown) {
@@ -627,28 +685,37 @@ private fun CarouselAlbumCard(
                             (it.height * scale).toInt().coerceAtLeast(1), true)
                     }
                 }
-                ArtworkImage(if (soften) softened ?: shown else shown, cover, CarouselCoverShape)
-            }
-            Column(Modifier.fillMaxWidth().height(captionHeight).padding(start = 6.dp, end = 6.dp, top = 6.dp),
-                verticalArrangement = Arrangement.Center) {
-                CarouselAlbumLabel(group)
+                ArtworkImage(if (soften) softened ?: shown else shown, cover.clip(CarouselCoverShape).then(dim), CarouselCoverShape)
             }
         }
     }
 }
 
+/** The centred album's title and artist, under the carousel; it fades to the next album as one settles. */
+@Composable
+private fun CarouselCaption(group: LibraryGroup?, height: Dp) {
+    Crossfade(group?.identity(), Modifier.fillMaxWidth().height(height), animationSpec = tween(160), label = "carousel caption") { shown ->
+        val album = if (shown == group?.identity()) group else null
+        Column(Modifier.fillMaxSize().padding(horizontal = 24.dp), verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            if (album != null) CarouselAlbumLabel(album, heading = true)
+        }
+    }
+}
+
+/** Title, then the artist in the cover's colour, both centred. */
 @Composable
 private fun CarouselAlbumLabel(group: LibraryGroup?, heading: Boolean = false) {
     Text(group?.let { it.value ?: "Unknown album" }.orEmpty(), style = EvannaDesign.typography.titleMedium,
-        maxLines = 1, overflow = TextOverflow.Ellipsis,
+        fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
         modifier = if (heading) Modifier.semantics { heading() } else Modifier)
-    Text((group?.artist ?: group?.albumArtist).orEmpty(), style = EvannaDesign.typography.bodySmall,
-        color = EvannaDesign.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Text((group?.artist ?: group?.albumArtist).orEmpty(), style = EvannaDesign.typography.bodyMedium,
+        color = EvannaDesign.colorScheme.primary, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }
 
 @Composable
 private fun CarouselTracks(
-    selection: CarouselSelection, cover: Bitmap?, database: LibraryDatabase, active: Boolean, bottomInset: Dp, scope: CoroutineScope,
+    selection: CarouselSelection, nowPlaying: NowPlayingMark?, database: LibraryDatabase, active: Boolean, bottomInset: Dp, scope: CoroutineScope,
     list: LazyListState, modifier: Modifier,
     onSelect: (LibraryContextRequest, (Boolean) -> Unit) -> Unit,
     onAdd: (String, (Boolean) -> Unit) -> Unit, onPlayNext: (String, (Boolean) -> Unit) -> Unit,
@@ -682,31 +749,87 @@ private fun CarouselTracks(
             drawRect(edge, blendMode = BlendMode.DstIn)
         }
     } else Modifier
+    val albumArtist = selection.album.albumArtist ?: selection.summary.displayArtist
+    // The length shows once every track is loaded and has one.
+    val lengthMs = if (songs.size >= total && songs.isNotEmpty() && songs.all { it.durationUs != null })
+        songs.sumOf { it.durationUs ?: 0L } / 1000 else null
+    val canPlay = active && !busy && songs.isNotEmpty()
+    fun playAlbum(action: LibraryContextAction) = onSelect(LibraryContextRequest(filter, null, action)) { if (!it) onPlaybackFailed() }
     LazyColumn(modifier = modifier.then(fade), state = list, contentPadding = PaddingValues(bottom = bottomInset + 16.dp)) {
+        item(key = "album actions") {
+            Column(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(albumInfoLine(selection.summary.year, total, lengthMs), style = EvannaDesign.typography.bodySmall,
+                    color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // Play is the one tinted control, in the cover's colour; Shuffle stays neutral.
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = { playAlbum(LibraryContextAction.PLAY_FIRST) }, enabled = canPlay,
+                        colors = ActionColors(colors.primary, colors.onPrimary), modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Play", fontWeight = FontWeight.SemiBold)
+                    }
+                    Button(onClick = { playAlbum(LibraryContextAction.SHUFFLE) }, enabled = canPlay,
+                        colors = ActionColors(colors.onSurface.copy(alpha = 0.12f), colors.onSurface), modifier = Modifier.weight(1f)) {
+                        Icon(PlayerIcons.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Shuffle", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
         itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
             albumDiscHeading(songs, index, selection.summary)?.let { label ->
                 Text(label, style = EvannaDesign.typography.titleSmall,
                     modifier = Modifier.padding(vertical = 8.dp).semantics { heading() })
             }
+            val playingHere = nowPlaying?.matches(song) == true
             LibrarySongRow(song, enabled = active && !busy, scope = scope, onPlay = {
                 onSelect(LibraryContextRequest(filter, song.id, LibraryContextAction.PLAY_FROM)) { if (!it) onPlaybackFailed() }
-            }, onAdd = onAdd, onPlayNext = onPlayNext, onPlaylistSong = onPlaylistSong, onTrackInfo = { onTrackInfo(song) }) {
-                ArtworkImage(cover, Modifier.size(44.dp))
-                Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                    Text(song.title, style = EvannaDesign.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    val artist = song.artist ?: selection.summary.displayArtist
-                    if (artist != null || !song.available) Text(
-                        if (song.available) artist.orEmpty() else "Unavailable · reconnect or rescan",
-                        style = EvannaDesign.typography.bodySmall, color = colors.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
+            }, onAdd = onAdd, onPlayNext = onPlayNext, onPlaylistSong = onPlaylistSong, onTrackInfo = { onTrackInfo(song) },
+                queueButton = false, swipeToQueue = true) {
+                // The track number, or moving bars on the song that is playing; the album cover is already above.
+                Box(Modifier.width(28.dp).heightIn(min = 40.dp), contentAlignment = Alignment.Center) {
+                    if (playingHere) PlayingBars(nowPlaying?.playing == true, colors.primary,
+                        Modifier.semantics { contentDescription = if (nowPlaying?.playing == true) "Now playing" else "Paused" })
+                    else Text((song.musicTags.trackNumber ?: (index + 1)).toString(), style = EvannaType.playbackTime,
+                        color = colors.onSurfaceVariant, maxLines = 1)
+                }
+                Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                    Text(song.title, style = EvannaDesign.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        color = if (playingHere) colors.primary else Color.Unspecified,
+                        fontWeight = if (playingHere) FontWeight.SemiBold else null)
+                    val guests = if (song.available) trackGuests(song.artist, albumArtist) else "Unavailable · reconnect or rescan"
+                    if (guests != null) Text(guests, style = EvannaDesign.typography.bodySmall, color = colors.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            HorizontalDivider(Modifier.padding(start = 56.dp), color = colors.outlineVariant.copy(alpha = 0.32f))
+            HorizontalDivider(Modifier.padding(start = 40.dp), color = colors.outlineVariant.copy(alpha = 0.32f))
         }
         if (songs.isEmpty()) item { Text("No tracks in this album.", modifier = Modifier.padding(vertical = 12.dp)) }
         if (failed) item {
             TextButton(onClick = { failed = false; retry++ }) { Text("Retry loading more tracks") }
+        }
+    }
+}
+
+/** Three small bars in the cover's colour on the playing track: they move while it plays and rest while paused. */
+@Composable
+private fun PlayingBars(moving: Boolean, color: Color, modifier: Modifier = Modifier) {
+    val rest = remember { listOf(mutableFloatStateOf(0.55f), mutableFloatStateOf(0.85f), mutableFloatStateOf(0.4f)) }
+    // The clock only runs while the song plays, so a paused song costs no frames.
+    val heights: List<State<Float>> = if (moving) {
+        val beat = rememberInfiniteTransition(label = "playing bars")
+        List(3) { i ->
+            beat.animateFloat(0.25f, 1f, infiniteRepeatable(tween(420 + i * 130, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                label = "bar $i")
+        }
+    } else rest
+    Canvas(modifier.size(16.dp, 14.dp)) {
+        val bar = size.width / 5f
+        for (i in 0..2) {
+            val h = size.height * heights[i].value
+            drawRoundRect(color, Offset(bar * 2 * i, size.height - h), androidx.compose.ui.geometry.Size(bar, h),
+                androidx.compose.ui.geometry.CornerRadius(bar / 2))
         }
     }
 }

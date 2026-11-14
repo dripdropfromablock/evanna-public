@@ -1,8 +1,13 @@
 package com.evanna.player.library
 
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,15 +31,26 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.evanna.player.EvannaDesign
 import com.evanna.player.PlayerIcons
+import com.evanna.player.TileOrange
+import com.evanna.player.TilePurple
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import com.evanna.player.playbackTime
 import com.evanna.player.ui.*
 import com.evanna.player.user.UserData
@@ -50,6 +66,10 @@ internal fun LibrarySongRow(
     song: LibrarySong, enabled: Boolean, scope: CoroutineScope, onPlay: () -> Unit,
     onAdd: (String, (Boolean) -> Unit) -> Unit, onPlayNext: (String, (Boolean) -> Unit) -> Unit,
     onPlaylistSong: (String) -> Unit, onTrackInfo: () -> Unit, onOpenAlbum: (() -> Unit)? = null,
+    /** The "+" (Add to queue) button beside "…". */
+    queueButton: Boolean = true,
+    /** Swipe right for Play next, left for Add to queue. */
+    swipeToQueue: Boolean = false,
     content: @Composable RowScope.() -> Unit,
 ) {
     val canAct = song.available && enabled
@@ -99,7 +119,38 @@ internal fun LibrarySongRow(
             else "The song could not be added. Check folder access and the queue limit."
         }
     }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    val playNext = {
+        onPlayNext(song.id) { success ->
+            LocalLibrary.status = if (success) "${song.title} will play next."
+            else "The song could not be added. Check folder access and the queue limit."
+        }
+    }
+    // Apple Music's swipes: right for Play next, left for Add to queue. The row slides over the action it reveals.
+    val swipe = swipeToQueue && canAct
+    val haptics = LocalHapticFeedback.current
+    val reach = with(LocalDensity.current) { SwipeReach.toPx() }
+    var slide by remember(song.id) { mutableFloatStateOf(0f) }
+    val swipeState = rememberDraggableState { delta ->
+        val before = slide
+        slide = (slide + delta).coerceIn(-reach * 1.5f, reach * 1.5f)
+        // A tick as the row passes the point where letting go acts.
+        if ((abs(before) < reach) != (abs(slide) < reach)) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+    }
+    Box(Modifier.fillMaxWidth().then(if (swipe) Modifier.semantics {
+        customActions = listOf(
+            CustomAccessibilityAction("Play next") { playNext(); true },
+            CustomAccessibilityAction("Add to queue") { addToQueue(); true },
+        )
+    } else Modifier)) {
+    if (slide != 0f) SwipeAction(slide, reach)
+    Row(Modifier.fillMaxWidth()
+        .then(if (swipe) Modifier.offset { IntOffset(slide.roundToInt(), 0) }
+            .draggable(swipeState, Orientation.Horizontal, onDragStopped = {
+                val at = slide
+                if (at >= reach) playNext() else if (at <= -reach) addToQueue()
+                animate(at, 0f, animationSpec = spring(dampingRatio = 0.8f, stiffness = 500f)) { value, _ -> slide = value }
+            }) else Modifier),
+        verticalAlignment = Alignment.CenterVertically) {
         // The row records its own drawing, inside the press dip, so the lifted picture is the row at full size.
         Row(Modifier.weight(1f).clip(EvannaDesign.shapes.medium)
             .combinedClickable(enabled = canAct, onLongClickLabel = "More options", onLongClick = ::lift, onClick = onPlay)
@@ -110,7 +161,7 @@ internal fun LibrarySongRow(
             }
             .alpha(if (song.available) 1f else 0.5f).padding(vertical = 6.dp, horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically, content = content)
-        IconButton(onClick = addToQueue, enabled = canAct,
+        if (queueButton) IconButton(onClick = addToQueue, enabled = canAct,
             modifier = Modifier.size(48.dp).semantics { contentDescription = "Add ${song.title} to queue" }) {
             Icon(Icons.Filled.Add, contentDescription = null)
         }
@@ -120,13 +171,7 @@ internal fun LibrarySongRow(
             }
             val items: @Composable ColumnScope.() -> Unit = {
                 SongMenuItems(favorite = favorite, canOpenAlbum = onOpenAlbum != null,
-                    onPlayNext = {
-                        close()
-                        onPlayNext(song.id) { success ->
-                            LocalLibrary.status = if (success) "${song.title} will play next."
-                            else "The song could not be added. Check folder access and the queue limit."
-                        }
-                    },
+                    onPlayNext = { close(); playNext() },
                     onQueue = { close(); addToQueue() },
                     onFavorite = {
                         val selected = favorite != true
@@ -143,6 +188,32 @@ internal fun LibrarySongRow(
             }
             DropdownMenu(menu && canAct, { menu = false }, Modifier.width(272.dp), content = items)
             LiftMenu(lifted?.takeIf { canAct }, onDismiss = { lifted = null }, onPicture = { close(); onPlay() }, content = items)
+        }
+    }
+    }
+}
+
+/** How far a row slides before letting go acts. */
+private val SwipeReach = 76.dp
+
+/** What a sliding row reveals at the edge it leaves: Play next (purple) on the left, Add to queue (orange) on the right. */
+@Composable
+private fun BoxScope.SwipeAction(slide: Float, reach: Float) {
+    val next = slide > 0f
+    val ready = abs(slide) >= reach
+    val width = with(LocalDensity.current) { abs(slide).toDp() }
+    // Sized to the row: its own box takes the row's size, so the strip can fill its height.
+    Box(Modifier.matchParentSize()) {
+        Row(Modifier.align(if (next) Alignment.CenterStart else Alignment.CenterEnd).width(width).fillMaxHeight()
+            .padding(vertical = 2.dp).clip(EvannaDesign.shapes.medium).background(if (next) TilePurple else TileOrange)
+            .padding(horizontal = 14.dp),
+            horizontalArrangement = if (next) Arrangement.Start else Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            // The label shows once there is room for it, and firms up past the point where letting go acts.
+            if (width > 56.dp) Column(horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.graphicsLayer { alpha = if (ready) 1f else 0.7f }) {
+                Icon(if (next) PlayerIcons.Next else PlayerIcons.Queue, null, Modifier.size(20.dp), tint = Color.White)
+                Text(if (next) "Play next" else "Queue", color = Color.White, style = EvannaDesign.typography.labelMedium, maxLines = 1)
+            }
         }
     }
 }

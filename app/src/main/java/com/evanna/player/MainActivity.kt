@@ -387,6 +387,9 @@ class MainActivity : ComponentActivity() {
                         onAdd = { id, result -> librarySong(id, true, result) },
                         onPlayNext = { id, result -> librarySong(id, true, result, next = true) },
                         onPlaylistSong = { openPlaylists(listOf(it)) },
+                        nowPlaying = playerUi.takeIf { it.hasSong }?.let {
+                            com.evanna.player.library.NowPlayingMark(it.title, it.album, it.playing)
+                        },
                     )
                     else LibraryScreen(
                         bottomInset = dockInset,
