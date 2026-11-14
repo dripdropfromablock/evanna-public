@@ -15,6 +15,9 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -517,6 +520,25 @@ private fun DockTabs(selected: PlayerScreen, onSelect: (PlayerScreen) -> Unit,
         .controlFocus(unfoldPress, CircleShape)
         .clickable(unfoldPress, indication = null, role = Role.Button, onClickLabel = "Show all tabs", onClick = onUnfold)
         .semantics { contentDescription = "${tabs[shownIndex].second}. Show all tabs" })
+    }
+}
+
+/**
+ * A short note in a capsule that drops in at the top of the screen, where Android would show a toast. It stays
+ * until [text] goes back to null, and TalkBack reads it out.
+ */
+@Composable
+internal fun BoxScope.NoticeCapsule(text: String?) {
+    AnimatedContent(text, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 8.dp, start = 24.dp, end = 24.dp),
+        transitionSpec = {
+            (fadeIn(tween(220)) + slideInVertically(tween(260)) { -it / 2 }) togetherWith
+                (fadeOut(tween(180)) + slideOutVertically(tween(200)) { -it / 2 })
+        }, label = "notice") { shown ->
+        if (shown != null) Surface(Modifier.widthIn(max = 420.dp).shadow(12.dp, CircleShape, clip = false)
+            .semantics { liveRegion = LiveRegionMode.Polite }, shape = CircleShape, color = EvannaDesign.colorScheme.surfaceContainerHigh) {
+            Text(shown, style = RowNoteStyle.copy(fontSize = 15.sp, lineHeight = 20.sp), textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 11.dp))
+        }
     }
 }
 

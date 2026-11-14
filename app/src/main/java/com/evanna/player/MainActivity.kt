@@ -20,7 +20,6 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings as AndroidSettings
-import android.widget.Toast
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -190,6 +189,9 @@ class MainActivity : ComponentActivity() {
     private val usbKeyDowns=mutableMapOf<Int,Pair<MediaController,Long>>()
     private var usbKeyIndicator by mutableStateOf<Float?>(null)
     private var usbKeyIndicatorRevision by mutableIntStateOf(0)
+    /** The note in the capsule at the top of the screen; it goes after a few seconds. */
+    private var notice by mutableStateOf<String?>(null)
+    private var noticeRevision by mutableIntStateOf(0)
     private var modeChanging by mutableStateOf(false)
     private var signalStatus by mutableStateOf("")
     private var pendingFile: Uri? = null
@@ -365,6 +367,7 @@ class MainActivity : ComponentActivity() {
                     while (mediaController === controller && playerUi.playing) { delay(250); sync() }
                 }
                 LaunchedEffect(usbKeyIndicatorRevision) {delay(1500);usbKeyIndicator=null}
+                LaunchedEffect(noticeRevision) { if (notice != null) { delay(4000); notice = null } }
                 BackHandler(navigation.size > 1) { if (screen == PlayerScreen.NOTICES && licenseIndex != null) licenseIndex = null else back() }
                 // Cancelling "Add to playlist" with system Back must not leak stale add arguments.
                 LaunchedEffect(PlayerScreen.PLAYLISTS in navigation) {
@@ -571,6 +574,7 @@ class MainActivity : ComponentActivity() {
                         !modalOpen && !keyboard && !motion.dragging && !playerVisible &&
                             pushed == null && !LocalLibrary.managingFolders, ::openSourceLink)
                     UsbVolumeIndicator(usbKeyIndicator)
+                    NoticeCapsule(notice)
                     if (showOutput) ProvideEvannaColors(playerColors) {
                         AudioOutputSheet(
                             state = playerUi,
@@ -1009,8 +1013,7 @@ class MainActivity : ComponentActivity() {
                     val count=response!!.extras.getInt(PlaybackService.QUEUE_COUNT)
                     com.evanna.player.library.LocalLibrary.status=if(response.extras.getBoolean(PlaybackService.QUEUE_TRUNCATED))
                         "Queue limited to $count songs from this part of the list." else "Queued $count songs."
-                    if(response.extras.getBoolean(PlaybackService.QUEUE_TRUNCATED))android.widget.Toast.makeText(this,
-                        com.evanna.player.library.LocalLibrary.status,android.widget.Toast.LENGTH_LONG).show()
+                    if(response.extras.getBoolean(PlaybackService.QUEUE_TRUNCATED))showNotice(com.evanna.player.library.LocalLibrary.status)
                 }
                 complete(success)
             }
@@ -1221,9 +1224,11 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         true
     } catch (_: ActivityNotFoundException) {
-        Toast.makeText(this, "No browser is installed to open the source link.", Toast.LENGTH_LONG).show()
+        showNotice("No browser is installed to open the source link.")
         false
     }
+
+    private fun showNotice(text: String) { notice = text; noticeRevision++ }
 
     @Composable
     private fun SettingsScreen(page: PlayerScreen, onBack: (() -> Unit)?, bottomInset: Dp, onNotices: () -> Unit) {
