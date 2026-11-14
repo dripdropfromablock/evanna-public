@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -159,11 +160,23 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
         PlayerBackdrop(cover, LocalLookStyle.current.look == EvannaLook.APPLE_LIGHT,
             // Growing out of the mini player, the page is solid almost at once and its words come in near the end.
             Modifier.matchParentSize().graphicsLayer { alpha = if (motion.morphs) (motion.progress / 0.2f).coerceAtMost(1f) else motion.progress })
+        val contentAlpha = {
+            if (motion.morphs) ((motion.progress - 0.5f) / 0.5f).coerceIn(0f, 1f)
+            else ((motion.progress - 0.15f) / 0.85f).coerceIn(0f, 1f)
+        }
+        val openPage: (PlayerPage) -> Unit = {
+            if (it == PlayerPage.LYRICS) lyricsTrack = state.id
+            page = it
+        }
         CompositionLocalProvider(LocalContentColor provides Pv1) {
-            Column(Modifier.fillMaxSize().graphicsLayer {
-                alpha = if (motion.morphs) ((motion.progress - 0.5f) / 0.5f).coerceIn(0f, 1f)
-                    else ((motion.progress - 0.15f) / 0.85f).coerceIn(0f, 1f)
-            }
+            if (sidewaysPhone() && state.hasSong) SidewaysPlayer(state, cover, page, openPage, lyrics, more, contentAlpha, motion, flying,
+                onBack, onFavorite, onSeek, onPlayPause, onPrevious, onNext,
+                controls = {
+                    PlayerControls(state, actionError, page, openPage, lyrics, onSeek, { signalOrigin = it; showSignal = true },
+                        onPlayPause, onPrevious, onNext, onUsbVolume, onUsbVolumeSet, onSleep, onOutput, outputSheetOpen, sideways = true)
+                },
+                queue = { QueuePage(state, onShuffle, onRepeat, onSelect, onMove, onRemove, onLibrary, loadArtwork, it) })
+            else Column(Modifier.fillMaxSize().graphicsLayer { alpha = contentAlpha() }
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
                 Grabber(page.heading, onBack)
                 if (!state.hasSong) NoSong(state, onLibrary, Modifier.weight(1f))
@@ -206,10 +219,7 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
                             }
                         }
                     }
-                    PlayerControls(state, actionError, page, {
-                        if (it == PlayerPage.LYRICS) lyricsTrack = state.id
-                        page = it
-                    }, lyrics, onSeek, { signalOrigin = it; showSignal = true }, onPlayPause, onPrevious, onNext, onUsbVolume, onUsbVolumeSet, onSleep,
+                    PlayerControls(state, actionError, page, openPage, lyrics, onSeek, { signalOrigin = it; showSignal = true }, onPlayPause, onPrevious, onNext, onUsbVolume, onUsbVolumeSet, onSleep,
                         onOutput, outputSheetOpen)
                 }
             }
@@ -311,25 +321,113 @@ private fun SongPage(state: PlayerPresentation, cover: Bitmap?, onFavorite: (Str
             }
         }
         Spacer(Modifier.height(18.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(state.title.ifBlank { "Local audio file" }, style = SongTitle, color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(state.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", style = SongTitle, color = Pv2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        SongTitleRow(state, onFavorite, more)
+    }
+}
+
+/** Title and artist, with Favorite and More at the end. */
+@Composable
+private fun SongTitleRow(state: PlayerPresentation, onFavorite: (String, Boolean) -> Unit, more: @Composable () -> Unit,
+    modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(state.title.ifBlank { "Local audio file" }, style = SongTitle, color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(state.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", style = SongTitle, color = Pv2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Row(Modifier.offset(x = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            PlayerHeaderButton(if (state.favorite == true) PlayerIcons.HeartFill else PlayerIcons.Heart,
+                description = when (state.favorite) {
+                    true -> "Remove from favorites"
+                    false -> "Add to favorites"
+                    null -> "Favorites unavailable"
+                },
+                enabled = state.connected && state.favorite != null,
+                on = state.favorite == true,
+            ) {
+                state.id?.let { onFavorite(it, state.favorite != true) }
             }
-            Row(Modifier.offset(x = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                PlayerHeaderButton(if (state.favorite == true) PlayerIcons.HeartFill else PlayerIcons.Heart,
-                    description = when (state.favorite) {
-                        true -> "Remove from favorites"
-                        false -> "Add to favorites"
-                        null -> "Favorites unavailable"
-                    },
-                    enabled = state.connected && state.favorite != null,
-                    on = state.favorite == true,
-                ) {
-                    state.id?.let { onFavorite(it, state.favorite != true) }
+            more()
+        }
+    }
+}
+
+/** A phone on its side: wider than tall, and too short for the upright layout. */
+@Composable
+internal fun sidewaysPhone(): Boolean {
+    val config = LocalConfiguration.current
+    return config.screenWidthDp > config.screenHeightDp && config.screenHeightDp < 600
+}
+
+/**
+ * Now Playing on its side (docs/mockups/landscape.html, option D): the cover fills the screen and fades into a panel on
+ * the right. The panel holds the controls; lyrics or the queue take its place, with a small Play row under them.
+ */
+@Composable
+private fun SidewaysPlayer(state: PlayerPresentation, cover: Bitmap?, page: PlayerPage, onPage: (PlayerPage) -> Unit,
+    lyrics: LyricsLoad, more: @Composable () -> Unit, contentAlpha: () -> Float, motion: PlayerSheetMotion, flying: Boolean,
+    onBack: () -> Unit, onFavorite: (String, Boolean) -> Unit, onSeek: (String?, Long) -> Unit,
+    onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit,
+    controls: @Composable () -> Unit, queue: @Composable (Modifier) -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val panel = (maxWidth * 0.46f).coerceIn(320.dp, 460.dp)
+        // The fade ends a little way under the panel, so the words sit on the blurred backdrop, never on the cover.
+        val fade = 140.dp
+        val coverWidth = maxWidth - panel + 32.dp
+        // The cover runs to the screen's edges and fades out under the panel, so its right side is never a hard line.
+        Box(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(coverWidth)
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                val solid = ((size.width - fade.toPx()) / size.width).coerceIn(0f, 1f)
+                drawRect(Brush.horizontalGradient(0f to Color.Black, solid to Color.Black, 1f to Color.Transparent), blendMode = BlendMode.DstIn)
+            }) {
+            ArtworkImage(cover, Modifier.fillMaxSize().dockingCover(motion, flying, corner = 0.dp), RectangleShape)
+        }
+        Column(Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(panel)
+            .background(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.18f), Color.Black.copy(alpha = 0.36f))))
+            .graphicsLayer { alpha = contentAlpha() }
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.End + WindowInsetsSides.Bottom))) {
+            Grabber(page.heading, onBack)
+            AnimatedContent(targetState = page, label = "sideways page", modifier = Modifier.weight(1f).fillMaxWidth(),
+                transitionSpec = { fadeIn(EvannaMotion.enter) togetherWith fadeOut(EvannaMotion.exit) }) { shown ->
+                Column(Modifier.fillMaxSize().then(if (shown == page) Modifier else Modifier.clearAndSetSemantics {})) {
+                    when (shown) {
+                        PlayerPage.SONG -> {
+                            Spacer(Modifier.weight(1f))
+                            SongTitleRow(state, onFavorite, more, Modifier.padding(horizontal = 32.dp))
+                            controls()
+                        }
+                        PlayerPage.LYRICS -> {
+                            LyricsPage(lyrics, state, onSeek, Modifier.weight(1f))
+                            SidewaysPlayRow(state, page, onPage, lyrics, onPlayPause, onPrevious, onNext)
+                        }
+                        PlayerPage.QUEUE -> {
+                            queue(Modifier.weight(1f))
+                            SidewaysPlayRow(state, page, onPage, lyrics, onPlayPause, onPrevious, onNext)
+                        }
+                    }
                 }
-                more()
             }
+        }
+    }
+}
+
+/** Under lyrics or the queue on its side: a small Previous, Play and Next, then the Lyrics and Queue buttons. */
+@Composable
+private fun SidewaysPlayRow(state: PlayerPresentation, page: PlayerPage, onPage: (PlayerPage) -> Unit, lyrics: LyricsLoad,
+    onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit) {
+    val lyricsOn = page == PlayerPage.LYRICS
+    val queueOn = page == PlayerPage.QUEUE
+    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        TransportButton(PlayerIcons.Previous, 28.dp, "Previous", state.connected && state.canPrevious, onClick = onPrevious)
+        TransportButton(if (state.playing) PlayerIcons.Pause else if (state.ended) PlayerIcons.Refresh else PlayerIcons.Play, 34.dp,
+            if (state.playing) "Pause playback" else "Play playback", state.connected && state.canPlayPause, onClick = onPlayPause)
+        TransportButton(PlayerIcons.Next, 28.dp, "Next", state.connected && state.canNext, onClick = onNext)
+        Spacer(Modifier.weight(1f))
+        StripButton(PlayerIcons.Lyrics, lyricsOn, if (lyricsOn) "Close lyrics" else "Open lyrics",
+            enabled = lyricsOn || lyrics is LyricsLoad.Ready) { onPage(if (lyricsOn) PlayerPage.SONG else PlayerPage.LYRICS) }
+        StripButton(PlayerIcons.QueueList, queueOn, "Queue · ${state.queue.size} songs") {
+            onPage(if (queueOn) PlayerPage.SONG else PlayerPage.QUEUE)
         }
     }
 }
@@ -355,7 +453,7 @@ private fun CompactHeader(state: PlayerPresentation, cover: Bitmap?, more: @Comp
 private fun PlayerControls(state: PlayerPresentation, actionError: String?, page: PlayerPage, onPage: (PlayerPage) -> Unit,
     lyrics: LyricsLoad, onSeek: (String?, Long) -> Unit, onSignal: (Rect?) -> Unit, onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit,
     onUsbVolume: (Int) -> Unit, onUsbVolumeSet: (Float, Long) -> Unit, onSleep: (SleepMode, Int) -> Unit,
-    onOutput: (Rect?) -> Unit, outputSheetOpen: Boolean) {
+    onOutput: (Rect?) -> Unit, outputSheetOpen: Boolean, sideways: Boolean = false) {
     val lyricsOn = page == PlayerPage.LYRICS
     val toggleLyrics = { onPage(if (lyricsOn) PlayerPage.SONG else PlayerPage.LYRICS) }
     val directUsb = state.route == "DIRECT_USB"
@@ -363,7 +461,8 @@ private fun PlayerControls(state: PlayerPresentation, actionError: String?, page
     val androidVolume = state.route == "ANDROID" && !state.androidVolumeBypassed
     val volumeEnabled = androidVolume && state.connected && !outputSheetOpen
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 32.dp, end = 32.dp, top = 8.dp, bottom = 10.dp)) {
-        if (!lyricsOn) LyricsPreview(lyrics, state.positionMs, toggleLyrics)
+        // Sideways, the panel has no room for the line of lyrics; the lyrics button opens them in the panel.
+        if (!lyricsOn && !sideways) LyricsPreview(lyrics, state.positionMs, toggleLyrics)
         SeekBar(state, onSeek, onSignal)
         Row(Modifier.fillMaxWidth().padding(top = 12.dp).height(68.dp), horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically) {

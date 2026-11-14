@@ -340,6 +340,8 @@ internal fun MiniPlayer(state: PlayerPresentation, cover: Bitmap?, onOpen: () ->
 /** The open dock's row height and the Search circle's size; the folded dock is one row of it. */
 private val DockBar = 56.dp
 private val DockGap = 8.dp
+/** The tab bar's width when the dock is one row on a phone on its side. */
+private val OneRowTabs = 300.dp
 
 /** How far into the fold [part] is, for a part that runs from [start] to [end] of it, eased in and out. */
 internal fun foldPart(fold: Float, start: Float, end: Float): Float {
@@ -367,7 +369,9 @@ private fun lerpPx(open: Int, folded: Int, t: Float) = (open + (folded - open) *
 @Composable
 internal fun PlayerDock(selected: PlayerScreen, onTab: (PlayerScreen) -> Unit,
     tabs: List<Triple<PlayerScreen, String, ImageVector>>, searchIcon: ImageVector, hasSong: Boolean,
-    folded: Boolean, onUnfold: () -> Unit, modifier: Modifier = Modifier, miniPlayer: @Composable (compact: Boolean) -> Unit,
+    folded: Boolean, onUnfold: () -> Unit, modifier: Modifier = Modifier,
+    /** On a phone on its side: one short row, the mini player then the tab bar then Search, so lists keep the height. */
+    oneRow: Boolean = false, miniPlayer: @Composable (compact: Boolean) -> Unit,
 ) {
     // A tick when the tab changes, as the iOS tab bar gives (phase 6).
     val haptics = LocalHapticFeedback.current
@@ -384,7 +388,8 @@ internal fun PlayerDock(selected: PlayerScreen, onTab: (PlayerScreen) -> Unit,
     val fold = { foldState.value }
     val compact by remember { derivedStateOf { foldState.value > 0.5f } }
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val tabsOpenWidth = maxWidth - DockBar - DockGap
+        val rowTabsWidth = if (hasSong) minOf(maxWidth * 0.38f, OneRowTabs) else maxWidth - DockBar - DockGap
+        val tabsOpenWidth = if (oneRow) rowTabsWidth else maxWidth - DockBar - DockGap
         Layout(contents = listOf(
             { if (hasSong) miniPlayer(compact) },
             {
@@ -415,6 +420,18 @@ internal fun PlayerDock(selected: PlayerScreen, onTab: (PlayerScreen) -> Unit,
             val slideT = dockMiniSlide(foldState.value)
             val dropT = dockMiniDrop(foldState.value)
             val searchPlaced = search.first().measure(Constraints.fixed(bar, bar))
+            if (oneRow) {
+                val tabsWidth = tabsOpenWidth.roundToPx()
+                val tabsPlaced = tabsPill.first().measure(Constraints(tabsWidth, tabsWidth, 0, constraints.maxHeight))
+                val miniWidth = (width - tabsWidth - bar - 2 * gap).coerceAtLeast(bar)
+                val miniPlaced = mini.firstOrNull()?.measure(Constraints(miniWidth, miniWidth, 0, constraints.maxHeight))
+                val height = maxOf(tabsPlaced.height, bar, miniPlaced?.height ?: 0)
+                return@Layout layout(width, height) {
+                    miniPlaced?.place(0, (height - miniPlaced.height) / 2)
+                    tabsPlaced.place(width - bar - gap - tabsWidth, (height - tabsPlaced.height) / 2)
+                    searchPlaced.place(width - bar, (height - bar) / 2)
+                }
+            }
             val tabsWidth = lerpPx(width - bar - gap, bar, tabsT)
             val tabsPlaced = tabsPill.first().measure(Constraints(tabsWidth, tabsWidth, 0, constraints.maxHeight))
             val row = maxOf(tabsPlaced.height, searchPlaced.height)

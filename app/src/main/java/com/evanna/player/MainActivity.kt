@@ -381,6 +381,7 @@ class MainActivity : ComponentActivity() {
                 }
                 val keyboard = WindowInsets.isImeVisible
                 var dockHeight by remember { mutableIntStateOf(0) }
+                val sideways = sidewaysPhone()
                 val dockInset = if (keyboard) 0.dp else with(LocalDensity.current) { dockHeight.toDp() }
                 val openNotices = { licenseIndex = null; navigate(PlayerScreen.NOTICES) }
                 // Tabs stay alive side by side, so a tab keeps its scroll spot and loaded lists.
@@ -546,10 +547,11 @@ class MainActivity : ComponentActivity() {
                             listOf(Triple(PlayerScreen.CAROUSEL, "Carousel", PlayerIcons.AlbumCarousel),
                                 Triple(PlayerScreen.LIBRARY, "Library", musicNote),
                                 Triple(PlayerScreen.OUTPUT, "Settings", PlayerIcons.Gear)),
-                            PlayerIcons.Search, playerUi.hasSong, dockFolded, { dockFolded = false },
+                            // On its side the phone is short, so the dock is always one row and never folds.
+                            PlayerIcons.Search, playerUi.hasSong, dockFolded && !sideways, { dockFolded = false },
                             Modifier.align(Alignment.BottomCenter).onSizeChanged { dockHeight = it.height }
                                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
-                                .padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) { compact ->
+                                .padding(start = 16.dp, end = 16.dp, bottom = if (sideways) 4.dp else 8.dp), oneRow = sideways) { compact ->
                             MiniPlayer(playerUi, cover, { setPlayerOpen(true) }, ::togglePlayback,
                                 onPrevious = { mediaController?.seekToPreviousMediaItem() },
                                 onNext = { mediaController?.seekToNextMediaItem() },

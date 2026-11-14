@@ -478,7 +478,8 @@ private fun CarouselBrowser(
                 0.74f to listColor.copy(alpha = 0.88f),
                 1f to listColor,
             )))
-            val cardWidth = minOf(maxWidth * 0.64f, maxHeight * 0.42f, 304.dp)
+            // On its side the screen is short, so covers are smaller and the album's details still show above the dock.
+            val cardWidth = minOf(maxWidth * 0.64f, maxHeight * (if (maxWidth > maxHeight) 0.34f else 0.42f), 304.dp)
             val centerPadding = (maxWidth - cardWidth) / 2
             val fontScale = LocalDensity.current.fontScale
             val captionHeight = maxOf(56.dp, 46.dp * fontScale)
