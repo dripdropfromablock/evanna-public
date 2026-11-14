@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -60,12 +61,12 @@ private const val PULSE_TRAVEL_MS = 2800f
  * the accent after a stop that changes the sound and flickers past lost sound. Tap a stop for the numbers behind it.
  */
 @Composable
-internal fun SoundPathSheet(path: SoundPath?, onOtherOutput: (() -> Unit)?, onClose: () -> Unit, origin: Offset? = null) {
+internal fun SoundPathSheet(path: SoundPath?, onOtherOutput: (() -> Unit)?, onClose: () -> Unit, origin: Rect? = null) {
     val colors = EvannaDesign.colorScheme
-    // A floating card that grows out of [origin] (the quality badge), as iOS 26 pops a card out of the control that opened it.
-    OutputSheet(origin = origin, onDismissRequest = onClose, shape = RoundedCornerShape(34.dp).continuous(),
+    // A floating card that morphs out of [origin] (the quality badge), as iOS 26 turns a control into what it opens.
+    OutputSheet(origin = origin?.center, onDismissRequest = onClose, shape = RoundedCornerShape(34.dp).continuous(),
         // Solid: Now Playing's words and controls must not show through the path's text.
-        containerColor = colors.surfaceContainer, scrimColor = Color.Black.copy(alpha = 0.5f), floating = true,
+        containerColor = colors.surfaceContainer, scrimColor = Color.Black.copy(alpha = 0.5f), floating = true, from = origin,
         dragHandle = { close -> SheetHeader("Sound path", close) }, title = "Sound path") {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
             if (path == null) {

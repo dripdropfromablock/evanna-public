@@ -30,8 +30,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.isFinite
+import androidx.compose.ui.geometry.lerp
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -116,6 +122,12 @@ private fun SurfaceBox(modifier: Modifier, shape: Shape, color: Color, border: B
 @Composable
 internal fun HorizontalDivider(modifier: Modifier = Modifier, color: Color = EvannaDesign.colorScheme.outlineVariant) {
     Box(modifier.fillMaxWidth().height(1.dp).background(color))
+}
+
+/** The part of a morphing card that shows: [box] in the card's own pixels, with [radius] corners. */
+private data class MorphClip(val box: Rect, val radius: Float) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
+        Outline.Rounded(RoundRect(box, CornerRadius(radius)))
 }
 
 private class MenuPosition(
@@ -485,14 +497,20 @@ internal const val SHEET_FROST_TINT = 0.62f
 @Composable
 internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: Shape, containerColor: Color, scrimColor: Color,
     dragHandle: @Composable (close: () -> Unit) -> Unit, title: String = "Audio output", floating: Boolean = false,
-    content: @Composable ColumnScope.() -> Unit,
+    from: Rect? = null, content: @Composable ColumnScope.() -> Unit,
 ) {
     var closing by remember { mutableStateOf(false) }
     val close = { closing = true }
     val progress = remember { Animatable(0f) }
     val dismissSheet by rememberUpdatedState(onDismissRequest)
+    // A floating card with a [from] box morphs out of it: the card's edges grow from that box, the words never squeeze.
+    val morph = floating && from != null
     LaunchedEffect(closing) {
-        progress.animateTo(if (closing) 0f else 1f, if (closing) EvannaMotion.exit else EvannaMotion.enter)
+        progress.animateTo(if (closing) 0f else 1f, when {
+            morph -> tween(if (closing) 240 else 340, easing = FastOutSlowInEasing)
+            closing -> EvannaMotion.exit
+            else -> EvannaMotion.enter
+        })
         if (closing) dismissSheet()
     }
     val frost = frostOn()
@@ -544,6 +562,15 @@ internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: S
             }) {
                 Surface(Modifier.widthIn(max = 640.dp).fillMaxWidth().graphicsLayer {
                     val shown = progress.value
+                    if (from != null && morph) {
+                        val e = shown.coerceIn(0f, 1f)
+                        val badge = from.translate(-sheetTopLeft)
+                        clip = true
+                        this.shape = MorphClip(lerp(badge, Rect(Offset.Zero, size), e), (5f + 29f * e) * density)
+                        translationY = offset * shown
+                        alpha = (shown / 0.08f).coerceAtMost(1f)
+                        return@graphicsLayer
+                    }
                     val center = sheetCenter
                     val from = if (origin != null && center != null) origin - center else Offset(0f, size.height / 2f)
                     translationX = from.x * (1f - shown)
@@ -557,7 +584,8 @@ internal fun OutputSheet(origin: Offset?, onDismissRequest: () -> Unit, shape: S
                     .then(if (still == null) Modifier else Modifier.clip(shape).drawBehind { drawStill(still, sheetTopLeft) }),
                     shape = shape, color = if (still == null) containerColor else containerColor.copy(alpha = SHEET_FROST_TINT),
                     border = if (still == null) evannaHairline(0.6f) else rim) {
-                    Column(Modifier.then(if (floating) Modifier else Modifier.navigationBarsPadding()).imePadding()) {
+                    Column(Modifier.then(if (floating) Modifier else Modifier.navigationBarsPadding()).imePadding()
+                        .then(if (morph) Modifier.graphicsLayer { alpha = ((progress.value - 0.55f) / 0.45f).coerceIn(0f, 1f) } else Modifier)) {
                         Box(Modifier.fillMaxWidth().draggable(rememberDraggableState { delta -> offset = (offset + delta).coerceAtLeast(0f) },
                             orientation = Orientation.Vertical, onDragStopped = { velocity -> settle(velocity) }),
                             contentAlignment = Alignment.Center) { dragHandle(close) }

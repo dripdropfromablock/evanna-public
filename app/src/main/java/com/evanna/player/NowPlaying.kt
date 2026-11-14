@@ -45,6 +45,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.isFinite
 import androidx.compose.ui.graphics.BlendMode
@@ -130,7 +131,7 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
     var page by rememberSaveable { mutableStateOf(PlayerPage.SONG) }
     var lyricsTrack by rememberSaveable { mutableStateOf<String?>(null) }
     var showSignal by rememberSaveable { mutableStateOf(false) }
-    var signalOrigin by remember { mutableStateOf<Offset?>(null) }
+    var signalOrigin by remember { mutableStateOf<Rect?>(null) }
     var showSleep by rememberSaveable { mutableStateOf(false) }
     if (showSleep) SleepDialog(state, onSleep) { showSleep = false }
     if (showSignal) SoundPathSheet(state.soundPath, { showSignal = false; onOutput(null) }, { showSignal = false }, signalOrigin)
@@ -348,7 +349,7 @@ private fun CompactHeader(state: PlayerPresentation, cover: Bitmap?, more: @Comp
 /** Shared playback controls keep their positions when the upper page changes. */
 @Composable
 private fun PlayerControls(state: PlayerPresentation, actionError: String?, page: PlayerPage, onPage: (PlayerPage) -> Unit,
-    lyrics: LyricsLoad, onSeek: (String?, Long) -> Unit, onSignal: (Offset?) -> Unit, onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit,
+    lyrics: LyricsLoad, onSeek: (String?, Long) -> Unit, onSignal: (Rect?) -> Unit, onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit,
     onUsbVolume: (Int) -> Unit, onUsbVolumeSet: (Float, Long) -> Unit, onSleep: (SleepMode, Int) -> Unit,
     onOutput: (Offset?) -> Unit, outputSheetOpen: Boolean) {
     val lyricsOn = page == PlayerPage.LYRICS
@@ -480,7 +481,7 @@ internal fun PillSlider(value: Float, onValueChange: (Float) -> Unit, onValueCha
 
 /** Seek pill, then elapsed time, the honest quality badge and the time left. */
 @Composable
-private fun SeekBar(state: PlayerPresentation, onSeek: (String?, Long) -> Unit, onSignal: (Offset?) -> Unit) {
+private fun SeekBar(state: PlayerPresentation, onSeek: (String?, Long) -> Unit, onSignal: (Rect?) -> Unit) {
     key(state.id, state.durationMs) {
         val interaction = remember(state.id, state.durationMs) { MutableInteractionSource() }
         val dragging by interaction.collectIsDraggedAsState()
@@ -500,14 +501,18 @@ private fun SeekBar(state: PlayerPresentation, onSeek: (String?, Long) -> Unit, 
                 maxLines = 1, modifier = Modifier.align(Alignment.CenterEnd))
             if (state.sourceQuality.isNotBlank()) {
                 val badgePress = remember { MutableInteractionSource() }
-                var badgeCenter by remember { mutableStateOf<Offset?>(null) }
+                var badgeBox by remember { mutableStateOf<Rect?>(null) }
                 Text(remember(state.sourceQuality) { shortSourceQuality(state.sourceQuality) }, style = Badge, color = Pv1,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp)
                         .liftIntoGlass(badgePress, RoundedCornerShape(10.dp), outset = 5.dp).clip(RoundedCornerShape(5.dp)).background(Pv4)
                         .controlFocus(badgePress, RoundedCornerShape(5.dp))
-                        .onGloballyPositioned { badgeCenter = it.localToScreen(Offset(it.size.width / 2f, it.size.height / 2f)).takeIf { at -> at.isFinite } }
-                        .clickable(badgePress, indication = null, role = Role.Button) { onSignal(badgeCenter) }
+                        .onGloballyPositioned {
+                            val start = it.localToScreen(Offset.Zero)
+                            val end = it.localToScreen(Offset(it.size.width.toFloat(), it.size.height.toFloat()))
+                            badgeBox = if (start.isFinite && end.isFinite) Rect(start, end) else null
+                        }
+                        .clickable(badgePress, indication = null, role = Role.Button) { onSignal(badgeBox) }
                         .semantics { contentDescription = "Audio quality details" }
                         .padding(horizontal = 7.dp, vertical = 3.5.dp).pressScale(badgePress))
             }

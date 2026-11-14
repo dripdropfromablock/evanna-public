@@ -1,0 +1,123 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sound path: other ways to open</title>
+<style>
+  :root { --accent: #93d394; --card: rgba(255,255,255,.075); --sep: rgba(255,255,255,.1); --t2: rgba(235,235,245,.6); }
+  body { margin: 0; background: #151517; color: #fff; font: 15px/1.3 Roboto, "Segoe UI", sans-serif; padding: 26px 30px 30px; width: 1440px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } .note { color: #9a9aa0; font-size: 13px; margin: 0 0 20px; }
+  .opt { display: flex; gap: 14px; margin-bottom: 26px; align-items: flex-start; }
+  .about { width: 250px; flex: none; } .about h2 { font-size: 17px; margin: 0 0 6px; } .about p { color: #b4b4ba; font-size: 13.5px; margin: 0 0 8px; }
+  .about .cost { color: #8c8c92; font-size: 12.5px; }
+  .fr { width: 215px; flex: none; } .fr .lb { font-size: 12.5px; color: #9a9aa0; margin: 0 0 6px; height: 16px; }
+  .live .lb { color: var(--accent); }
+  .ph { width: 215px; height: 440px; border-radius: 21px; overflow: hidden; position: relative; }
+  .phone { width: 390px; height: 800px; transform: scale(.5513); transform-origin: 0 0; position: absolute; left: 0; top: 0;
+    background: radial-gradient(90% 60% at 50% 20%, #4b5a4a, #1e2420); overflow: hidden; }
+  .np { position: absolute; inset: 0; padding: 0 30px; }
+  .np .cv { margin-top: 60px; height: 330px; border-radius: 10px; background: linear-gradient(135deg, #7d8e7a, #2f3a30); }
+  .np .tt { margin-top: 30px; font-weight: 700; font-size: 21px; } .np .tt span { display: block; color: rgba(255,255,255,.6); }
+  .np .seek { margin-top: 64px; height: 7px; border-radius: 4px; background: rgba(255,255,255,.22); } .np .seek i { display: block; width: 40%; height: 100%; border-radius: 4px; background: #fff; }
+  .np .badge { position: absolute; left: 110px; top: 551px; width: 170px; height: 20px; line-height: 20px; text-align: center; font-size: 12px; font-weight: 600; border-radius: 5px; background: rgba(255,255,255,.14); }
+  .np .badge.hot { background: rgba(255,255,255,.32); box-shadow: 0 0 0 6px rgba(255,255,255,.08); }
+  .np .tr { display: flex; justify-content: space-evenly; position: absolute; left: 30px; right: 30px; top: 610px; font-size: 40px; }
+  .dim { position: absolute; inset: 0; background: rgba(0,0,0,.5); }
+  .float { position: absolute; left: 12px; right: 12px; top: 160px; height: 470px; border-radius: 34px; overflow: hidden;
+    background: #2a2e2e; box-shadow: 0 24px 60px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.12); }
+  .inner { padding: 6px 16px 16px; }
+  .bar { display: flex; align-items: center; justify-content: space-between; height: 48px; }
+  .bar b { font-size: 17px; font-weight: 600; } .x { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--t2); } .chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .verdict { font-size: 22px; font-weight: 700; letter-spacing: -.3px; margin: 6px 0 4px; line-height: 1.2; }
+  .why { color: var(--t2); font-size: 14px; margin: 0 0 16px; }
+  .card { background: var(--card); border-radius: 22px; overflow: hidden; position: relative; }
+  .item { display: flex; align-items: center; min-height: 60px; padding: 0 14px; position: relative; }
+  .item + .item::before { content: ""; position: absolute; top: 0; right: 0; left: 62px; height: 1px; background: var(--sep); }
+  .txt { flex: 1; padding: 9px 0 9px 14px; } .txt b { font-weight: 500; font-size: 16px; display: block; } .txt span { color: var(--t2); font-size: 13.5px; }
+  .trail { color: var(--t2); font-size: 15px; } .changed { color: var(--accent); }
+  .disc { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none; position: relative; z-index: 1; background: #3a3e3f; font-size: 15px; }
+  .disc.on { background: var(--accent); color: #12301a; }
+  .rail { position: absolute; left: 30px; width: 2px; top: 30px; bottom: 30px; background: linear-gradient(var(--sep) 0 18%, rgba(147,211,148,.6) 18% 100%); }
+  .glow { position: absolute; left: 28px; width: 6px; height: 56px; border-radius: 3px; background: linear-gradient(transparent, var(--accent), transparent); }
+  .png .live { display: none; }
+</style></head>
+<body>
+<h1>Sound path: other ways to open</h1>
+<p class="note">Today the card is squashed flat at the badge and stretches open, so the text is squeezed on the way. Each row below shows a new way, left to right in time.
+  The green "Live" phone plays it on a loop at half speed (open this file in a browser). Closing runs the same steps backwards.</p>
+<div id="rows"></div>
+<script>
+const png = location.search.includes('png'); if (png) document.body.classList.add('png');
+const np = hot => `<div class="np"><div class="cv"></div><div class="tt">2 Alivë<span>Yeat</span></div><div class="seek"><i></i></div>
+  <div class="badge${hot ? ' hot' : ''}">FLAC · 44.1 kHz · 24-bit</div><div class="tr">⏮ ⏸ ⏭</div></div>`;
+const rows = [
+  ['♫', '', 'Song file', 'Lossless · 24-bit · 44.1 kHz', ''],
+  ['≡', ' on', 'Evanna', 'EQ on, so the sound changes', '<span class="changed">Changed</span>'],
+  ['▯', ' on', 'Android', 'Mixes it, may change the rate', '<span class="changed">Changed</span>'],
+  ['🔈', '', 'Phone speaker', 'Where you hear it', ''],
+];
+// o: { inner, rows: [style x4], glow, cls } -> the card's content
+const body = (o = {}) => `<div class="inner" style="${o.inner || ''}">
+  <div class="bar"><span style="width:32px"></span><b>Sound path</b><span class="x">✕</span></div>
+  <div style="padding:0 4px"><span class="chip"><i></i>Playing now</span>
+    <div class="verdict">Android may change the sound</div>
+    <p class="why">Android mixes it with other sounds and may change its rate. It uses the phone's volume.</p></div>
+  <div class="card"><div class="rail"></div><div class="glow ${o.glowCls || ''}" style="top:${o.glow ?? 118}px"></div>
+    ${rows.map((r, i) => `<div class="item ${o.rowCls ? o.rowCls + i : ''}" style="${(o.rows || [])[i] || ''}"><span class="disc${r[1]}">${r[0]}</span>
+      <div class="txt"><b>${r[2]}</b><span>${r[3]}</span></div><span class="trail">${r[4]}</span></div>`).join('')}
+  </div></div>`;
+const phone = inner => `<div class="ph"><div class="phone">${inner}</div></div>`;
+const lerp = (a, b, t) => a + (b - a) * t, clamp = t => Math.max(0, Math.min(1, t)), ease = t => 1 - Math.pow(1 - t, 3);
+// The badge's box inside the card (card: left 12, top 160, 366 x 470; badge: left 110, top 551, 170 x 20).
+const B = { t: 391, r: 98, b: 59, l: 98 };
+const inset = (e, rad) => `inset(${lerp(B.t, 0, e)}px ${lerp(B.r, 0, e)}px ${lerp(B.b, 0, e)}px ${lerp(B.l, 0, e)}px round ${rad}px)`;
+
+const options = [
+  { name: 'A · Morph out of the badge', desc: 'The badge itself grows into the card, the way iOS 26 turns a button into its menu. The card edges stretch and round, the text never squeezes. Words fade in once the card is nearly full size.',
+    cost: 'Medium: clip the card to a box that grows from the badge to the card.', id: 'a',
+    frames: [
+      ['Tap', np(true)],
+      ['Edges grow', np(false) + `<div class="dim" style="opacity:.35"></div><div class="float" style="clip-path:${inset(.35, 10)}">${body({ inner: 'opacity:0' })}</div>`],
+      ['Nearly full', np(false) + `<div class="dim" style="opacity:.8"></div><div class="float" style="clip-path:${inset(.82, 26)}">${body({ inner: 'opacity:.35' })}</div>`],
+      ['Open', np(false) + `<div class="dim"></div><div class="float">${body()}</div>`]] },
+  { name: 'B · Spring pop', desc: 'The card appears in the middle, slightly small, and springs to size with a tiny overshoot. Same as an iOS alert. Simple and calm, but it no longer comes from the badge.',
+    cost: 'Small: a fade plus a spring on the size.', id: 'b',
+    frames: [
+      ['Tap', np(true)],
+      ['Fades in small', np(false) + `<div class="dim" style="opacity:.5"></div><div class="float" style="transform:scale(.9);opacity:.6">${body()}</div>`],
+      ['Overshoots', np(false) + `<div class="dim" style="opacity:.9"></div><div class="float" style="transform:scale(1.03)">${body()}</div>`],
+      ['Settles', np(false) + `<div class="dim"></div><div class="float">${body()}</div>`]] },
+  { name: 'C · Rise, then follow the sound', desc: 'The card rises a little and fades in empty. Then the stops appear one by one from the song file down to the speaker, and the light runs down the line after them. The animation tells the story of the path.',
+    cost: 'Medium: a short delay per stop inside the card.', id: 'c',
+    frames: [
+      ['Tap', np(true)],
+      ['Card rises', np(false) + `<div class="dim" style="opacity:.6"></div><div class="float" style="transform:translateY(30px);opacity:.8">${body({ rows: ['opacity:0', 'opacity:0', 'opacity:0', 'opacity:0'], glow: -60 })}</div>`],
+      ['Stops appear', np(false) + `<div class="dim"></div><div class="float">${body({ rows: ['', '', 'opacity:.45;transform:translateY(6px)', 'opacity:0'], glow: 100 })}</div>`],
+      ['Light reaches the speaker', np(false) + `<div class="dim"></div><div class="float">${body({ glow: 196 })}</div>`]] },
+];
+
+// Live loops, 3.2 s each: open, hold, close, rest.
+let css = `
+@keyframes a-card { 0% { clip-path: ${inset(0, 6)}; opacity: 0 } 3% { opacity: 1 } 22%, 68% { clip-path: ${inset(1, 34)} } 86% { clip-path: ${inset(0, 6)}; opacity: 1 } 89%, 100% { opacity: 0 } }
+@keyframes a-in { 0%, 12% { opacity: 0 } 22%, 66% { opacity: 1 } 74%, 100% { opacity: 0 } }
+@keyframes dim { 0% { opacity: 0 } 20%, 68% { opacity: 1 } 86%, 100% { opacity: 0 } }
+@keyframes b-card { 0% { transform: scale(.86); opacity: 0 } 11% { transform: scale(1.03); opacity: 1 } 18%, 68% { transform: scale(1); opacity: 1 } 78%, 100% { transform: scale(.94); opacity: 0 } }
+@keyframes c-card { 0% { transform: translateY(60px); opacity: 0 } 9%, 68% { transform: none; opacity: 1 } 80%, 100% { transform: translateY(40px); opacity: 0 } }
+@keyframes c-glow { 0%, 18% { top: -60px } 30%, 100% { top: 196px } }
+.la .float { animation: a-card 3.2s infinite cubic-bezier(.2,.8,.2,1) } .la .inner { animation: a-in 3.2s infinite }
+.dim.lv { animation: dim 3.2s infinite }
+.lb2 .float { animation: b-card 3.2s infinite ease-out }
+.lc .float { animation: c-card 3.2s infinite cubic-bezier(.2,.8,.2,1) } .lc .gl { animation: c-glow 3.2s infinite ease-in-out }`;
+for (let i = 0; i < 4; i++) {
+  const s = 8 + i * 3.5;
+  css += `@keyframes c-row${i} { 0%, ${s}% { opacity: 0; transform: translateY(8px) } ${s + 4}%, 68% { opacity: 1; transform: none } 74%, 100% { opacity: 0 } }
+  .lc .r${i} { animation: c-row${i} 3.2s infinite ease-out }`;
+}
+document.head.insertAdjacentHTML('beforeend', `<style>${css}</style>`);
+const live = { a: ['la', body()], b: ['lb2', body()], c: ['lc', body({ rowCls: 'r', glowCls: 'gl' })] };
+
+document.getElementById('rows').innerHTML = options.map(o => `<div class="opt">
+  <div class="about"><h2>${o.name}</h2><p>${o.desc}</p><p class="cost">${o.cost}</p></div>
+  ${o.frames.map(f => `<div class="fr"><p class="lb">${f[0]}</p>${phone(f[1])}</div>`).join('')}
+  <div class="fr live"><p class="lb">Live</p><div class="${live[o.id][0]}">${phone(np(false) + `<div class="dim lv"></div><div class="float">${live[o.id][1]}</div>`)}</div></div>
+</div>`).join('');
+</script>
+</body></html>
