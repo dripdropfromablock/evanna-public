@@ -1,0 +1,116 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sideways Now Playing, Georgia style</title>
+<style>
+  :root { --accent: #f2c14e; }
+  body { margin: 0; background: #151517; color: #fff; font: 15px/1.3 -apple-system, "SF Pro Text", Roboto, "Segoe UI", sans-serif; padding: 26px 30px 30px; width: 1440px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } .note { color: #9a9aa0; font-size: 13px; margin: 0 0 18px; max-width: 1380px; }
+  .grid { display: grid; grid-template-columns: repeat(2, 690px); gap: 22px 30px; }
+  .lb { font-size: 13.5px; color: #b4b4ba; margin: 0 0 8px; } .lb b { color: #fff; } .live .lb b { color: #93d394; }
+  .ph { width: 690px; height: 319px; border-radius: 26px; overflow: hidden; position: relative; background: #000; }
+  .scr { position: absolute; left: 0; top: 0; width: 800px; height: 370px; transform: scale(.8625); transform-origin: 0 0; overflow: hidden; background: #111; }
+  /* A made-up cover: a dark photo look with a light blob, so the blur and the disc read like a real one. */
+  .art { background: radial-gradient(60% 55% at 38% 42%, #d9d4cc 0 18%, #6d6a66 34%, #1b1a1a 62%), linear-gradient(160deg, #2c2a29, #0e0e0e); }
+  .bg { position: absolute; inset: -60px; filter: blur(38px) saturate(1.3) brightness(.45); transform: scale(1.35); }
+  .scrim { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0,0,0,.55), rgba(0,0,0,.25) 45%, rgba(0,0,0,.45)); }
+  .cover { position: absolute; border-radius: 12px; box-shadow: 0 18px 40px rgba(0,0,0,.6); z-index: 3; }
+  .disc { position: absolute; border-radius: 50%; z-index: 2; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+  .disc img { position: absolute; inset: 0; width: 100%; height: 100%; }
+  /* The cover is printed on the disc, as the theme does; the silver hub and rim of the theme's CD show around it. */
+  .disc .print { position: absolute; inset: 0; border-radius: 50%; z-index: 1; opacity: .92;
+    -webkit-mask: radial-gradient(circle, transparent 0 21%, #000 21.5% 96%, transparent 96.5%); }
+  .seg { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: rgba(255,255,255,.12); z-index: 5;
+    backdrop-filter: blur(10px); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.18); font-size: 12px; font-weight: 600; }
+  .seg b { padding: 4px 14px; border-radius: 7px; color: rgba(255,255,255,.75); } .seg b.on { background: rgba(255,255,255,.28); color: #fff; }
+  .close { position: absolute; left: 18px; top: 10px; width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,.14); z-index: 5; text-align: center; line-height: 28px; font-size: 13px; }
+  .more { position: absolute; right: 18px; top: 10px; width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,.14); z-index: 5; text-align: center; line-height: 26px; font-size: 13px; letter-spacing: 1px; }
+  .details { position: absolute; left: 26px; top: 46px; width: 252px; z-index: 4; }
+  .details h3 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -.2px; } .details .by { color: rgba(255,255,255,.62); font-size: 13.5px; margin: 1px 0 9px; }
+  .albumbar { display: flex; gap: 2px; height: 4px; margin-bottom: 12px; } .albumbar i { flex: 1; border-radius: 2px; background: rgba(255,255,255,.18); }
+  .albumbar i.done { background: var(--accent); opacity: .55; } .albumbar i.now { background: linear-gradient(90deg, var(--accent) 0 40%, rgba(255,255,255,.18) 40%); }
+  .card { background: rgba(255,255,255,.08); border-radius: 12px; overflow: hidden; backdrop-filter: blur(12px); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.1); }
+  .row { display: flex; align-items: center; height: 27px; padding: 0 12px; font-size: 12.5px; position: relative; }
+  .row + .row::before { content: ""; position: absolute; left: 12px; right: 0; top: 0; height: .5px; background: rgba(255,255,255,.14); }
+  .row span { color: rgba(255,255,255,.6); width: 70px; flex: none; } .row b { font-weight: 500; flex: 1; text-align: right; display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+  .row img { height: 13px; }
+  .lyrics { position: absolute; left: 360px; top: 54px; width: 410px; height: 236px; z-index: 4; text-align: center; overflow: hidden;
+    -webkit-mask: linear-gradient(transparent, #000 16%, #000 84%, transparent); }
+  .lyrics p { margin: 0 0 10px; font-size: 15px; font-weight: 700; line-height: 1.32; color: rgba(255,255,255,.88); }
+  .lyrics p.past { color: rgba(255,255,255,.42); } .lyrics p.now { color: var(--accent); font-size: 21px; letter-spacing: -.2px; }
+  .bar { position: absolute; left: 14px; right: 14px; bottom: 10px; height: 50px; border-radius: 25px; z-index: 6; background: rgba(40,40,42,.62);
+    backdrop-filter: blur(18px) saturate(1.4); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.2), 0 8px 24px rgba(0,0,0,.35); overflow: hidden; }
+  .bar .who { position: absolute; left: 20px; top: 9px; font-size: 13.5px; font-weight: 600; white-space: nowrap; } .bar .who em { font-style: normal; color: var(--accent); }
+  .bar .who span { color: rgba(255,255,255,.65); font-weight: 500; }
+  .bar .meta { position: absolute; left: 20px; top: 27px; font-size: 11px; color: rgba(255,255,255,.55); display: flex; gap: 6px; align-items: center; } .bar .meta img { height: 10px; opacity: .85; }
+  .bar .tr { position: absolute; left: 50%; top: 9px; transform: translateX(-50%); display: flex; gap: 22px; font-size: 21px; align-items: center; }
+  .bar .tr b { font-size: 26px; }
+  .bar .ic { position: absolute; right: 86px; top: 13px; display: flex; gap: 16px; font-size: 16px; color: rgba(255,255,255,.8); } .bar .ic .on { color: var(--accent); }
+  .bar .time { position: absolute; right: 18px; top: 16px; font-size: 12px; font-variant-numeric: tabular-nums; color: rgba(255,255,255,.8); }
+  .bar .prog { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.14); } .bar .prog i { display: block; height: 100%; background: var(--accent); }
+  .png .live { display: none; }
+</style></head>
+<body>
+<h1>Sideways Now Playing, Georgia style</h1>
+<p class="note">After the foobar2000 Georgia-ReBORN theme, redrawn the iOS way: a segmented control on top, frosted grouped rows, a glass control bar, and the blurred cover behind everything.
+  Tap <b>Lyrics</b> in the control or the bar and the disc rolls back into the cover, the cover slides left, and the words come in.
+  Codec, channel and disc pictures are the theme's own (MIT licence). The green "Live" phone loops it (open this file in a browser).</p>
+<div class="grid" id="grid"></div>
+<script>
+const png = location.search.includes('png'); if (png) document.body.classList.add('png');
+const lerp = (a, b, t) => a + (b - a) * t, clamp = t => Math.max(0, Math.min(1, t)), ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const words = [
+  ['past', 'Late lights on the empty road'], ['past', 'Radio low, the windows down'], ['', 'Every song we used to know'],
+  ['now', 'Turn it up, we found the sound'], ['', 'Hold the note and let it ring'], ['', 'Count the stars along the way'],
+  ['', 'Every line a little thing'], ['', 'That we never got to say'], ['', 'Late lights on the empty road']];
+const screen = () => `<div class="scr">
+  <div class="bg art"></div><div class="scrim"></div>
+  <i class="close">⌄</i><div class="seg"><b class="s0">Details</b><b class="s1">Lyrics</b><b class="s2">Queue</b></div><i class="more">···</i>
+  <div class="details">
+    <h3>Midnight Static (Deluxe)</h3><div class="by">Evanna Test Band · 2023</div>
+    <div class="albumbar">${Array.from({ length: 12 }, (_, i) => `<i class="${i < 2 ? 'done' : i === 2 ? 'now' : ''}"></i>`).join('')}</div>
+    <div class="card">
+      <div class="row"><span>Released</span><b>2023</b></div>
+      <div class="row"><span>Genre</span><b>Hip-Hop/Rap</b></div>
+      <div class="row"><span>Track</span><b>3 of 12 · Disc 1</b></div>
+      <div class="row"><span>Codec</span><b><img src="georgia/alac-white.png" alt="ALAC"></b></div>
+      <div class="row"><span>Channels</span><b><img src="georgia/20_stereo_text-white.png" alt="Stereo"></b></div>
+      <div class="row"><span>Source</span><b>24-bit · 96 kHz <img src="georgia/hi-res-audio-normal.png" alt="Hi-Res" style="height:15px"></b></div>
+      <div class="row"><span>Added</span><b>16 Jul 2026</b></div>
+    </div>
+  </div>
+  <div class="disc"><div class="print art"></div><img src="georgia/common-cd-transparent.png" alt=""></div>
+  <div class="cover art"></div>
+  <div class="lyrics">${words.map(([c, w]) => `<p class="${c}">${w}</p>`).join('')}</div>
+  <div class="bar"><div class="who"><em>Evanna Test Band</em> &nbsp;<span>03.</span> Fighting the Static</div>
+    <div class="meta"><img src="georgia/alac-white.png" alt=""> 24-bit · 96 kHz</div>
+    <div class="tr"><span>⏮</span><b class="pp">⏸</b><span>⏭</span></div>
+    <div class="ic"><span class="ly">❞</span><span>🔈</span><span>☰</span></div>
+    <div class="time">0:58 / 2:30</div><div class="prog"><i style="width:38%"></i></div></div>
+</div>`;
+// t = 0 Details, t = 1 Lyrics. spin = disc turn in degrees.
+function apply(root, t, spin = 0) {
+  const e = ease(clamp(t)), q = s => root.querySelector(s);
+  const cs = lerp(250, 258, e), cx = lerp(300, 34, e), cy = lerp(48, 48, e);
+  Object.assign(q('.cover').style, { width: cs + 'px', height: cs + 'px', left: cx + 'px', top: cy + 'px' });
+  const ds = cs * .94, dx = cx + lerp(cs * .5, 0, clamp(e * 1.6)), dy = cy + (cs - ds) / 2;
+  Object.assign(q('.disc').style, { width: ds + 'px', height: ds + 'px', left: dx + 'px', top: dy + 'px', transform: `rotate(${spin}deg)`, opacity: 1 - clamp((e - .55) / .2) });
+  q('.details').style.opacity = 1 - clamp(e / .45); q('.details').style.transform = `translateX(${-30 * e}px)`;
+  q('.lyrics').style.opacity = clamp((e - .45) / .45); q('.lyrics').style.transform = `translateX(${24 * (1 - e)}px)`;
+  q('.s0').classList.toggle('on', t < .5); q('.s1').classList.toggle('on', t >= .5); q('.ly').classList.toggle('on', t >= .5);
+}
+const frames = [[0, '<b>1 · Details</b> (opens like this sideways)', 'Album facts on the left in frosted rows, with the theme\'s codec, stereo and Hi-Res badges. The disc peeks out of the cover and turns while music plays.'],
+  [.5, '<b>2 · Tap Lyrics</b>', 'The disc rolls back into the cover. The cover slides left as the facts fade.'],
+  [1, '<b>3 · Lyrics</b>', 'Big cover on the left, words on the right. The line being sung is larger and in the cover\'s colour.']];
+const grid = document.getElementById('grid');
+grid.innerHTML = frames.map(f => `<div><p class="lb">${f[1]}<br>${f[2]}</p><div class="ph" data-t="${f[0]}">${screen()}</div></div>`).join('')
+  + `<div class="live"><p class="lb"><b>Live</b><br>Details → Lyrics → back, on a loop at half speed.</p><div class="ph" id="live">${screen()}</div></div>`;
+grid.querySelectorAll('.ph[data-t]').forEach(p => apply(p, +p.dataset.t, 0));
+const live = document.getElementById('live');
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function tick(now) {
+  const u = (now % 7000) / 7000;
+  const t = u < .25 ? 0 : u < .4 ? (u - .25) / .15 : u < .7 ? 1 : u < .85 ? 1 - (u - .7) / .15 : 0;
+  apply(live, t, (now / 1000 * 40) % 360); requestAnimationFrame(tick);
+}
+if (!png) { if (reduce) apply(live, 0, 0); else requestAnimationFrame(tick); }
+</script>
+</body></html>
