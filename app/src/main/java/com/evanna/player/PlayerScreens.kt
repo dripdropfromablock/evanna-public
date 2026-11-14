@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
@@ -265,7 +266,7 @@ internal fun SwitchRow(title: String, note: String? = null, checked: Boolean, en
  */
 @Composable
 internal fun MiniPlayer(state: PlayerPresentation, cover: Bitmap?, onOpen: () -> Unit, onPlayPause: () -> Unit,
-    onPrevious: () -> Unit, onNext: () -> Unit, onOutput: () -> Unit,
+    onPrevious: () -> Unit, onNext: () -> Unit, onOutput: (Rect?) -> Unit,
     motion: PlayerSheetMotion, flying: Boolean, onOpenChange: (Boolean) -> Unit,
     /** In the folded dock: narrower, so Next goes; swiping sideways still skips. */
     compact: Boolean = false,
@@ -317,8 +318,12 @@ internal fun MiniPlayer(state: PlayerPresentation, cover: Bitmap?, onOpen: () ->
                         style = EvannaDesign.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            if (state.route == "NONE" && !state.canPlayPause) TextButton(onClick = onOutput, enabled = state.connected, modifier = Modifier.heightIn(min = 48.dp)) { Text("Output") }
-            else {
+            if (state.route == "NONE" && !state.canPlayPause) {
+                // Audio output grows out of this button.
+                var outputBox by remember { mutableStateOf<Rect?>(null) }
+                TextButton(onClick = { onOutput(outputBox) }, enabled = state.connected,
+                    modifier = Modifier.heightIn(min = 48.dp).onGloballyPositioned { outputBox = it.screenBox() }) { Text("Output") }
+            } else {
                 IconButton(onClick = onPlayPause, enabled = state.connected && state.canPlayPause,
                     modifier = Modifier.size(48.dp).semantics { contentDescription = if (state.playing) "Pause playback" else "Play playback" }) {
                     Icon(if (state.playing) PlayerIcons.Pause else PlayerIcons.Play, contentDescription = null, modifier = Modifier.size(26.dp))

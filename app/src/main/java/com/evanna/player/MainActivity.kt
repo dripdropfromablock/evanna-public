@@ -553,7 +553,7 @@ class MainActivity : ComponentActivity() {
                             MiniPlayer(playerUi, cover, { setPlayerOpen(true) }, ::togglePlayback,
                                 onPrevious = { mediaController?.seekToPreviousMediaItem() },
                                 onNext = { mediaController?.seekToNextMediaItem() },
-                                onOutput = { openOutput(null) }, motion = motion, flying = flying, onOpenChange = setPlayerOpen, compact = compact)
+                                onOutput = openOutput, motion = motion, flying = flying, onOpenChange = setPlayerOpen, compact = compact)
                         } }
                     }
                     if (playerVisible) {
