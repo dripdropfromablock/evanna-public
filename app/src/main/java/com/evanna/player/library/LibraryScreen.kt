@@ -589,7 +589,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                                 }
                             },
                             onAdd = onAdd, onPlayNext = onPlayNext, onPlaylistSong = onPlaylistSong,
-                            onTrackInfo = { trackInfo = song },
+                            onTrackInfo = { trackInfo = song }, swipeToQueue = true,
                             onOpenAlbum = song.album?.takeUnless { albumTrack || it.isBlank() }?.let { album ->
                                 {
                                     open(LibraryGroupKind.ALBUM, album, album, song.musicTags.albumArtist?.takeIf { it.isNotEmpty() })
