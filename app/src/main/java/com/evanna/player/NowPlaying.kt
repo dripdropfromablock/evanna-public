@@ -54,7 +54,6 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -359,8 +358,8 @@ internal fun sidewaysPhone(): Boolean {
 }
 
 /**
- * Now Playing on its side (docs/mockups/landscape.html, option D): the cover fills the screen and fades into a panel on
- * the right. The panel holds the controls; lyrics or the queue take its place, with a small Play row under them.
+ * Now Playing on its side: the upright cover card on the left and a panel on the right, both over the blurred cover
+ * backdrop. The panel holds the controls; lyrics or the queue take its place, with a small Play row under them.
  */
 @Composable
 private fun SidewaysPlayer(state: PlayerPresentation, cover: Bitmap?, page: PlayerPage, onPage: (PlayerPage) -> Unit,
@@ -370,21 +369,20 @@ private fun SidewaysPlayer(state: PlayerPresentation, cover: Bitmap?, page: Play
     controls: @Composable () -> Unit, queue: @Composable (Modifier) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val panel = (maxWidth * 0.46f).coerceIn(320.dp, 460.dp)
-        // The fade ends a little way under the panel, so the words sit on the blurred backdrop, never on the cover.
-        val fade = 140.dp
-        val coverWidth = maxWidth - panel + 32.dp
-        // The cover runs to the screen's edges and fades out under the panel, so its right side is never a hard line.
-        Box(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(coverWidth)
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .drawWithContent {
-                drawContent()
-                val solid = ((size.width - fade.toPx()) / size.width).coerceIn(0f, 1f)
-                drawRect(Brush.horizontalGradient(0f to Color.Black, solid to Color.Black, 1f to Color.Transparent), blendMode = BlendMode.DstIn)
-            }) {
-            ArtworkImage(cover, Modifier.fillMaxSize().dockingCover(motion, flying, corner = 0.dp), RectangleShape)
+        // The same cover card as upright, on the blurred cover backdrop behind the whole screen: rounded, with a
+        // shadow, and a little smaller while paused.
+        val scale by animateFloatAsState(if (state.playing) 1f else 0.86f, spring(dampingRatio = 0.78f, stiffness = 380f), label = "cover scale")
+        val lift by animateDpAsState(if (state.playing) 15.dp else 8.dp, spring(dampingRatio = 0.78f, stiffness = 380f), label = "cover shadow")
+        BoxWithConstraints(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(maxWidth - panel)
+            .graphicsLayer { alpha = contentAlpha() }
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Start + WindowInsetsSides.Bottom))
+            .padding(horizontal = 32.dp, vertical = 24.dp), contentAlignment = Alignment.Center) {
+            val side = minOf(maxWidth, maxHeight)
+            Box(Modifier.size(side).graphicsLayer { scaleX = scale; scaleY = scale }) {
+                ArtworkImage(cover, Modifier.fillMaxSize().dockingCover(motion, flying, corner = 10.dp).shadow(lift, CoverShape), CoverShape)
+            }
         }
         Column(Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(panel)
-            .background(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.18f), Color.Black.copy(alpha = 0.36f))))
             .graphicsLayer { alpha = contentAlpha() }
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.End + WindowInsetsSides.Bottom))) {
             Grabber(page.heading, onBack)
