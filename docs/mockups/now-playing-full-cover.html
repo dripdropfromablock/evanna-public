@@ -1,0 +1,99 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Now Playing: card cover or full cover</title></head>
+<body style="margin:0">
+<div id="fc">
+<style>
+#fc{font:14px/1.35 Roboto,"Segoe UI",sans-serif;color:var(--text,#eee);background:var(--bg,#151517);padding:12px}
+#fc h3{margin:18px 0 2px;font-size:15px}
+#fc p{margin:0 0 10px;font-size:12.5px;color:var(--muted,#9a9aa0)}
+#fc .rec{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:var(--accent-subtle,#24382a);color:var(--accent,#93d394);margin-left:6px}
+#fc .ctl{margin:0 0 10px}
+#fc .ctl button{font:600 12px Roboto,sans-serif;padding:7px 14px;border-radius:8px;border:1px solid var(--border,#333);cursor:pointer;background:var(--accent,#93d394);color:var(--bg,#111)}
+#fc .set{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+#fc .col{width:206px}
+#fc .cap{font-size:12px;line-height:1.4;color:var(--muted,#9a9aa0);margin-top:6px}
+#fc .cap b{display:block;color:var(--text,#eee);font-size:13px;margin-bottom:1px}
+#fc .ph{width:206px;height:446px;border-radius:20px;overflow:hidden;position:relative;background:#000;box-shadow:0 0 0 1px var(--border,#333)}
+#fc .scr{position:absolute;left:0;top:0;width:411px;height:891px;transform:scale(.5);transform-origin:0 0;color:#fff;overflow:hidden}
+#fc .a{position:absolute}
+#fc .bg{inset:0;background:radial-gradient(120% 60% at 30% 70%,#3a2a1e 0,transparent 60%),radial-gradient(90% 50% at 80% 40%,#1d3a3a 0,transparent 65%),linear-gradient(#1b2224,#0d1314)}
+#fc .art{background:
+  radial-gradient(18% 20% at 48% 40%,#d8b08c 0 60%,transparent 62%),
+  radial-gradient(34% 30% at 50% 82%,#141414 0 70%,transparent 72%),
+  radial-gradient(10% 30% at 15% 50%,#5b4a3a 0 70%,transparent 72%),
+  radial-gradient(14% 22% at 82% 55%,#8a8f94 0 60%,transparent 62%),
+  linear-gradient(#cfd6d8 0 18%,#6f7a7c 18% 22%,#3e4648 22% 100%)}
+#fc .card{transition:transform .4s cubic-bezier(.3,1.4,.5,1)}
+#fc .paused .card{transform:scale(.86)}
+#fc .full{left:0;top:0;width:411px;height:480px;
+  -webkit-mask-image:linear-gradient(#000 0 62%,transparent 100%);mask-image:linear-gradient(#000 0 62%,transparent 100%)}
+#fc .topfade{left:0;top:0;width:411px;height:120px;background:linear-gradient(rgba(0,0,0,.35),transparent)}
+#fc .grab{left:187px;top:58px;width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.55)}
+#fc .circ{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.17);display:flex;align-items:center;justify-content:center}
+#fc .bar{height:6px;border-radius:3px;background:rgba(255,255,255,.25);overflow:hidden}
+#fc .bar i{display:block;height:100%;background:rgba(255,255,255,.9)}
+#fc .pp{transition:opacity .2s}
+#fc .paused .pause,#fc :not(.paused)>.scr .play{display:none}
+#fc .cell{background:#1c1c1e;border-radius:12px;margin:0 16px}
+#fc .rowc{display:flex;align-items:center;justify-content:space-between;padding:0 16px;height:48px;font:400 16px Roboto,sans-serif}
+#fc .rowc+.rowc{border-top:1px solid #2c2c2e}
+</style>
+<h3>Now Playing cover</h3>
+<p>Upright Now Playing gets a second look. You pick it in Settings → Appearance. Press the button to pause all phones.</p>
+<div class="ctl"><button id="fc-play">Pause</button></div>
+<div class="set" id="fc-set"></div>
+<h3>The setting</h3>
+<p>Settings → Appearance, beside “Now Playing on its side”.</p>
+<div class="set" id="fc-settings"></div>
+<script>
+(() => {
+const root = document.getElementById("fc");
+const F = "Roboto,'Segoe UI',sans-serif";
+const star = '<svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z" fill="#fff"/></svg>';
+const dots = '<svg width="18" height="6" viewBox="0 0 18 6"><circle cx="3" cy="3" r="2" fill="#fff"/><circle cx="9" cy="3" r="2" fill="#fff"/><circle cx="15" cy="3" r="2" fill="#fff"/></svg>';
+const back = '<svg width="54" height="30" viewBox="0 0 30 22"><path d="M29 2L16 11l13 9zM15 2L2 11l13 9z" fill="#fff"/></svg>';
+const fwd = '<svg width="54" height="30" viewBox="0 0 30 22"><path d="M1 2l13 9-13 9zM15 2l13 9-13 9z" fill="#fff"/></svg>';
+const pause = '<svg class="pause" width="34" height="42" viewBox="0 0 34 42"><rect x="3" y="2" width="9" height="38" rx="2.5" fill="#fff"/><rect x="22" y="2" width="9" height="38" rx="2.5" fill="#fff"/></svg>';
+const play = '<svg class="play" width="34" height="42" viewBox="0 0 34 42"><path d="M5 3l26 18L5 39z" fill="#fff" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg>';
+const ico = d => `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9ac" stroke-width="1.8" stroke-linecap="round">${d}</svg>`;
+// The controls are the same in both looks; only the cover changes.
+const controls = `
+  <div class="a" style="left:30px;top:478px;width:351px;display:flex;align-items:center">
+    <div style="flex:1;min-width:0"><div style="font:600 21px/26px ${F}">Serve</div><div style="font:600 21px/26px ${F};color:rgba(255,255,255,.55)">Khantrast</div></div>
+    <div class="circ" style="margin-right:8px">${star}</div><div class="circ">${dots}</div></div>
+  <div class="a" style="left:30px;top:560px;font:500 15px ${F};color:rgba(255,255,255,.7)">Right leg, left leg, then eyes ›</div>
+  <div class="a bar" style="left:30px;top:592px;width:351px"><i style="width:44%"></i></div>
+  <div class="a" style="left:30px;top:604px;font:500 11px ${F};color:rgba(255,255,255,.55)">0:59</div>
+  <div class="a" style="left:352px;top:604px;font:500 11px ${F};color:rgba(255,255,255,.55)">-1:13</div>
+  <div class="a" style="left:0;top:660px;width:411px;display:flex;justify-content:space-evenly;align-items:center">${back}<span style="width:34px;height:42px;display:flex">${pause}${play}</span>${fwd}</div>
+  <div class="a bar" style="left:62px;top:752px;width:287px;height:5px"><i style="width:24%"></i></div>
+  <div class="a" style="left:0;top:790px;width:411px;display:flex;justify-content:space-around">
+    ${ico('<path d="M5 5h14v10H10l-4 3v-3H5z"/>')}${ico('<rect x="7" y="3" width="10" height="18" rx="3"/><circle cx="12" cy="14" r="2.5"/>')}${ico('<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>')}</div>
+  <div class="a" style="left:150px;top:872px;width:111px;height:4px;border-radius:2px;background:#fff"></div>`;
+const status = `<div class="a" style="left:28px;top:14px;font:600 14px ${F}">12:41</div>
+  <div class="a" style="left:355px;top:16px;width:26px;height:12px;border-radius:4px;background:#fff"></div>`;
+const phones = [
+  { cap: "<b>Card · now</b>The cover sits in a card with a shadow. It shrinks when paused.",
+    cover: `<div class="a card art" style="left:30px;top:90px;width:351px;height:351px;border-radius:10px;box-shadow:0 14px 30px rgba(0,0,0,.5)"></div>` },
+  { cap: '<b>Full cover · new <span class="rec">pick</span></b>The cover fills the top, under the status bar. It fades into the blurred backdrop above the title. It stays full size when paused.',
+    cover: `<div class="a full art"></div><div class="a topfade"></div>` },
+];
+root.querySelector("#fc-set").innerHTML = phones.map((p, i) => `<div class="col"><div class="ph" role="img" aria-label="Now Playing, ${i ? "full cover" : "card"}">
+  <div class="scr"><div class="a bg"></div>${p.cover}${status}<div class="a grab"></div>${controls}</div></div><div class="cap">${p.cap}</div></div>`).join("");
+const check = '<svg width="18" height="18" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7" stroke="#0a84ff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+root.querySelector("#fc-settings").innerHTML = `<div style="width:300px"><div class="ph" style="width:300px;height:190px;background:#000" role="img" aria-label="Appearance setting">
+  <div class="scr" style="width:411px;height:260px;transform:scale(.73)">
+  <div class="a" style="left:32px;top:14px;font:400 13px ${F};color:#8e8e93;letter-spacing:.02em">NOW PLAYING COVER</div>
+  <div class="a cell" style="left:0;right:0;top:38px"><div class="rowc"><span>Card</span></div><div class="rowc"><span>Full cover</span>${check}</div></div>
+  <div class="a" style="left:32px;top:142px;width:350px;font:400 13px/18px ${F};color:#8e8e93">Card shows the cover in a frame. Full cover fills the top of the screen with it.</div>
+  </div></div><div class="cap"><b>A choice list</b>Same look as “Now Playing on its side”. Card stays the default.</div></div>`;
+const btn = root.querySelector("#fc-play");
+btn.onclick = () => {
+  const paused = !root.querySelector(".ph").classList.contains("paused");
+  root.querySelectorAll("#fc-set .ph").forEach(e => e.classList.toggle("paused", paused));
+  btn.textContent = paused ? "Play" : "Pause";
+};
+})();
+</script>
+</div>
+</body></html>
