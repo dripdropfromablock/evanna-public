@@ -78,5 +78,6 @@ class SoundPathTest {
         assertNull(decodeStop("FILE"))
         assertNull(decodeStop(listOf("NOPE", "SAME", "t", "v", "").joinToString("\u001E")))
         assertEquals("44.1 kHz", khz(44100)); assertEquals("96 kHz", khz(96000)); assertEquals("352.8 kHz", khz(352800))
+        assertEquals("22.05 kHz", khz(22050)); assertEquals("11.025 kHz", khz(11025))
     }
 }

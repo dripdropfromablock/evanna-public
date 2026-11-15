@@ -73,6 +73,10 @@ internal fun playbackTime(ms: Long?): String {
     return if (seconds >= 3600) "${seconds / 3600}:$minute:$second" else "${seconds / 60}:$second"
 }
 
+/** "1 song", "12 songs": the plural noun loses its s for one. */
+internal fun counted(count: Int, plural: String): String =
+    if (count == 1) "1 ${plural.removeSuffix("s")}" else "$count $plural"
+
 internal fun playbackSeekTarget(startId: String?, currentId: String?, requestedMs: Long, durationMs: Long?, canSeek: Boolean): Long? {
     if (startId == null || startId != currentId || !canSeek || durationMs == null || durationMs <= 0) return null
     return requestedMs.coerceIn(0, durationMs)

@@ -197,9 +197,6 @@ class MainActivity : ComponentActivity() {
     private val installedVersion get() = installedPackage.longVersionCode
     /** Test builds carry another signing key, so they cannot update from releases. */
     private val updatesEnabled by lazy { (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) == 0 }
-    /** The note in the capsule at the top of the screen; it goes after a few seconds. */
-    private var notice by mutableStateOf<String?>(null)
-    private var noticeRevision by mutableIntStateOf(0)
     private var modeChanging by mutableStateOf(false)
     private var signalStatus by mutableStateOf("")
     private var pendingFile: Uri? = null
@@ -364,6 +361,13 @@ class MainActivity : ComponentActivity() {
                 }
                 val screen = navigation.last()
                 val savedScreens = rememberSaveableStateHolder()
+                // A screen that leaves the stack opens fresh next time, at the top, as on iOS.
+                // Now Playing keeps its page (cover, lyrics or queue) between openings.
+                val stacked = remember { mutableSetOf<PlayerScreen>().apply { addAll(navigation) } }
+                LaunchedEffect(navigation) {
+                    for (gone in stacked - navigation.toSet()) if (gone != PlayerScreen.NOW_PLAYING) savedScreens.removeState(gone.name)
+                    stacked.clear(); stacked.addAll(navigation)
+                }
                 // Poll only while music plays; player events refresh the position when paused
                 // (a paused app then wakes 0 times from this loop).
                 LaunchedEffect(mediaController, playerUi.playing) {
@@ -373,7 +377,7 @@ class MainActivity : ComponentActivity() {
                     while (mediaController === controller && playerUi.playing) { delay(250); sync() }
                 }
                 LaunchedEffect(usbKeyIndicatorRevision) {delay(1500);usbKeyIndicator=null}
-                LaunchedEffect(noticeRevision) { if (notice != null) { delay(4000); notice = null } }
+                LaunchedEffect(LocalLibrary.noticeRevision) { if (LocalLibrary.notice != null) { delay(4000); LocalLibrary.clearNotice() } }
                 // Installing replaces the app and ends its process; stop the music gently first.
                 val installingUpdate = AppUpdater.state is UpdateState.Installing
                 LaunchedEffect(installingUpdate) { if (installingUpdate) mediaController?.pause() }
@@ -589,7 +593,7 @@ class MainActivity : ComponentActivity() {
                         !modalOpen && !keyboard && !motion.dragging && !playerVisible &&
                             pushed == null && !LocalLibrary.managingFolders, ::openSourceLink)
                     UsbVolumeIndicator(usbKeyIndicator)
-                    NoticeCapsule(notice)
+                    NoticeCapsule(LocalLibrary.notice)
                     if (showOutput) ProvideEvannaColors(playerColors) {
                         AudioOutputSheet(
                             state = playerUi,
@@ -1033,10 +1037,9 @@ class MainActivity : ComponentActivity() {
                 val success=response?.resultCode==SessionResult.RESULT_SUCCESS
                 if(success) {
                     actionError=null;refreshPlayback(controller)
+                    // The music starting is the answer; only a cut-short queue needs a note.
                     val count=response!!.extras.getInt(PlaybackService.QUEUE_COUNT)
-                    com.evanna.player.library.LocalLibrary.status=if(response.extras.getBoolean(PlaybackService.QUEUE_TRUNCATED))
-                        "Queue limited to $count songs from this part of the list." else "Queued $count songs."
-                    if(response.extras.getBoolean(PlaybackService.QUEUE_TRUNCATED))showNotice(com.evanna.player.library.LocalLibrary.status)
+                    if(response.extras.getBoolean(PlaybackService.QUEUE_TRUNCATED))showNotice("Queue limited to $count songs from this part of the list.")
                 }
                 complete(success)
             }
@@ -1251,7 +1254,7 @@ class MainActivity : ComponentActivity() {
         false
     }
 
-    private fun showNotice(text: String) { notice = text; noticeRevision++ }
+    private fun showNotice(text: String) = LocalLibrary.showNotice(text)
 
     @Composable
     private fun SettingsScreen(page: PlayerScreen, onBack: (() -> Unit)?, bottomInset: Dp, onNotices: () -> Unit) {

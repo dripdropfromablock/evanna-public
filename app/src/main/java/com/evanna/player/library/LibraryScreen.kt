@@ -20,6 +20,8 @@ import com.evanna.player.ScreenBackHandler
 import com.evanna.player.SettingsLink
 import com.evanna.player.UI_SETTINGS
 import com.evanna.player.EvannaDesign
+import com.evanna.player.counted
+import com.evanna.player.playback.khz
 import com.evanna.player.ui.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -480,7 +482,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
         if(!searchHome && cursor.base>0)line {TextButton(onClick={cursor=LibraryPageCursor()},modifier=Modifier.heightIn(min=48.dp)){Text("Start of list")}}
         // Albums go directly from the filters to the covers. Other lists keep their count.
         shown?.takeIf { it.total > 0 && !searchHome && (searchMode || kind != null || view != LibraryView.ALBUMS) }?.let {
-            line { Text("${it.total} $resultLabel",
+            line { Text(counted(it.total, resultLabel),
                 style = EvannaDesign.typography.titleSmall, color = muted) }
         }
         if (failed == request) line {
@@ -568,7 +570,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                                     Text(it, style = EvannaDesign.typography.bodyMedium, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                                 if (!song.available || !compactRow) Text(if (!song.available) "Unavailable · reconnect or rescan the folder" else
-                                    "${song.codec ?: "Unknown format"} · ${song.rate?.let { "$it Hz" } ?: "rate unknown"} · ${duration ?: "Duration unknown"}",
+                                    "${song.codec ?: "Unknown format"} · ${song.rate?.let(::khz) ?: "rate unknown"} · ${duration ?: "Duration unknown"}",
                                     style = EvannaDesign.typography.bodySmall, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             if (compactRow && duration != null) Text(duration,
@@ -598,7 +600,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                         }
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
                             Text(name, style = EvannaDesign.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("${group.count} songs${if (group.value == null) " · tag missing" else ""}", style = EvannaDesign.typography.bodyMedium, color = muted)
+                            Text("${counted(group.count, "songs")}${if (group.value == null) " · tag missing" else ""}", style = EvannaDesign.typography.bodyMedium, color = muted)
                         }
                     }
                 }

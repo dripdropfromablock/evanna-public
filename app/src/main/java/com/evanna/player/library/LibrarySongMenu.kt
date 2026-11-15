@@ -47,6 +47,7 @@ import com.evanna.player.TilePurple
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.evanna.player.playbackTime
+import com.evanna.player.playback.khz
 import com.evanna.player.ui.*
 import com.evanna.player.user.UserData
 import com.evanna.player.user.isFavorite
@@ -108,14 +109,14 @@ internal fun LibrarySongRow(
     }
     val addToQueue = {
         onAdd(song.id) { success ->
-            LocalLibrary.status = if (success) "Added ${song.title} to the queue."
-            else "The song could not be added. Check folder access and the queue limit."
+            LocalLibrary.showNotice(if (success) "Added ${song.title} to the queue."
+            else "The song could not be added. Check folder access and the queue limit.")
         }
     }
     val playNext = {
         onPlayNext(song.id) { success ->
-            LocalLibrary.status = if (success) "${song.title} will play next."
-            else "The song could not be added. Check folder access and the queue limit."
+            LocalLibrary.showNotice(if (success) "${song.title} will play next."
+            else "The song could not be added. Check folder access and the queue limit.")
         }
     }
     // Apple Music's swipes: right for Play next, left for Add to queue. The row slides over the action it reveals.
@@ -167,7 +168,7 @@ internal fun LibrarySongRow(
                         close()
                         scope.launch {
                             val success = withContext(NonCancellable + Dispatchers.IO) { personal.setFavorite(song.id, selected) }
-                            LocalLibrary.status = if (success) "Favorites updated." else "The favorite could not be changed."
+                            LocalLibrary.showNotice(if (success) "Favorites updated." else "The favorite could not be changed.")
                         }
                     },
                     onPlaylist = { close(); onPlaylistSong(song.id) },
@@ -270,7 +271,7 @@ internal fun LibraryTrackInfo(song: LibrarySong, onDismiss: () -> Unit) {
         "Album" to song.album,
         "Duration" to song.durationUs?.let { playbackTime(it / 1_000) },
         "Format" to song.codec,
-        "Sample rate" to song.rate?.let { "$it Hz" },
+        "Sample rate" to song.rate?.let(::khz),
     ).mapNotNull { (label, value) -> value?.takeIf { it.isNotBlank() }?.let { "$label · $it" } }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Track info") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {

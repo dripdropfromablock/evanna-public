@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.evanna.player.ScreenHeader
+import com.evanna.player.counted
 import com.evanna.player.library.*
 import kotlinx.coroutines.*
 
@@ -129,7 +130,7 @@ internal fun PlaylistsScreen(onBack:()->Unit,onPlay:(Long,Long,Boolean,Int,(Bool
                     onAdded()
                 }else selectedId=list.id
             },enabled=!busy && (!adding || additions!=null),modifier=Modifier.fillMaxWidth().heightIn(min=56.dp)) {
-                Column(Modifier.fillMaxWidth()){Text(list.name,style=EvannaDesign.typography.titleMedium);Text("${list.count} songs${if(adding)" · Add here" else ""}")}
+                Column(Modifier.fillMaxWidth()){Text(list.name,style=EvannaDesign.typography.titleMedium);Text("${counted(list.count,"songs")}${if(adding)" · Add here" else ""}")}
             }}
         }else selected?.takeIf {it.id==selectedId && loaded}?.let {list ->
             item {Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {

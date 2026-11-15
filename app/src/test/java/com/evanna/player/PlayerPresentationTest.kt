@@ -42,6 +42,13 @@ class PlayerPresentationTest {
         assertEquals("1:02:03", playbackTime(3723000))
         assertTrue(playbackTime(Long.MAX_VALUE).isNotBlank())
     }
+
+    @Test fun countsSaySongForOne() {
+        assertEquals("1 song", counted(1, "songs"))
+        assertEquals("0 songs", counted(0, "songs"))
+        assertEquals("104 songs", counted(104, "songs"))
+        assertEquals("1 artist", counted(1, "artists"))
+    }
     @Test fun navigationReturnsToExistingDestinationsWithoutGrowingCycles() {
         var stack = listOf(PlayerScreen.LIBRARY)
         stack = playerDestination(stack, PlayerScreen.NOW_PLAYING)

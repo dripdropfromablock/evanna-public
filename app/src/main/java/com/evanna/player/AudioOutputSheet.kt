@@ -73,7 +73,7 @@ internal fun AudioOutputSheet(
                 }
             }
             val signal = state.signalStages.firstOrNull { it.brief && it.label == "Output" }?.value
-            OutputRow("Audio Pipeline", signal?.let(::shortSourceQuality) ?: "View audio signal path", PlayerIcons.Pipeline,
+            OutputRow("Sound path", signal?.let(::shortSourceQuality) ?: "Each step from song file to speaker", PlayerIcons.Pipeline,
                 onClick = { showPipeline = true })
         }
         // The output list is right under this sheet, so "Pick another output" just closes it.

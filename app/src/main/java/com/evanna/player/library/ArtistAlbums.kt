@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.evanna.player.LocalLookStyle
+import com.evanna.player.counted
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 
@@ -35,7 +36,7 @@ internal fun LibraryAlbumCard(group: LibraryGroup, revision: Int, modifier: Modi
     val cover = androidx.compose.foundation.shape.RoundedCornerShape(7.dp)
     val clickable = modifier.clip(EvannaDesign.shapes.small).clickable(enabled = enabled, onClick = onOpen)
     val title = group.value ?: "Unknown album"
-    val artist = group.artist ?: "${group.count} songs"
+    val artist = group.artist ?: counted(group.count, "songs")
     if (list) {
         Column {
             Row(clickable.fillMaxWidth().heightIn(min = 60.dp).padding(vertical = 6.dp),

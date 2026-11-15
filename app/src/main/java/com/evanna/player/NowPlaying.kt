@@ -472,7 +472,7 @@ private fun SidewaysPlayRow(state: PlayerPresentation, page: PlayerPage, onPage:
         Spacer(Modifier.weight(1f))
         StripButton(PlayerIcons.Lyrics, lyricsOn, if (lyricsOn) "Close lyrics" else "Open lyrics",
             enabled = lyricsOn || lyrics is LyricsLoad.Ready) { onPage(if (lyricsOn) PlayerPage.SONG else PlayerPage.LYRICS) }
-        StripButton(PlayerIcons.QueueList, queueOn, "Queue · ${state.queue.size} songs") {
+        StripButton(PlayerIcons.QueueList, queueOn, "Queue · ${counted(state.queue.size, "songs")}") {
             onPage(if (queueOn) PlayerPage.SONG else PlayerPage.QUEUE)
         }
     }
@@ -557,7 +557,7 @@ private fun PlayerControls(state: PlayerPresentation, actionError: String?, page
                 Spacer(Modifier.weight(1f))
             }
             val queueOn = page == PlayerPage.QUEUE
-            StripButton(PlayerIcons.QueueList, queueOn, "Queue · ${state.queue.size} songs") {
+            StripButton(PlayerIcons.QueueList, queueOn, "Queue · ${counted(state.queue.size, "songs")}") {
                 onPage(if (queueOn) PlayerPage.SONG else PlayerPage.QUEUE)
             }
         }
@@ -1461,7 +1461,7 @@ private fun DetailsBar(state: PlayerPresentation, page: PlayerPage, onPage: (Pla
         var outputBox by remember { mutableStateOf<Rect?>(null) }
         StripButton(PlayerIcons.Output, outputSheetOpen, "Sound output", onTint = accent,
             modifier = Modifier.onGloballyPositioned { outputBox = it.screenBox() }) { onOutput(outputBox) }
-        StripButton(PlayerIcons.QueueList, queueOn, "Queue · ${state.queue.size} songs", onTint = accent) {
+        StripButton(PlayerIcons.QueueList, queueOn, "Queue · ${counted(state.queue.size, "songs")}", onTint = accent) {
             onPage(if (queueOn) PlayerPage.SONG else PlayerPage.QUEUE)
         }
     }

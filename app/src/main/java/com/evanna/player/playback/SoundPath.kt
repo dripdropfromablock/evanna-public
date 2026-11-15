@@ -207,9 +207,9 @@ internal fun UsbPlaybackFailure.plain(): String = when (this) {
     UsbPlaybackFailure.ROUTE_CHANGED -> "The audio output changed. Pick it again"
 }
 
-/** 44100 → "44.1 kHz", 96000 → "96 kHz". */
+/** 44100 → "44.1 kHz", 96000 → "96 kHz", 22050 → "22.05 kHz": exact, never rounded. */
 internal fun khz(rate: Int): String =
-    (if (rate % 1000 == 0) "${rate / 1000}" else String.format(Locale.US, "%.1f", rate / 1000.0)) + " kHz"
+    java.math.BigDecimal.valueOf(rate.toLong(), 3).stripTrailingZeros().toPlainString() + " kHz"
 private fun hz(rate: Int) = String.format(Locale.US, "%,d Hz", rate)
 /** "−1 dB", "−6.3 dB", "+2 dB"; a true minus sign, as the volume readouts use. */
 private fun db(value: Float): String {

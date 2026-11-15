@@ -47,8 +47,15 @@ internal object LocalLibrary {
     val indexing get() = scanning || startupSyncing
     var managingFolders by mutableStateOf(false)
         private set
-    /** The Library screen's status line: scan progress and results, or the last queue add. */
+    /** The Library screen's status line: scan progress and results, and list errors. One-off results use [showNotice]. */
     var status by mutableStateOf(IDLE_STATUS)
+    /** The note in the capsule at the top of the screen ("Added … to the queue."); MainActivity clears it after a few seconds. */
+    var notice by mutableStateOf<String?>(null)
+        private set
+    var noticeRevision by mutableIntStateOf(0)
+        private set
+    fun showNotice(text: String) { notice = text; noticeRevision++ }
+    fun clearNotice() { notice = null }
     /** True while the status only says all is well, so the list can leave that line out. */
     val statusIsIdle get() = status == IDLE_STATUS || status == READY_STATUS
     /** Counts finished scans; lists and covers reload when it changes. */

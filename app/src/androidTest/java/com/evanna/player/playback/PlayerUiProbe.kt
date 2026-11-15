@@ -494,7 +494,7 @@ internal object PlayerUiProbe {
                     check(driver.find { it.contentDescription?.toString() == "Hide lyrics" } == null)
                     driver.clickDescription("Close lyrics")
                 }
-                driver.clickDescription("Queue · ${before.items.size} songs")
+                driver.clickDescription("Queue · ${com.evanna.player.counted(before.items.size, "songs")}")
                 driver.await("Queue view did not open") { driver.heading("Queue") }
                 instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
                 driver.await("Back did not return to the full player") { driver.visible("Now Playing") }
@@ -508,10 +508,10 @@ internal object PlayerUiProbe {
                 driver.clickDescription("Open Now Playing")
                 driver.clickVolumeOutput()
                 driver.await("Audio output sheet did not open") { driver.heading("Audio output") }
-                driver.click("Audio Pipeline")
-                driver.await("Audio pipeline did not open") { driver.heading("Audio quality") }
+                driver.click("Sound path")
+                driver.await("Sound path did not open") { driver.heading("Sound path") }
                 driver.click("Close")
-                driver.await("Audio pipeline did not return to the output sheet") { driver.heading("Audio output") }
+                driver.await("Sound path did not return to the output sheet") { driver.heading("Audio output") }
             } else { driver.click("Settings"); driver.click("Audio output and USB") }
             if (!hasSong) driver.await("Output diagnostics not reachable") { driver.visible("Check your DAC") }
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
