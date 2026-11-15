@@ -29,6 +29,7 @@ import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
@@ -466,9 +467,116 @@ private fun CarouselBrowser(
     val cardColor by animateColorAsState(theme.surfaceContainerHigh, EvannaMotion.ambient, label = "Carousel cards")
     val listColor by animateColorAsState(theme.surfaceContainer, EvannaMotion.ambient, label = "Carousel track list")
     val visibleSelection = selection?.takeIf { it.album == centeredAlbum }
+    val sideways = sidewaysPhone()
+    // On its side there is no expanding cover; an upright one left open would hold Play and the dice back.
+    LaunchedEffect(sideways) { if (sideways) albumHeaderProgress = 0f }
+    // The backdrop keeps the last album's cover while the next one is still being read, so it never flashes gray.
+    var backdropCover by remember(revision) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(centeredCover) { if (centeredCover != null) backdropCover = centeredCover.bitmap }
+    // On its side everything sits on Now Playing's dark moving backdrop, so it takes Now Playing's dark colours in every look.
+    val sidewaysColors = remember(accent) { playerColorScheme(accent) }
+    val rollEnabled = count > 1 && active && !rolling && !pager.isScrollInProgress
 
-    ProvideEvannaColors(theme.copy(surfaceContainer = listColor, surfaceContainerHigh = cardColor)) {
-        BoxWithConstraints(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(heroColor, listColor)))) {
+    fun Modifier.albumsSemantics(expandable: Boolean) = clearAndSetSemantics {
+        contentDescription = centered?.let {
+            listOfNotNull(it.value ?: "Unknown album", it.artist ?: it.albumArtist).joinToString(", ")
+        } ?: "Albums"
+        stateDescription = "Album ${settledIndex + 1} of $count"
+        if (!rolling) customActions = buildList {
+            if (count > 1) {
+                add(CustomAccessibilityAction("Previous album") { moveTo(pager.settledPage - 1); true })
+                add(CustomAccessibilityAction("Next album") { moveTo(pager.settledPage + 1); true })
+            }
+            if (active && centered != null && !pager.isScrollInProgress &&
+                !LocalLibrary.scanning && !LocalLibrary.managingFolders) {
+                add(CustomAccessibilityAction("Play album from first track") { playFocusedAlbum(pager.settledPage) })
+            }
+            if (expandable) add(CustomAccessibilityAction("Expand album artwork") {
+                scope.launch { animateHeaderTo(1f) }
+                true
+            })
+        }
+    }
+    val albumTracks: @Composable (Modifier, (@Composable (String) -> Unit)?) -> Unit = { listModifier, header ->
+        val colors = EvannaDesign.colorScheme
+        if (metadataFailed) {
+            TextButton(onClick = { metadataRetry++ }) { Text("Retry loading albums") }
+        }
+        if (!LocalLibrary.statusIsIdle) {
+            Text(LocalLibrary.status, style = EvannaDesign.typography.bodySmall, color = colors.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 4.dp))
+        }
+        when {
+            visibleSelection == null && centeredAlbum != null && failedAlbum == centeredAlbum ->
+                TextButton(onClick = { selectionRetry++ }) { Text("Retry loading tracks") }
+            visibleSelection == null -> Text("Loading tracks…", modifier = Modifier.padding(vertical = 12.dp))
+            else -> key(visibleSelection.album.key) {
+                CarouselTracks(visibleSelection, nowPlaying, database, active, bottomInset, scope, trackList,
+                    listModifier, onSelect, onAdd, onPlayNext, onPlaylistSong, { trackInfo = it }, { playbackFailed = true },
+                    header)
+            }
+        }
+    }
+
+    // On its side the album's name, artist and "2023 · 22 songs" line lead the track list, with the dice beside them.
+    val sidewaysHeader: @Composable (String) -> Unit = { info ->
+        val colors = EvannaDesign.colorScheme
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                Text(centered?.let { it.value ?: "Unknown album" }.orEmpty(), style = EvannaDesign.typography.titleLarge,
+                    fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.semantics { heading() })
+                Text((centered?.artist ?: centered?.albumArtist).orEmpty(), style = EvannaDesign.typography.bodyLarge,
+                    color = colors.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(info, style = EvannaDesign.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+            }
+            IconButton(onClick = ::roll, enabled = rollEnabled, colors = IconButtonDefaults.iconButtonColors(colors.onSurfaceVariant)) {
+                Icon(PlayerIcons.Dice, "Random album", Modifier.size(18.dp))
+            }
+        }
+    }
+
+    ProvideEvannaColors(if (sideways) sidewaysColors else theme.copy(surfaceContainer = listColor, surfaceContainerHigh = cardColor)) {
+        // On its side (docs/mockups/carousel-sideways-v2.html): the albums scroll up and down on the left, one big cover at
+        // a time with the ones above and below peeking out, and the album's tracks sit on the right, straight on the
+        // backdrop. Behind both, Now Playing's blurred cover moves for a few seconds each time a new album settles.
+        if (sideways) Box(Modifier.fillMaxSize()) {
+            PlayerBackdrop(backdropCover, look == EvannaLook.APPLE_LIGHT, Modifier.matchParentSize())
+            Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))) {
+                BoxWithConstraints(Modifier.weight(1f).fillMaxHeight().padding(bottom = bottomInset)) {
+                    val side = minOf(maxHeight * 0.72f, maxWidth - 32.dp, 304.dp)
+                    VerticalPager(
+                        state = pager,
+                        modifier = Modifier.fillMaxSize().clipToBounds().albumsSemantics(expandable = false),
+                        userScrollEnabled = active && count > 1 && !rolling,
+                        // No gap: the covers either side shrink, which leaves the space between them.
+                        contentPadding = PaddingValues(vertical = (maxHeight - side) / 2),
+                        pageSize = PageSize.Fixed(side),
+                        flingBehavior = flingBehavior,
+                        beyondViewportPageCount = 1,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) { page ->
+                        val group = albumAt(carouselAlbumIndex(page, count))
+                        val pageOffset = remember(pager, page) {
+                            { ((page - pager.currentPage) - pager.currentPageOffsetFraction).coerceIn(-3f, 3f) }
+                        }
+                        CarouselAlbumCard(group, group?.identity()?.let(covers::get)?.bitmap, side,
+                            pageOffset = pageOffset, modifier = Modifier.graphicsLayer {
+                                if (!reducedMotion) {
+                                    val scale = 1f - abs(pageOffset()).coerceAtMost(1f) * 0.14f
+                                    scaleX = scale
+                                    scaleY = scale
+                                }
+                            }, onClick = { moveTo(page) },
+                            onDoubleClick = if (page == pager.settledPage) ({ playFocusedAlbum(page) }) else null)
+                    }
+                }
+                Column(Modifier.weight(1f).fillMaxHeight().padding(start = 4.dp, end = 16.dp)) {
+                    albumTracks(Modifier, sidewaysHeader)
+                }
+            }
+        } else BoxWithConstraints(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(heroColor, listColor)))) {
             CarouselArtworkBackdrop(pager, backdrops, themedAlbum,
                 albumAtPage = { albumAt(carouselAlbumIndex(it, count))?.identity() },
                 modifier = Modifier.matchParentSize())
@@ -478,7 +586,7 @@ private fun CarouselBrowser(
                 0.74f to listColor.copy(alpha = 0.88f),
                 1f to listColor,
             )))
-            // On its side the screen is short, so covers are smaller and the album's details still show above the dock.
+            // Wider than tall (a tablet on its side), covers are smaller so the album's details still show above the dock.
             val cardWidth = minOf(maxWidth * 0.64f, maxHeight * (if (maxWidth > maxHeight) 0.34f else 0.42f), 304.dp)
             val centerPadding = (maxWidth - cardWidth) / 2
             val fontScale = LocalDensity.current.fontScale
@@ -498,26 +606,7 @@ private fun CarouselBrowser(
                         CarouselHeader(enabled = progress == 0f && count > 1 && active && !rolling && !pager.isScrollInProgress, onRoll = ::roll)
                         HorizontalPager(
                             state = pager,
-                            modifier = Modifier.fillMaxWidth().clipToBounds().clearAndSetSemantics {
-                                contentDescription = centered?.let {
-                                    listOfNotNull(it.value ?: "Unknown album", it.artist ?: it.albumArtist).joinToString(", ")
-                                } ?: "Albums"
-                                stateDescription = "Album ${settledIndex + 1} of $count"
-                                if (!rolling) customActions = buildList {
-                                    if (count > 1) {
-                                        add(CustomAccessibilityAction("Previous album") { moveTo(pager.settledPage - 1); true })
-                                        add(CustomAccessibilityAction("Next album") { moveTo(pager.settledPage + 1); true })
-                                    }
-                                    if (active && centered != null && !pager.isScrollInProgress &&
-                                        !LocalLibrary.scanning && !LocalLibrary.managingFolders) {
-                                        add(CustomAccessibilityAction("Play album from first track") { playFocusedAlbum(pager.settledPage) })
-                                    }
-                                    add(CustomAccessibilityAction("Expand album artwork") {
-                                        scope.launch { animateHeaderTo(1f) }
-                                        true
-                                    })
-                                }
-                            },
+                            modifier = Modifier.fillMaxWidth().clipToBounds().albumsSemantics(expandable = true),
                             userScrollEnabled = progress == 0f && active && count > 1 && !rolling,
                             contentPadding = PaddingValues(horizontal = centerPadding, vertical = 9.dp),
                             pageSize = PageSize.Fixed(cardWidth),
@@ -568,24 +657,8 @@ private fun CarouselBrowser(
                     0.34f to listColor.copy(alpha = 0.66f),
                     1f to listColor.copy(alpha = 0.88f),
                 )).padding(horizontal = 16.dp)) {
-                    if (metadataFailed) {
-                        TextButton(onClick = { metadataRetry++ }) { Text("Retry loading albums") }
-                    }
-                    if (!LocalLibrary.statusIsIdle) {
-                        Text(LocalLibrary.status, style = EvannaDesign.typography.bodySmall, color = theme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 4.dp))
-                    }
-                    when {
-                        visibleSelection == null && centeredAlbum != null && failedAlbum == centeredAlbum ->
-                            TextButton(onClick = { selectionRetry++ }) { Text("Retry loading tracks") }
-                        visibleSelection == null -> Text("Loading tracks…", modifier = Modifier.padding(vertical = 12.dp))
-                        else -> key(visibleSelection.album.key) {
-                        // Play, Shuffle and the album line lead the list; the title stays under the covers above.
-                            CarouselTracks(visibleSelection, nowPlaying, database, active, bottomInset, scope, trackList,
-                                Modifier.nestedScroll(headerScroll), onSelect, onAdd,
-                                onPlayNext, onPlaylistSong, { trackInfo = it }, { playbackFailed = true })
-                        }
-                    }
+                    // Play, Shuffle and the album line lead the list; the title stays under the covers above.
+                    albumTracks(Modifier.nestedScroll(headerScroll), null)
                 }
             }
         }
@@ -746,6 +819,8 @@ private fun CarouselTracks(
     onSelect: (LibraryContextRequest, (Boolean) -> Unit) -> Unit,
     onAdd: (String, (Boolean) -> Unit) -> Unit, onPlayNext: (String, (Boolean) -> Unit) -> Unit,
     onPlaylistSong: (String) -> Unit, onTrackInfo: (LibrarySong) -> Unit, onPlaybackFailed: () -> Unit,
+    /** On its side the album's name leads the list, given the "2023 · 22 songs" line to show under it. */
+    header: (@Composable (info: String) -> Unit)? = null,
 ) {
     var songs by remember(selection) { mutableStateOf(selection.tracks.songs) }
     var total by remember(selection) { mutableIntStateOf(selection.tracks.total) }
@@ -783,12 +858,15 @@ private fun CarouselTracks(
     fun playAlbum(action: LibraryContextAction) = onSelect(LibraryContextRequest(filter, null, action)) { if (!it) onPlaybackFailed() }
     LazyColumn(modifier = modifier.then(fade), state = list, contentPadding = PaddingValues(bottom = bottomInset + 16.dp)) {
         item(key = "album actions") {
-            Column(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(albumInfoLine(selection.summary.year, total, lengthMs), style = EvannaDesign.typography.bodySmall,
-                    color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val info = albumInfoLine(selection.summary.year, total, lengthMs)
+            Column(Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                horizontalAlignment = if (header == null) Alignment.CenterHorizontally else Alignment.Start) {
+                if (header != null) header(info)
+                else Text(info, style = EvannaDesign.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis)
                 // Play is the one tinted control, in the cover's colour; Shuffle stays neutral.
                 PlayShuffleButtons(enabled = canPlay, onPlay = { playAlbum(LibraryContextAction.PLAY_FIRST) },
-                    onShuffle = { playAlbum(LibraryContextAction.SHUFFLE) }, modifier = Modifier.padding(top = 8.dp))
+                    onShuffle = { playAlbum(LibraryContextAction.SHUFFLE) }, modifier = Modifier.padding(top = if (header == null) 8.dp else 12.dp))
             }
         }
         itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
