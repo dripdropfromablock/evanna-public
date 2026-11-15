@@ -6,8 +6,11 @@ import android.os.SystemClock
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -17,16 +20,17 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -46,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
@@ -76,6 +81,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.semantics.*
@@ -86,6 +92,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -99,6 +106,7 @@ import com.evanna.player.playback.nearest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -1097,8 +1105,14 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
     onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onSignal: (Rect?) -> Unit, onOutput: (Rect?) -> Unit,
     outputSheetOpen: Boolean, onSelect: (String) -> Unit, queue: @Composable (Modifier) -> Unit) {
     val accent = EvannaDesign.colorScheme.primary
-    var pane by remember { mutableStateOf(PlayerPage.LYRICS) }
-    SideEffect { if (page != PlayerPage.SONG) pane = page }
+    // The page on the right while Details shows stays the last one opened, so it can fade out as the disc comes back.
+    var lastPane by remember { mutableStateOf(PlayerPage.LYRICS) }
+    val pane = if (page == PlayerPage.SONG) lastPane else page
+    SideEffect { lastPane = pane }
+    // A swipe sideways moves one page: Details, Lyrics (when the song has them), Queue.
+    val pages = listOfNotNull(PlayerPage.SONG, PlayerPage.LYRICS.takeIf { page == it || lyrics is LyricsLoad.Ready }, PlayerPage.QUEUE)
+    val turn by rememberUpdatedState({ step: Int -> pages.getOrNull(pages.indexOf(page) + step)?.let(onPage) })
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val shift by animateFloatAsState(if (page == PlayerPage.SONG) 0f else 1f, tween(420, easing = FastOutSlowInEasing), label = "details shift")
     // Left alone while music plays, the bar slides down off the screen and the cover and pages grow into its room.
     // Any touch or key brings it back. It stays while paused, while Audio output is open and with TalkBack on.
@@ -1131,20 +1145,36 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
         .pointerInput(Unit) { awaitPointerEventScope { while (true) { awaitPointerEvent(PointerEventPass.Initial); wake() } } }
         .onPreviewKeyEvent { wake(); false }
         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))) {
-        Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            PlayerHeaderButton(PlayerIcons.ChevronDown, "Minimize player", onClick = onBack)
-            Spacer(Modifier.weight(1f))
-            PageSwitch(page, lyrics, onPage)
-            Spacer(Modifier.weight(1f))
-            PlayerHeaderButton(if (state.favorite == true) PlayerIcons.HeartFill else PlayerIcons.Heart,
-                description = if (state.favorite == true) "Remove from favorites" else "Add to favorites",
-                enabled = state.connected && state.favorite != null, on = state.favorite == true) {
-                state.id?.let { onFavorite(it, state.favorite != true) }
+        Box(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                PlayerHeaderButton(PlayerIcons.ChevronDown, "Minimize player", onClick = onBack)
+                Spacer(Modifier.weight(1f))
+                PlayerHeaderButton(if (state.favorite == true) PlayerIcons.HeartFill else PlayerIcons.Heart,
+                    description = if (state.favorite == true) "Remove from favorites" else "Add to favorites",
+                    enabled = state.connected && state.favorite != null, on = state.favorite == true) {
+                    state.id?.let { onFavorite(it, state.favorite != true) }
+                }
+                Spacer(Modifier.width(8.dp))
+                more()
             }
-            Spacer(Modifier.width(8.dp))
-            more()
+            // The dots go with the bar when it slides away.
+            PageDots(pages, page, Modifier.graphicsLayer { alpha = 1f - hidden }
+                .then(if (idle) Modifier.clearAndSetSemantics {} else Modifier))
         }
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 26.dp, vertical = 6.dp)) {
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 26.dp, vertical = 6.dp)
+            .pointerInput(rtl) {
+                val threshold = 48.dp.toPx()
+                var distance = 0f
+                var turned = false
+                // One page per swipe, as soon as the finger has gone far enough; up and down still scroll the page.
+                detectHorizontalDragGestures(onDragStart = { distance = 0f; turned = false }) { _, delta ->
+                    distance += delta
+                    if (!turned && abs(distance) >= threshold) {
+                        turned = true
+                        turn(if ((distance < 0) != rtl) 1 else -1)
+                    }
+                }
+            }) {
             val t = shift
             // Details: the cover on the left, the disc half out of it (it reaches 1.47 covers), then the song.
             // Lyrics and Queue: the disc is in, the song's name sits under the cover and the page fills the rest.
@@ -1175,8 +1205,18 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
             if (t > 0f) Box(Modifier.offset(end + DetailsGap, 0.dp).width(maxWidth - end - DetailsGap).fillMaxHeight()
                 .graphicsLayer { alpha = ((t - 0.45f) / 0.45f).coerceIn(0f, 1f); translationX = 24.dp.toPx() * (1f - t) }
                 .then(if (page == PlayerPage.SONG) Modifier.clearAndSetSemantics {} else Modifier)) {
-                if (pane == PlayerPage.QUEUE) queue(Modifier.fillMaxSize())
-                else LyricsPage(lyrics, state, onSeek, Modifier.fillMaxSize(), small = true, accent = accent)
+                // Lyrics and Queue slide past each other the way the swipe went; coming from Details the shift above is enough.
+                AnimatedContent(pane, Modifier.fillMaxSize(), transitionSpec = {
+                    if (shift < 1f) EnterTransition.None togetherWith ExitTransition.None
+                    else {
+                        val way = (if (targetState == PlayerPage.QUEUE) 1 else -1) * (if (rtl) -1 else 1)
+                        (slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { it / 5 * way } + fadeIn(tween(320))) togetherWith
+                            (slideOutHorizontally(tween(320, easing = FastOutSlowInEasing)) { -it / 5 * way } + fadeOut(tween(200)))
+                    }
+                }, label = "details pane") { shown ->
+                    if (shown == PlayerPage.QUEUE) queue(Modifier.fillMaxSize())
+                    else LyricsPage(lyrics, state, onSeek, Modifier.fillMaxSize(), small = true, accent = accent)
+                }
             }
         }
         // Hidden, the bar keeps only the room above the home bar; it slides by its full height, so it leaves the screen.
@@ -1194,22 +1234,36 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
 /** How long the sideways Details bar waits, with music playing and nothing touched, before it slides away. */
 private const val BAR_IDLE_MS = 5_000L
 
-/** Details · Lyrics · Queue, as an iOS segmented control. */
+/**
+ * Which page shows, as page dots (docs/mockups/details-page-dots.html, B). On a change the bright one stretches over to
+ * the new dot, its far end first, then its near end follows and it settles there.
+ */
 @Composable
-private fun PageSwitch(page: PlayerPage, lyrics: LyricsLoad, onPage: (PlayerPage) -> Unit) {
-    val pages = listOf(PlayerPage.SONG to "Details", PlayerPage.LYRICS to "Lyrics", PlayerPage.QUEUE to "Queue")
-    Row(Modifier.clip(RoundedCornerShape(9.dp)).background(Pv4).padding(2.dp).selectableGroup()) {
-        for ((target, label) in pages) {
-            val on = page == target
-            val enabled = target != PlayerPage.LYRICS || on || lyrics is LyricsLoad.Ready
-            Box(Modifier.heightIn(min = 32.dp).clip(RoundedCornerShape(7.dp)).background(if (on) Pv3 else Color.Transparent)
-                .selectable(on, enabled = enabled, role = Role.Tab) { onPage(target) }.padding(horizontal = 16.dp),
-                contentAlignment = Alignment.Center) {
-                Text(label, style = Badge.copy(fontSize = 13.sp), color = if (!enabled) Pv3 else if (on) Pv1 else Pv2)
-            }
-        }
+private fun PageDots(pages: List<PlayerPage>, page: PlayerPage, modifier: Modifier) {
+    val index = pages.indexOf(page).coerceAtLeast(0)
+    val low = remember { Animatable(index.toFloat()) }
+    val high = remember { Animatable(index.toFloat()) }
+    LaunchedEffect(index) {
+        val to = index.toFloat()
+        val (lead, follow) = if (to > high.value) high to low else low to high
+        launch { lead.animateTo(to, tween(240, easing = FastOutSlowInEasing)) }
+        follow.animateTo(to, tween(240, delayMillis = 200, easing = FastOutSlowInEasing))
     }
+    val name = when (page) { PlayerPage.SONG -> "Details"; PlayerPage.LYRICS -> "Lyrics"; PlayerPage.QUEUE -> "Queue" }
+    Box(modifier.size(width = DotStep * pages.size, height = 24.dp)
+        .semantics { contentDescription = "Page ${index + 1} of ${pages.size}, $name" }
+        .drawBehind {
+            val step = DotStep.toPx()
+            fun x(at: Float) = (step / 2 + step * at).let { if (layoutDirection == LayoutDirection.Rtl) size.width - it else it }
+            for (i in pages.indices) drawCircle(DotColor, 3.dp.toPx(), Offset(x(i.toFloat()), center.y))
+            val left = minOf(x(low.value), x(high.value)) - 5.dp.toPx()
+            val right = maxOf(x(low.value), x(high.value)) + 5.dp.toPx()
+            drawRoundRect(Pv1, Offset(left, center.y - 4.dp.toPx()), Size(right - left, 8.dp.toPx()), CornerRadius(4.dp.toPx()))
+        })
 }
+
+private val DotStep = 18.dp
+private val DotColor = Color.White.copy(alpha = 0.35f)
 
 /** A disc printed with the cover, under the theme's clear CD so its hub and rim show; it turns while music plays. */
 @Composable
