@@ -1,0 +1,86 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Details and disc, other ways</title></head>
+<body style="margin:0">
+<div id="dso">
+<style>
+#dso{font:14px/1.35 Roboto,"Segoe UI",sans-serif;color:var(--text,#eee);background:var(--bg,#151517);padding:12px}
+#dso h3{margin:16px 0 2px;font-size:15px}#dso p{margin:0 0 8px;font-size:12.5px;color:var(--muted,#9a9aa0)}
+#dso .rec{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:var(--accent-subtle,#24382a);color:var(--accent,#93d394);margin-left:6px}
+#dso .ph{width:560px;height:259px;border-radius:22px;overflow:hidden;position:relative;background:#000;color:#fff}
+#dso .scr{position:absolute;left:0;top:0;width:800px;height:370px;transform:scale(.7);transform-origin:0 0;overflow:hidden;background:radial-gradient(80% 100% at 32% 40%,#25524b,#0c1614)}
+#dso .a{position:absolute}
+#dso .cb{border-radius:50%;background:rgba(255,255,255,.14);width:28px;height:28px;text-align:center;line-height:28px;font-size:13px;font-style:normal}
+#dso .seg{display:flex;gap:2px;padding:2px;border-radius:9px;background:rgba(255,255,255,.12);font-size:12px;font-weight:600}
+#dso .seg b{padding:4px 14px;border-radius:7px;color:rgba(255,255,255,.75)}#dso .seg b.on{background:rgba(255,255,255,.26);color:#fff}
+#dso .cov{border-radius:10px;box-shadow:0 12px 28px rgba(0,0,0,.5)}
+#dso .disc{border-radius:50%;-webkit-mask:radial-gradient(circle,transparent 0 9%,#000 9.5%);mask:radial-gradient(circle,transparent 0 9%,#000 9.5%);box-shadow:inset 0 0 0 3px rgba(255,255,255,.55)}
+#dso .card{background:rgba(255,255,255,.08);border-radius:12px;overflow:hidden}
+#dso .row{display:flex;justify-content:space-between;align-items:center;padding:0 10px;border-top:.5px solid rgba(255,255,255,.1)}
+#dso .row:first-child{border-top:0}#dso .row span{color:rgba(255,255,255,.6)}
+#dso .bd{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:4px;background:rgba(255,255,255,.16);margin-left:5px}
+#dso .hr{background:#e8b923;color:#1a1a1a}
+#dso .bar{left:30px;right:30px;top:300px;height:48px;border-radius:24px;background:rgba(255,255,255,.1);overflow:hidden}
+#dso .mut{color:rgba(255,255,255,.6)}
+#dso .tag{background:#ff6b6b;color:#fff;font-size:12px;font-weight:700;padding:2px 8px;border-radius:10px}
+#dso .bad{outline:2px dashed #ff6b6b;outline-offset:-2px;border-radius:12px}
+</style>
+<p>Sideways Now Playing, Details page. Today first, then three other ways.</p>
+<h3>Today</h3><p>The right side is empty. The facts are a small seven-row table.</p><div class="ph" id="d0"><div class="scr"></div></div>
+<h3>A · Fill the gap</h3><p>A bigger cover on the left, the disc slid out beside it. The facts move right, in bigger text.</p><div class="ph" id="d1"><div class="scr"></div></div>
+<h3>B · Song first <span class="rec">pick</span></h3><p>The song's name, big, where the space was. Quality as badges, the next two songs under it. The bar gets a real seek bar.</p><div class="ph" id="d2"><div class="scr"></div></div>
+<h3>C · Three columns</h3><p>Facts, then a big turning disc printed with the cover, then the next songs.</p><div class="ph" id="d3"><div class="scr"></div></div>
+<p style="margin-top:10px">Badges are drawn as text here. The app keeps the theme's pictures.</p>
+<script>
+(() => {
+const AC = "#9ad3b0";
+const COVER = "radial-gradient(circle at 22% 74%,#ffe98a 0 4%,transparent 5%),radial-gradient(circle at 47% 76%,#ffe98a 0 4%,transparent 5%),radial-gradient(circle at 77% 74%,#ffe98a 0 4%,transparent 5%),radial-gradient(18% 34% at 52% 52%,#0c1412 0 60%,transparent 62%),linear-gradient(180deg,#3a6a63,#173532 55%,#0b1a17)";
+const at = (x, y, extra = "") => `left:${x}px;top:${y}px;${extra}`;
+const top = `<div class="a" style="${at(44, 8, "font-size:12px;font-weight:600")}">12:49</div>
+  <i class="a cb" style="${at(40, 26)}">⌄</i>
+  <div class="a seg" style="left:50%;top:26px;transform:translateX(-50%)"><b class="on">Details</b><b>Lyrics</b><b>Queue</b></div>
+  <i class="a cb" style="right:76px;top:26px">♡</i><i class="a cb" style="right:40px;top:26px">···</i>`;
+const cover = (x, y, s) => `<div class="a cov" style="${at(x, y, `width:${s}px;height:${s}px;background:${COVER}`)}"></div>`;
+const disc = (x, y, s) => `<div class="a disc" style="${at(x, y, `width:${s}px;height:${s}px;background:radial-gradient(circle,#d9dde0 0 21%,#aab 21.5% 22.5%,transparent 23%),${COVER}`)}"></div>`;
+const segs = (x, y, w) => `<div class="a" style="${at(x, y, `width:${w}px;height:3px;display:flex;gap:2px`)}">${Array.from({ length: 22 }, (_, i) =>
+  `<i style="flex:1;border-radius:2px;background:${i ? "rgba(255,255,255,.2)" : `linear-gradient(90deg,${AC} 0 14%,rgba(255,255,255,.2) 14%)`}"></i>`).join("")}</div>`;
+const FACTS = [["Released", "2024"], ["Genre", "Hip-Hop/Rap"], ["Track", "1 of 22"], ["Codec", '<b class="bd">ALAC</b>'],
+  ["Channels", '<b class="bd">2.0</b>'], ["Source", '24-bit · 44.1 kHz<b class="bd hr">Hi-Res</b>'], ["Added", "Nov 12, 2026"]];
+const facts = (x, y, w, h, f) => `<div class="a card" style="${at(x, y, `width:${w}px`)}">${FACTS.map(([k, v]) =>
+  `<div class="row" style="height:${h}px;font-size:${f}px"><span>${k}</span><b style="font-weight:500">${v}</b></div>`).join("")}</div>`;
+const albumHead = (x, y, big) => `<div class="a" style="${at(x, y, `font-size:${big}px;font-weight:700`)}">2093</div>
+  <div class="a mut" style="${at(x, y + big + 6, "font-size:12.5px")}">Yeat · 2024</div>`;
+const barToday = `<div class="a bar"><div class="a" style="${at(20, 7, "font-size:13px;font-weight:600;white-space:nowrap")}"><span style="color:${AC}">Yeat</span>
+  <span class="mut">01.</span> Psycho CEO</div><div class="a mut" style="${at(14, 26, "font-size:10.5px")}"><b class="bd">ALAC</b> ALAC · 44.1 kHz · 24-bit</div>
+  <div class="a" style="${at(330, 11, "font-size:20px;letter-spacing:18px")}">⏮⏸⏭</div>
+  <div class="a mut" style="${at(560, 13, "font-size:16px;letter-spacing:20px")}">❞🔈☰</div><div class="a" style="${at(670, 15, "font-size:12px")}">0:32 / 3:45</div>
+  <div class="a" style="left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.14)"><i style="display:block;width:14%;height:100%;background:${AC}"></i></div></div>`;
+const barSeek = `<div class="a bar"><div class="a" style="${at(22, 11, "font-size:20px;letter-spacing:16px")}">⏮⏸⏭</div>
+  <div class="a" style="${at(150, 16, "font-size:12px")}">0:32</div>
+  <div class="a" style="${at(192, 21, "width:370px;height:6px;border-radius:3px;background:rgba(255,255,255,.2)")}"><i style="display:block;width:14%;height:100%;border-radius:3px;background:#fff"></i></div>
+  <div class="a" style="${at(572, 16, "font-size:12px")}">−3:13</div>
+  <div class="a mut" style="${at(630, 13, "font-size:16px;letter-spacing:20px")}">❞🔈☰</div></div>`;
+const up = (x, y, w, songs, art) => songs.map(([n, t], i) => `<div class="a" style="${at(x, y + i * (art ? 42 : 26), `width:${w}px;height:${art ? 40 : 24}px;display:flex;align-items:center;gap:10px;font-size:13px;border-bottom:.5px solid rgba(255,255,255,.1)`)}">
+  ${art ? `<i style="width:30px;height:30px;border-radius:5px;flex:none;background:${COVER}"></i>` : `<span class="mut" style="width:14px">${n}</span>`}
+  <span>${t}${art ? '<br><span class="mut" style="font-size:11px">Yeat</span>' : ""}</span></div>`).join("");
+const NEXT = [[2, "Power Trip"], [3, "Breathe"], [4, "Morë"], [5, "Bought The Earth"]];
+const screens = {
+  d0: top + albumHead(44, 64, 18) + segs(44, 110, 200) + facts(44, 120, 200, 21, 11.5) + disc(384, 80, 178) + cover(280, 72, 190) +
+    `<div class="a bad" style="${at(590, 72, "width:178px;height:206px")}"></div><span class="a tag" style="${at(640, 160)}">empty</span>
+     <span class="a tag" style="${at(90, 278)}">small text</span>` + barToday,
+  d1: top + disc(162, 75, 206) + cover(44, 66, 222) + albumHead(400, 64, 22) + segs(400, 114, 360) + facts(400, 124, 360, 22, 12.5) + barToday,
+  d2: top + disc(154, 73, 200) + cover(44, 66, 214) +
+    `<div class="a" style="${at(392, 62, "font-size:28px;font-weight:700")}">Psycho CEO</div>
+     <div class="a" style="${at(392, 100, `font-size:16px;font-weight:500;color:${AC}`)}">Yeat</div>
+     <div class="a mut" style="${at(392, 124, "font-size:12.5px")}">2093 · 2024 · Hip-Hop/Rap · added Nov 12</div>
+     <div class="a" style="${at(387, 150, "font-size:12px")}"><b class="bd">ALAC</b><b class="bd">24-bit · 44.1 kHz</b><b class="bd hr">Hi-Res</b><b class="bd">2.0 Stereo</b></div>
+     <div class="a mut" style="${at(392, 190, "font-size:10.5px;font-weight:700;letter-spacing:.8px")}">UP NEXT · TRACK 1 OF 22</div>` +
+    up(392, 208, 360, NEXT.slice(0, 2), false) + barSeek,
+  d3: top + albumHead(40, 64, 18) + segs(40, 110, 200) + facts(40, 120, 200, 21, 11.5) + disc(262, 60, 232) +
+    `<div class="a" style="${at(368, 290, "font-size:11px;color:rgba(255,255,255,.55)")}">↻</div>
+     <div class="a" style="${at(520, 64, "font-size:13px;font-weight:700")}">Up next</div>` + up(520, 86, 240, NEXT, true) + barToday,
+};
+for (const [id, html] of Object.entries(screens)) document.querySelector(`#dso #${id} .scr`).innerHTML = html;
+})();
+</script>
+</div>
+</body></html>
