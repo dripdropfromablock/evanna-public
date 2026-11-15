@@ -1,0 +1,177 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Dock fade and queue rows</title></head>
+<body style="margin:0">
+<div id="dq">
+<style>
+#dq{font:14px/1.35 Roboto,"Segoe UI",sans-serif;color:var(--text,#eee);background:var(--bg,#151517);padding:12px}
+#dq h3{margin:18px 0 2px;font-size:15px}
+#dq p{margin:0 0 8px;font-size:12.5px;color:var(--muted,#9a9aa0)}
+#dq .rec{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:var(--accent-subtle,#24382a);color:var(--accent,#93d394);margin-left:6px}
+#dq .ctl{margin:0 0 8px}
+#dq .ctl button{font:600 12px Roboto,sans-serif;padding:7px 14px;border-radius:8px;border:1px solid var(--border,#333);cursor:pointer;background:var(--accent,#93d394);color:var(--bg,#111)}
+#dq .set{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+#dq .cap{width:270px;font-size:12px;line-height:1.4;color:var(--muted,#9a9aa0);margin-top:6px}
+#dq .cap b{display:block;color:var(--text,#eee);font-size:13px;margin-bottom:1px}
+#dq.ns *{transition:none!important}
+#dq .ph{width:270px;border-radius:26px;overflow:hidden;position:relative;color:#fff;box-shadow:0 0 0 1px var(--border,#333)}
+#dq .sb{position:absolute;left:0;right:0;top:0;height:26px;display:flex;justify-content:space-between;align-items:center;padding:0 20px;font:600 11px Roboto,sans-serif;z-index:4}
+#dq .bat{width:18px;height:9px;border-radius:3px;background:#fff}
+#dq .list{position:absolute;left:0;right:0;top:0;z-index:1;transition:transform 2.2s cubic-bezier(.45,0,.25,1)}
+#dq .lr{display:flex;align-items:center;height:56px;padding:0 10px 0 14px;gap:10px}
+#dq .lc{width:40px;height:40px;border-radius:6px;flex:none}
+#dq .lt,#dq .qt{flex:1;min-width:0;line-height:1.25}
+#dq .l1{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#dq .l2{font-size:11.5px;color:#b5b5b9}
+#dq .l3{font-size:10.5px;color:#8e8e93}
+#dq .lm{font-size:8px;padding:0 4px}
+#dq .floor{position:absolute;left:0;right:0;bottom:0;z-index:2;pointer-events:none}
+#dq .blur{backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);-webkit-mask:linear-gradient(transparent,#000 32%);mask:linear-gradient(transparent,#000 32%)}
+#dq .gl{position:absolute;z-index:3;background:rgba(30,30,32,.55);backdrop-filter:blur(10px) saturate(1.5);-webkit-backdrop-filter:blur(10px) saturate(1.5);border:1px solid rgba(255,255,255,.16);border-radius:20px}
+#dq .mini{left:12px;right:12px;bottom:62px;height:38px;display:flex;align-items:center;gap:8px;padding:0 14px 0 5px}
+#dq .mc{width:28px;height:28px;border-radius:6px;flex:none}
+#dq .mt{flex:1;line-height:1.2}
+#dq .mb{display:flex;gap:16px;align-items:center}
+#dq .tabs{left:12px;right:62px;bottom:18px;height:38px;display:flex;align-items:center;justify-content:space-around;padding:0 3px}
+#dq .tab{display:flex;flex-direction:column;align-items:center;gap:1px;font-size:8.5px;color:#d8d8dc;padding:3px 10px;border-radius:16px}
+#dq .tab.on{background:rgba(255,255,255,.14);color:#fff}
+#dq .srch{right:12px;bottom:18px;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+#dq .home{position:absolute;left:50%;bottom:6px;width:90px;margin-left:-45px;height:3px;border-radius:2px;background:#fff;z-index:3}
+#dq .qp{height:470px;background:linear-gradient(165deg,#4a4a4c 0%,#2c2c2e 55%,#1f2b2d 100%)}
+#dq .qh{display:flex;align-items:center;gap:10px;padding:36px 14px 0}
+#dq .q1{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#dq .q2{font-size:12px;color:#b5b5b9}
+#dq .dots{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font-size:7px}
+#dq .qtitle{font:700 15px Roboto,sans-serif;padding:10px 14px 0}
+#dq .pills{display:flex;gap:8px;padding:8px 14px 0}
+#dq .pill{flex:1;height:30px;border-radius:15px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;gap:6px;font-size:12.5px;font-weight:500}
+#dq .pill.on{background:#e5e5ea;color:#111}
+#dq .pn{display:flex;justify-content:space-between;align-items:center;font:700 14px Roboto,sans-serif;padding:12px 14px 4px}
+#dq .edit-btn{font-weight:500;font-size:13.5px;color:#fff;cursor:pointer;padding:4px 2px}
+#dq .qlist{padding:0 10px 0 14px;height:280px;overflow:hidden;-webkit-mask:linear-gradient(#000 78%,transparent);mask:linear-gradient(#000 78%,transparent)}
+#dq .qr{position:relative;height:52px;transition:transform .35s cubic-bezier(.2,.8,.2,1)}
+#dq .qb{position:relative;display:flex;align-items:center;gap:10px;height:52px;padding:0 4px 0 2px;border-radius:10px;transition:transform .35s cubic-bezier(.2,.8,.2,1),box-shadow .25s,background .25s}
+#dq .qv{width:34px;height:34px;border-radius:6px;flex:none}
+#dq .qc{display:flex;gap:14px;align-items:center;color:#c7c7cc}
+#dq .del{position:absolute;right:0;top:5px;bottom:5px;width:0;overflow:hidden;border-radius:10px;background:#ff3b30;color:#fff;font-size:12.5px;font-weight:600;display:flex;align-items:center;justify-content:center;white-space:nowrap;transition:width .35s cubic-bezier(.2,.8,.2,1)}
+#dq .qr.sw .del{width:76px}
+#dq .qr.sw .qb{transform:translateX(-82px)}
+#dq .qr.lift{z-index:2}
+#dq .qr.lift .qb{transform:scale(1.03);background:rgba(78,78,82,.97);box-shadow:0 10px 22px rgba(0,0,0,.5)}
+#dq .minus{position:relative;width:0;height:18px;border-radius:50%;background:#ff3b30;flex:none;overflow:hidden;margin-right:-10px;transition:width .3s,margin .3s}
+#dq .minus::after{content:"";position:absolute;left:4px;right:4px;top:8px;height:2px;border-radius:1px;background:#fff}
+#dq .edit .minus{width:18px;margin-right:0}
+#dq .grip{opacity:0;transition:opacity .3s}
+#dq .edit .grip{opacity:1}
+</style>
+<h3>1 · Behind the mini player and tab bar</h3>
+<p>Press the button to scroll each list under the bar.</p>
+<div class="ctl"><button id="dq-scroll">Scroll the lists</button></div>
+<div class="set" id="dq-dock"></div>
+<h3>2 · Queue rows</h3>
+<p>Press the button to see A's swipe and drag. Tap Edit inside B.</p>
+<div class="ctl"><button id="dq-play">Show swipe and drag</button></div>
+<div class="set" id="dq-queue"></div>
+<script>
+(() => {
+const root = document.getElementById("dq");
+const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+if (still) root.classList.add("ns");
+const ic = (s, body, w = 2.2) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" style="display:block">${body}</svg>`;
+const I = {
+  up: ic(17, '<path d="M6 15l6-6 6 6"/>'), down: ic(17, '<path d="M6 9l6 6 6-6"/>'), x: ic(16, '<path d="M6 6l12 12M18 6L6 18"/>'),
+  grip: ic(18, '<path d="M4 8h16M4 12h16M4 16h16"/>', 2),
+  search: ic(17, '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>'),
+  carousel: ic(15, '<rect x="7" y="5" width="10" height="14" rx="2"/><path d="M3.5 7.5v9M20.5 7.5v9"/>'),
+  note: ic(15, '<path d="M9 17V6l10-2v11"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/>'),
+  gear: ic(15, '<circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>'),
+  shuffle: ic(14, '<path d="M3 7h3.5l9 10H21M3 17h3.5l2.5-2.8M13 9.8L15.5 7H21M18 4l3 3-3 3M18 14l3 3-3 3"/>'),
+  repeat: ic(14, '<path d="M4 12V9.5A2.5 2.5 0 0 1 6.5 7H20M17 4l3 3-3 3M20 12v2.5a2.5 2.5 0 0 1-2.5 2.5H4M7 20l-3-3 3-3"/>'),
+  play: '<svg width="14" height="14" viewBox="0 0 24 24" style="display:block"><path d="M6 3.5l14 8.5-14 8.5z" fill="#fff"/></svg>',
+  next: '<svg width="19" height="14" viewBox="0 0 30 22" style="display:block"><path d="M1 2l13 9-13 9zM15 2l13 9-13 9z" fill="#fff"/></svg>',
+};
+const more = '<span style="letter-spacing:1px">●●●</span>';
+const cov = ["linear-gradient(135deg,#c9cfcf 0%,#f2f2f2 30%,#3f9a93 58%,#1d1d1d 100%)",
+  "linear-gradient(160deg,#16301f 0%,#2fbf5a 45%,#0f1d16 100%)",
+  "linear-gradient(170deg,#0e2a24 0%,#26594a 50%,#070b0a 100%)"];
+const songs = [["Tëslas &amp; Rovers","4L","3:05",0],["Sorry Bout That","4L","3:06",0],["Forëally / 4Ly","4L","3:11",0],["Jus Wokëup","4L","2:19",0],
+  ["Goin Back 2 Ella","4L","2:51",0],["WTF","4L","2:33",0],["Always Alivë","Alivë","2:57",1],["Tonka","Alivë","2:56",1],["Bäk 2 BED","Alivë","3:12",1],
+  ["1093","2093","2:36",2],["2093","2093","2:24",2],["Psycho CEO","2093","2:20",2],["Power Trip","2093","2:48",2]];
+const sb = bg => `<div class="sb" style="background:${bg}"><span>4:35</span><span class="bat"></span></div>`;
+const name = k => k === "now" ? "now" : "option " + k.toUpperCase();
+
+// 1. The artist page with the dock floating over it. The floor under the dock is what changes.
+const libRow = ([t, a, d, c]) => `<div class="lr"><div class="lc" style="background:${cov[c]}"></div><div class="lt"><div class="l1">${t}</div><div class="l2">Yeat · ${a}</div><div class="l3">ALAC · 44.1 kHz · ${d}</div></div><div class="lm">${more}</div></div>`;
+const head = `<div style="padding:36px 14px 4px;height:110px"><div style="font-size:12.5px;color:#ddd">‹ Artists</div><div style="font:700 28px/34px Roboto,sans-serif;margin-top:8px">Yeat</div><div style="font-size:12px;color:#b5b5b9;margin-top:2px">104 songs</div><div style="font:600 14px Roboto,sans-serif;margin-top:10px">Songs</div></div>`;
+const dock = `<div class="gl mini"><div class="mc" style="background:${cov[0]}"></div><div class="mt"><div style="font-size:12.5px;font-weight:600">Tëslas &amp; Rovers</div><div style="font-size:11px;color:#c7c7cc">Yeat</div></div><div class="mb">${I.play}${I.next}</div></div>
+<div class="gl tabs"><div class="tab">${I.carousel}<span>Carousel</span></div><div class="tab on">${I.note}<span>Library</span></div><div class="tab">${I.gear}<span>Settings</span></div></div>
+<div class="gl srch">${I.search}</div><div class="home"></div>`;
+const floors = {
+  // As built: 28 dp above the dock, eased in, 94% only at the very bottom.
+  now: '<div class="floor" style="height:118px;background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.15) 25%,rgba(0,0,0,.47) 50%,rgba(0,0,0,.79) 75%,rgba(0,0,0,.94))"></div>',
+  // A: a short fade above the mini player, then the page colour all the way down.
+  a: '<div class="floor" style="height:128px;background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.55) 11%,#000 22%)"></div>',
+  // B: the list blurs and dims under the dock (Android 12+).
+  b: '<div class="floor blur" style="height:150px"></div><div class="floor" style="height:150px;background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.3) 30%,rgba(0,0,0,.55) 60%,rgba(0,0,0,.72))"></div>',
+};
+const dockCaps = {
+  now: "<b>Now</b>Words show in the gaps and under the bar.",
+  a: '<b>A · Solid floor <span class="rec">pick</span></b>The list fades out just above the player. The gaps stay clean. Looks the same on every phone.',
+  b: "<b>B · Blur edge</b>The list blurs and dims under the bar, like iOS 26. Needs Android 12. Your phone has Android 11, so it would show A.",
+};
+root.querySelector("#dq-dock").innerHTML = ["now", "a", "b"].map(k =>
+  `<div><div class="ph" style="height:585px;background:#000" role="img" aria-label="Library list, ${name(k)}"><div class="list">${head}${songs.map(libRow).join("")}</div>${floors[k]}${dock}${sb("#000")}</div><div class="cap">${dockCaps[k]}</div></div>`).join("");
+const scrollBtn = root.querySelector("#dq-scroll");
+let down = false;
+scrollBtn.onclick = () => {
+  down = !down;
+  root.querySelectorAll(".list").forEach(l => { l.style.transform = down ? "translateY(-300px)" : ""; });
+  scrollBtn.textContent = down ? "Scroll back" : "Scroll the lists";
+};
+
+// 2. Now Playing's Queue page.
+const qs = ["Sorry Bout That", "Forëally / 4Ly", "Jus Wokëup", "Goin Back 2 Ella", "WTF", "Turban"];
+const qRow = (k, t, i) => {
+  const right = k === "now" ? `<div class="qc"><span style="opacity:${i ? 1 : .35}">${I.up}</span>${I.down}${I.x}</div>`
+    : `<div class="qc${k === "b" ? " grip" : ""}">${I.grip}</div>`;
+  const body = `<div class="qb">${k === "b" ? '<span class="minus"></span>' : ""}<div class="qv" style="background:${cov[0]}"></div><div class="qt"><div class="q1">${t}</div><div class="q2">Yeat</div></div>${right}</div>`;
+  return `<div class="qr">${k === "a" ? '<div class="del">Remove</div>' : ""}${body}</div>`;
+};
+const qCaps = {
+  now: "<b>Now</b>Up, down and remove on every row.",
+  a: '<b>A · Handle and swipe <span class="rec">pick</span></b>Drag ≡ to move a song. Swipe left to remove it. Screen readers keep Move up, Move down and Remove.',
+  b: "<b>B · Edit button</b>Rows stay clean. Tap Edit to show remove and move. Tap Done to finish.",
+};
+root.querySelector("#dq-queue").innerHTML = ["now", "a", "b"].map(k =>
+  `<div><div class="ph qp" id="dq-q${k}" aria-label="Queue, ${name(k)}">${sb("transparent")}
+<div class="qh"><div class="qv" style="width:40px;height:40px;background:${cov[0]}"></div><div class="qt"><div class="q1">Tëslas &amp; Rovers</div><div class="q2">Yeat</div></div><div class="dots">●●●</div></div>
+<div class="qtitle">Queue</div>
+<div class="pills"><div class="pill">${I.shuffle}Shuffle</div><div class="pill on">${I.repeat}Repeat one</div></div>
+<div class="pn"><span>Playing Next</span>${k === "b" ? '<span class="edit-btn" role="button" tabindex="0">Edit</span>' : ""}</div>
+<div class="qlist">${qs.map((t, i) => qRow(k, t, i)).join("")}</div></div><div class="cap">${qCaps[k]}</div></div>`).join("");
+
+// A: swipe the first song open and closed, then lift the third and drop it one place up.
+const qa = root.querySelector("#dq-qa");
+let timers = [];
+const later = (ms, f) => timers.push(setTimeout(f, ms));
+root.querySelector("#dq-play").onclick = () => {
+  timers.forEach(clearTimeout); timers = [];
+  const r = [...qa.querySelectorAll(".qr")];
+  r.forEach(row => { row.classList.remove("sw", "lift"); row.style.transform = ""; });
+  const move = () => { r[2].style.transform = "translateY(-52px)"; r[1].style.transform = "translateY(52px)"; };
+  if (still) { r[0].classList.add("sw"); r[2].classList.add("lift"); move(); return; }
+  later(60, () => r[0].classList.add("sw"));
+  later(1300, () => r[0].classList.remove("sw"));
+  later(1750, () => r[2].classList.add("lift"));
+  later(2100, move);
+  later(2800, () => r[2].classList.remove("lift"));
+};
+
+// B: Edit shows the red remove circles and the handles; Done hides them.
+const qb = root.querySelector("#dq-qb"), editBtn = qb.querySelector(".edit-btn");
+const toggle = () => { editBtn.textContent = qb.classList.toggle("edit") ? "Done" : "Edit"; };
+editBtn.onclick = toggle;
+editBtn.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } };
+})();
+</script>
+</div>
+</body></html>
