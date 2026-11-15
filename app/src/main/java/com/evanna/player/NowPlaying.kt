@@ -68,6 +68,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.semantics.*
@@ -185,7 +186,7 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
                     produceState<LibrarySong?>(null) { value = state.id?.let { runCatching { loadSongInfo(it) }.getOrNull() } }
                 }
                 DetailsPlayer(state, cover, info, page, openPage, lyrics, more, contentAlpha, motion, flying, onBack, onFavorite, onSeek,
-                    onPlayPause, onPrevious, onNext, { signalOrigin = it; showSignal = true }, onOutput, outputSheetOpen,
+                    onPlayPause, onPrevious, onNext, { signalOrigin = it; showSignal = true }, onOutput, outputSheetOpen, onSelect,
                     queue = { QueuePage(state, onShuffle, onRepeat, onSelect, onMove, onRemove, onLibrary, loadArtwork, it) })
             }
             else if (sidewaysPhone() && state.hasSong) SidewaysPlayer(state, cover, page, openPage, lyrics, more, contentAlpha, motion, flying,
@@ -1062,17 +1063,21 @@ internal enum class SidewaysStyle(val label: String) {
 }
 internal const val SIDEWAYS_STYLE_PREFERENCE = "sideways-player"
 
-private val DetailsWidth = 270.dp
 private val DetailsGap = 24.dp
-private val DetailsLabel = playerText(13, 17, FontWeight.Normal)
-private val DetailsValue = playerText(13, 17)
-private val BarTitle = playerText(14, 18, FontWeight.SemiBold)
+private val SideTitle = playerText(26, 31, FontWeight.Bold)
+private val SideArtist = playerText(16, 21)
+private val SideLine = playerText(13, 17, FontWeight.Normal)
+private val SideCaption = playerText(11, 14, FontWeight.SemiBold).copy(letterSpacing = 0.8.sp)
+private val SideNext = playerText(14, 18, FontWeight.Normal)
+private val SideBadge = playerText(12, 15, FontWeight.SemiBold)
+private val SideSmallTitle = playerText(15, 19, FontWeight.SemiBold)
 
 /**
- * Now Playing on its side after the foobar2000 Georgia-ReBORN theme (docs/mockups/landscape-georgia.html), drawn the iOS
- * way. Details: album facts on the left, the cover in the middle and a disc printed with the cover peeking out of it,
- * turning while music plays. Lyrics and Queue: the disc rolls back into the cover, the cover slides left and the page
- * comes in on the right. A glass bar along the bottom holds the song, the transport and the page buttons.
+ * Now Playing on its side after the foobar2000 Georgia-ReBORN theme, drawn the iOS way ("Song first",
+ * docs/mockups/details-sideways-options.html, B). Details: the cover on the left with a disc printed with the cover half
+ * out of it, turning while music plays, and beside them the song's name, its artist, the album line, the quality as the
+ * theme's badges and the next two songs. Lyrics and Queue: the disc rolls back into the cover, the song's name moves under
+ * it and the page comes in on the right. A glass bar along the bottom holds the transport, the seek bar and the page buttons.
  * The codec, channel, Hi-Res and disc pictures are the theme's own (MIT, assets/licenses/Georgia-ReBORN-MIT.txt).
  */
 @Composable
@@ -1080,7 +1085,7 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
     lyrics: LyricsLoad, more: @Composable () -> Unit, contentAlpha: () -> Float, motion: PlayerSheetMotion, flying: Boolean,
     onBack: () -> Unit, onFavorite: (String, Boolean) -> Unit, onSeek: (String?, Long) -> Unit,
     onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onSignal: (Rect?) -> Unit, onOutput: (Rect?) -> Unit,
-    outputSheetOpen: Boolean, queue: @Composable (Modifier) -> Unit) {
+    outputSheetOpen: Boolean, onSelect: (String) -> Unit, queue: @Composable (Modifier) -> Unit) {
     val accent = EvannaDesign.colorScheme.primary
     var pane by remember { mutableStateOf(PlayerPage.LYRICS) }
     SideEffect { if (page != PlayerPage.SONG) pane = page }
@@ -1102,23 +1107,32 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
         }
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 26.dp, vertical = 6.dp)) {
             val t = shift
-            // Details: the cover sits after the facts with room for half a disc. Lyrics and Queue: a bigger cover on the left.
-            val start = minOf(maxHeight, (maxWidth - DetailsWidth - DetailsGap) / 1.5f)
-            val end = minOf(maxHeight, maxWidth * 0.42f)
+            // Details: the cover on the left, the disc half out of it (it reaches 1.47 covers), then the song.
+            // Lyrics and Queue: the disc is in, the song's name sits under the cover and the page fills the rest.
+            val nameRoom = 46.dp * LocalDensity.current.fontScale.coerceAtMost(1.3f)
+            val start = minOf(maxHeight, (maxWidth - DetailsGap - 280.dp) / 1.47f)
+            val end = minOf(maxHeight - nameRoom, maxWidth * 0.42f)
             val side = lerp(start, end, t)
-            val left = lerp(DetailsWidth + DetailsGap, 0.dp, t)
-            val top = (maxHeight - side) / 2
+            val top = lerp((maxHeight - start) / 2, ((maxHeight - end - nameRoom) / 2).coerceAtLeast(0.dp), t)
             val rolled = (t * 1.6f).coerceAtMost(1f)
+            val songLeft = start * 1.47f + DetailsGap
             if (t < 1f) {
                 Disc(cover, state.playing && page == PlayerPage.SONG, Modifier
-                    .offset(left + side * 0.5f * (1f - rolled) + side * 0.03f, top + side * 0.03f).size(side * 0.94f)
+                    .offset(side * 0.5f * (1f - rolled) + side * 0.03f, top + side * 0.03f).size(side * 0.94f)
                     .graphicsLayer { alpha = 1f - ((t - 0.55f) / 0.2f).coerceIn(0f, 1f) })
-                AlbumDetails(state, info, accent, Modifier.width(DetailsWidth).fillMaxHeight()
-                    .graphicsLayer { alpha = 1f - (t / 0.45f).coerceAtMost(1f); translationX = -30.dp.toPx() * t }
+                SongDetails(state, info, accent, onSignal, onSelect, Modifier.offset(songLeft, 0.dp).width(maxWidth - songLeft)
+                    .fillMaxHeight().graphicsLayer { alpha = 1f - (t / 0.45f).coerceAtMost(1f); translationX = 24.dp.toPx() * t }
                     .then(if (page == PlayerPage.SONG) Modifier else Modifier.clearAndSetSemantics {}))
             }
-            ArtworkImage(cover, Modifier.offset(left, top).size(side).dockingCover(motion, flying, corner = 10.dp)
+            ArtworkImage(cover, Modifier.offset(0.dp, top).size(side).dockingCover(motion, flying, corner = 10.dp)
                 .shadow(15.dp, CoverShape), CoverShape)
+            if (t > 0f) Column(Modifier.offset(0.dp, top + side + 8.dp).width(side)
+                .graphicsLayer { alpha = ((t - 0.55f) / 0.45f).coerceIn(0f, 1f) }
+                .then(if (page == PlayerPage.SONG) Modifier.clearAndSetSemantics {} else Modifier)) {
+                Text(state.title.ifBlank { "Local audio file" }, style = SideSmallTitle, color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(state.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", style = SideLine, color = accent, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis)
+            }
             if (t > 0f) Box(Modifier.offset(end + DetailsGap, 0.dp).width(maxWidth - end - DetailsGap).fillMaxHeight()
                 .graphicsLayer { alpha = ((t - 0.45f) / 0.45f).coerceIn(0f, 1f); translationX = 24.dp.toPx() * (1f - t) }
                 .then(if (page == PlayerPage.SONG) Modifier.clearAndSetSemantics {} else Modifier)) {
@@ -1126,8 +1140,7 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
                 else LyricsPage(lyrics, state, onSeek, Modifier.fillMaxSize(), small = true, accent = accent)
             }
         }
-        DetailsBar(state, info?.musicTags?.trackNumber, page, onPage, lyrics, accent, onPlayPause, onPrevious, onNext, onSignal, onOutput,
-            outputSheetOpen, onSeek)
+        DetailsBar(state, page, onPage, lyrics, accent, onPlayPause, onPrevious, onNext, onOutput, outputSheetOpen, onSeek)
     }
 }
 
@@ -1173,9 +1186,14 @@ private fun Disc(cover: Bitmap?, turning: Boolean, modifier: Modifier) {
     }
 }
 
-/** The album's name, a bar of its tracks and the facts the library knows, in iOS grouped rows. */
+/**
+ * The song beside the cover: its name, its artist, the album line, the quality as the theme's badges (tap for the sound
+ * path) and the next two songs in the queue (tap to play one).
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AlbumDetails(state: PlayerPresentation, info: LibrarySong?, accent: Color, modifier: Modifier) {
+private fun SongDetails(state: PlayerPresentation, info: LibrarySong?, accent: Color, onSignal: (Rect?) -> Unit,
+    onSelect: (String) -> Unit, modifier: Modifier) {
     val tags = info?.musicTags
     val fields = state.sourceQuality.split(" · ")
     // Until the decoder reports the format (nothing played yet), the library's scan gives the codec and rate.
@@ -1184,54 +1202,60 @@ private fun AlbumDetails(state: PlayerPresentation, info: LibrarySong?, accent: 
     val bits = fields.getOrNull(2)?.removeSuffix("-bit")?.toIntOrNull()
     val channels = state.signalStages.firstOrNull { it.label == "Source" }?.value
         ?.let { Regex("""(\d+) channels""").find(it)?.groupValues?.get(1)?.toIntOrNull() }
-    val position = state.positionMs.toFloat() / (state.durationMs?.takeIf { it > 0 } ?: 1).toFloat()
+    // Large text can outgrow the space beside the cover; then the column scrolls.
     Column(modifier.verticalScroll(rememberScrollState())) {
-        Text(state.album?.takeIf { it.isNotBlank() } ?: "Unknown album", style = SongTitle.copy(fontSize = 19.sp, lineHeight = 23.sp),
-            color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(listOfNotNull(tags?.albumArtist ?: state.artist, tags?.year?.toString()).joinToString(" · "),
-            style = DetailsLabel.copy(fontSize = 14.sp), color = Pv2, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        // One piece per track: the ones played are dimmed accent, the one playing fills as it plays.
-        val total = tags?.totalTracks?.takeIf { it in 1..40 } ?: 1
-        val number = tags?.trackNumber?.takeIf { it in 1..total } ?: 1
-        Row(Modifier.fillMaxWidth().padding(top = 7.dp, bottom = 8.dp).height(4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            for (i in 1..total) Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(Pv3).drawWithContent {
-                val filled = when { i < number -> 1f; i == number -> position.coerceIn(0f, 1f); else -> 0f }
-                drawRect(accent.copy(alpha = if (i < number) 0.55f else 1f), size = size.copy(width = size.width * filled))
-            })
-        }
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Pv4)) {
-            var first = true
-            @Composable fun row(label: String, content: @Composable RowScope.() -> Unit) {
-                if (!first) Box(Modifier.padding(start = 12.dp).fillMaxWidth().height(0.5.dp).background(Pv4))
-                first = false
-                // Seven rows fit beside the cover on a phone on its side; with large text the list scrolls.
-                Row(Modifier.fillMaxWidth().heightIn(min = 23.dp).padding(horizontal = 12.dp).semantics(mergeDescendants = true) {},
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text(label, style = DetailsLabel, color = Pv2, modifier = Modifier.padding(end = 12.dp))
-                    Spacer(Modifier.weight(1f))
-                    content()
+        Text(state.title.ifBlank { "Local audio file" }, style = SideTitle, color = Pv1, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.semantics { heading() })
+        Text(state.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", style = SideArtist, color = accent, maxLines = 1,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+        val added = info?.addedAt?.takeIf { it > 0 }
+            ?.let { "added " + java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(it)) }
+        val line = listOfNotNull(state.album?.takeIf { it.isNotBlank() }, tags?.year?.toString(), tags?.genre?.takeIf { it.isNotBlank() }, added)
+            .joinToString(" · ")
+        if (line.isNotEmpty()) Text(line, style = SideLine, color = Pv2, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp))
+        if (codec != null || rate != null) {
+            var box by remember { mutableStateOf<Rect?>(null) }
+            val press = remember { MutableInteractionSource() }
+            @Composable fun pill(content: @Composable () -> Unit) = Box(Modifier.height(24.dp).clip(RoundedCornerShape(6.dp))
+                .background(Pv4).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) { content() }
+            FlowRow(Modifier.padding(top = 12.dp).onGloballyPositioned { box = it.screenBox() }
+                .clickable(press, indication = null, role = Role.Button) { onSignal(box) }
+                .semantics { contentDescription = "Audio quality details" },
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                codec?.let { name -> pill { ThemeBadge(codecBadge(name), name, Modifier.height(12.dp)) } }
+                val quality = listOfNotNull(bits?.let { "$it-bit" },
+                    rate?.let { shortSourceQuality("${codec ?: "?"} · $it Hz").split(" · ").getOrNull(1) }).joinToString(" · ")
+                if (quality.isNotEmpty()) pill { Text(quality, style = SideBadge, color = Pv1, maxLines = 1) }
+                if ((bits ?: 0) >= 24 || (rate ?: 0) > 48_000) Box(Modifier.height(24.dp), contentAlignment = Alignment.Center) {
+                    Image(painterResource(R.drawable.georgia_hires), contentDescription = "Hi-Res", modifier = Modifier.height(20.dp),
+                        contentScale = ContentScale.Fit)
+                }
+                channels?.let { n ->
+                    pill { ThemeBadge(channelBadge(n), if (n == 1) "Mono" else if (n == 2) "Stereo" else "$n channels", Modifier.height(12.dp)) }
                 }
             }
-            @Composable fun value(text: String) = Text(text, style = DetailsValue, color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            tags?.year?.let { row("Released") { value(it.toString()) } }
-            tags?.genre?.takeIf { it.isNotBlank() }?.let { row("Genre") { value(it) } }
-            val trackNumber = tags?.trackNumber
-            if (tags != null && trackNumber != null) row("Track") {
-                val disc = tags.discNumber
-                val discs = tags.totalDiscs
-                value(listOfNotNull(tags.totalTracks?.let { "$trackNumber of $it" } ?: "$trackNumber",
-                    if (disc != null && discs != null && discs > 1) "Disc $disc of $discs" else null).joinToString(" · "))
+        }
+        // "UP NEXT · TRACK 1 OF 22", then the next two songs of the queue.
+        val current = state.queue.indexOfFirst { it.id == state.id }.takeIf { it >= 0 } ?: state.queueIndex.coerceIn(-1, state.queue.lastIndex)
+        val upcoming = state.queue.drop(current + 1).take(2)
+        val discs = tags?.totalDiscs
+        val caption = listOfNotNull("Up next", tags?.trackNumber?.let { n -> "Track $n" + (tags.totalTracks?.let { " of $it" } ?: "") },
+            tags?.discNumber?.takeIf { discs != null && discs > 1 }?.let { "Disc $it of $discs" })
+            .joinToString(" · ").uppercase(java.util.Locale.getDefault())
+        Text(caption, style = SideCaption, color = Pv2, modifier = Modifier.padding(top = 18.dp, bottom = 2.dp).semantics { heading() })
+        if (upcoming.isEmpty()) Text("Nothing is queued after this song.", style = SideLine, color = Pv2, modifier = Modifier.padding(vertical = 8.dp))
+        for (item in upcoming) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 40.dp)
+                .clickable(enabled = state.connected, onClickLabel = "Play", role = Role.Button) { onSelect(item.id) },
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(item.title, style = SideNext, color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false))
+                item.artist?.takeIf { it.isNotBlank() }?.let {
+                    Text(" · $it", style = SideNext, color = Pv2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
-            codec?.let { name -> row("Codec") { ThemeBadge(codecBadge(name), name) } }
-            channels?.let { n -> row("Channels") { ThemeBadge(channelBadge(n), if (n == 1) "Mono" else if (n == 2) "Stereo" else "$n channels") } }
-            if (rate != null) row("Source") {
-                value(listOfNotNull(bits?.let { "$it-bit" }, shortSourceQuality("${codec ?: "?"} · $rate Hz").split(" · ").getOrNull(1))
-                    .joinToString(" · "))
-                if ((bits ?: 0) >= 24 || rate > 48_000) ThemeBadge(R.drawable.georgia_hires, "Hi-Res", Modifier.padding(start = 6.dp).height(15.dp))
-            }
-            info?.addedAt?.takeIf { it > 0 }?.let {
-                row("Added") { value(java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(it))) }
-            }
+            Box(Modifier.fillMaxWidth().height(0.5.dp).background(Pv4))
         }
     }
 }
@@ -1239,7 +1263,7 @@ private fun AlbumDetails(state: PlayerPresentation, info: LibrarySong?, accent: 
 /** One of the theme's white badges, or its name in words when there is no picture for it. */
 @Composable
 private fun ThemeBadge(picture: Int?, name: String, modifier: Modifier = Modifier.height(13.dp)) {
-    if (picture == null) Text(name, style = DetailsValue, color = Pv1)
+    if (picture == null) Text(name, style = SideBadge, color = Pv1)
     else Image(painterResource(picture), contentDescription = name, modifier = modifier, contentScale = ContentScale.Fit)
 }
 
@@ -1270,76 +1294,42 @@ internal fun channelBadge(channels: Int): Int? = when (channels) {
     else -> null
 }
 
-/** The glass bar along the bottom: the song, its codec, the transport, the page buttons, the time and the seek line. */
+/** The glass bar along the bottom: the transport, the time gone, the seek bar, the time left and the page buttons. */
 @Composable
-private fun DetailsBar(state: PlayerPresentation, number: Int?, page: PlayerPage, onPage: (PlayerPage) -> Unit, lyrics: LyricsLoad, accent: Color,
-    onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onSignal: (Rect?) -> Unit, onOutput: (Rect?) -> Unit,
+private fun DetailsBar(state: PlayerPresentation, page: PlayerPage, onPage: (PlayerPage) -> Unit, lyrics: LyricsLoad, accent: Color,
+    onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onOutput: (Rect?) -> Unit,
     outputSheetOpen: Boolean, onSeek: (String?, Long) -> Unit) {
     val lyricsOn = page == PlayerPage.LYRICS
     val queueOn = page == PlayerPage.QUEUE
-    // The seek line runs along the bar's bottom edge, inside the pill, as in the theme and the mockup.
-    val duration = state.durationMs?.takeIf { it > 0 }
-    val seekPress = remember(state.id, duration) { MutableInteractionSource() }
-    val dragging by seekPress.collectIsDraggedAsState()
-    val pressed by seekPress.collectIsPressedAsState()
-    var target by remember(state.id, duration) { mutableFloatStateOf(0f) }
-    val shown = if (dragging) target.toLong() else state.positionMs
-    val line by animateDpAsState(if ((dragging || pressed) && state.canSeek) 5.dp else 3.dp, label = "seek line")
-    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp)) {
-        // Under the bar, so its buttons take their own taps. It covers the bar's bottom 14 dp and the 10 dp below it.
-        if (duration != null) Slider(shown.coerceIn(0, duration).toFloat(), { target = it }, Modifier.align(Alignment.BottomCenter)
-            .height(24.dp).semantics { contentDescription = "Estimated playback position" }, enabled = state.connected && state.canSeek,
-            valueRange = 0f..duration.toFloat(), onValueChangeFinished = { onSeek(state.id, target.toLong()) }, interactionSource = seekPress,
-            thumb = { Spacer(Modifier.size(0.dp)) }, track = { Spacer(Modifier.fillMaxWidth()) })
-        Row(Modifier.padding(bottom = 10.dp).fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(50)).background(Pv4).drawWithContent {
-            drawContent()
-            if (duration == null) return@drawWithContent
-            val height = line.toPx()
-            val top = size.height - height
-            drawRect(Pv4, Offset(0f, top), Size(size.width, height))
-            drawRect(accent, Offset(0f, top), Size(size.width * (shown.toFloat() / duration).coerceIn(0f, 1f), height))
-        }.padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(state.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", style = BarTitle, color = accent, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).padding(end = 10.dp))
-                    number?.let { Text("%02d.".format(it), style = BarTitle, color = Pv2, maxLines = 1, modifier = Modifier.padding(end = 6.dp)) }
-                    Text(state.title.ifBlank { "Local audio file" }, style = BarTitle, color = Pv1, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                }
-                if (state.sourceQuality.isNotBlank()) {
-                    var box by remember { mutableStateOf<Rect?>(null) }
-                    val press = remember { MutableInteractionSource() }
-                    Row(Modifier.padding(top = 2.dp).onGloballyPositioned { box = it.screenBox() }
-                        .clickable(press, indication = null, role = Role.Button) { onSignal(box) }
-                        .semantics { contentDescription = "Audio quality details" }, verticalAlignment = Alignment.CenterVertically) {
-                        codecBadge(state.sourceQuality.substringBefore(" · "))?.let {
-                            Image(painterResource(it), contentDescription = null, modifier = Modifier.padding(end = 6.dp).height(10.dp))
-                        }
-                        Text(shortSourceQuality(state.sourceQuality), style = Badge, color = Pv2, maxLines = 1)
-                    }
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TransportButton(PlayerIcons.Previous, 26.dp, "Previous", state.connected && state.canPrevious, onClick = onPrevious)
-                TransportButton(if (state.playing) PlayerIcons.Pause else if (state.ended) PlayerIcons.Refresh else PlayerIcons.Play, 32.dp,
-                    if (state.playing) "Pause playback" else "Play playback", state.connected && state.canPlayPause, onClick = onPlayPause)
-                TransportButton(PlayerIcons.Next, 26.dp, "Next", state.connected && state.canNext, onClick = onNext)
-            }
-            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                StripButton(PlayerIcons.Lyrics, lyricsOn, if (lyricsOn) "Close lyrics" else "Open lyrics",
-                    enabled = lyricsOn || lyrics is LyricsLoad.Ready, onTint = accent) {
-                    onPage(if (lyricsOn) PlayerPage.SONG else PlayerPage.LYRICS)
-                }
-                var outputBox by remember { mutableStateOf<Rect?>(null) }
-                StripButton(PlayerIcons.Output, outputSheetOpen, "Sound output", onTint = accent,
-                    modifier = Modifier.onGloballyPositioned { outputBox = it.screenBox() }) { onOutput(outputBox) }
-                StripButton(PlayerIcons.QueueList, queueOn, "Queue · ${state.queue.size} songs", onTint = accent) {
-                    onPage(if (queueOn) PlayerPage.SONG else PlayerPage.QUEUE)
-                }
-                Text("${playbackTime(shown)} / ${playbackTime(state.durationMs)}", style = Times, color = Pv2,
-                    maxLines = 1, modifier = Modifier.padding(start = 8.dp))
-            }
+    Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 14.dp, end = 14.dp, bottom = 10.dp).heightIn(min = 52.dp)
+        .clip(RoundedCornerShape(50)).background(Pv4).padding(start = 10.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        TransportButton(PlayerIcons.Previous, 26.dp, "Previous", state.connected && state.canPrevious, onClick = onPrevious)
+        TransportButton(if (state.playing) PlayerIcons.Pause else if (state.ended) PlayerIcons.Refresh else PlayerIcons.Play, 32.dp,
+            if (state.playing) "Pause playback" else "Play playback", state.connected && state.canPlayPause, onClick = onPlayPause)
+        TransportButton(PlayerIcons.Next, 26.dp, "Next", state.connected && state.canNext, onClick = onNext)
+        // The same seek pill as upright: it thickens under a finger, and its touch area is 48 dp tall.
+        key(state.id, state.durationMs) {
+            val interaction = remember { MutableInteractionSource() }
+            val dragging by interaction.collectIsDraggedAsState()
+            var target by remember { mutableFloatStateOf(0f) }
+            val duration = state.durationMs?.takeIf { it > 0 }
+            val position = if (dragging) target.toLong() else state.positionMs
+            Text(playbackTime(position), style = Times, color = Pv2, maxLines = 1, modifier = Modifier.padding(start = 8.dp, end = 12.dp))
+            if (duration != null) PillSlider(position.coerceIn(0, duration).toFloat(), { target = it }, { onSeek(state.id, target.toLong()) },
+                0f..duration.toFloat(), state.connected && state.canSeek, "Estimated playback position", Modifier.weight(1f), interaction)
+            else Spacer(Modifier.weight(1f))
+            Text(duration?.let { "−${playbackTime((it - position).coerceAtLeast(0))}" } ?: "--:--", style = Times, color = Pv2,
+                maxLines = 1, modifier = Modifier.padding(start = 12.dp, end = 6.dp))
+        }
+        StripButton(PlayerIcons.Lyrics, lyricsOn, if (lyricsOn) "Close lyrics" else "Open lyrics",
+            enabled = lyricsOn || lyrics is LyricsLoad.Ready, onTint = accent) {
+            onPage(if (lyricsOn) PlayerPage.SONG else PlayerPage.LYRICS)
+        }
+        var outputBox by remember { mutableStateOf<Rect?>(null) }
+        StripButton(PlayerIcons.Output, outputSheetOpen, "Sound output", onTint = accent,
+            modifier = Modifier.onGloballyPositioned { outputBox = it.screenBox() }) { onOutput(outputBox) }
+        StripButton(PlayerIcons.QueueList, queueOn, "Queue · ${state.queue.size} songs", onTint = accent) {
+            onPage(if (queueOn) PlayerPage.SONG else PlayerPage.QUEUE)
         }
     }
 }
