@@ -98,7 +98,7 @@ private fun usbPath(snapshot: UsbPlaybackSnapshot, file: SoundStop?, playing: Bo
     val usbProblem = when {
         transportFailure != null -> transportFailure.plain() + "."
         stats?.disconnected == true -> "The DAC was unplugged."
-        ranShort > 0 -> "Ran out of sound $ranShort ${if (ranShort == 1L) "time" else "times"}. You may hear gaps."
+        ranShort > 0 -> "Ran out of sound $ranShort ${if (ranShort == 1L) "time" else "times"}"
         lost > 0 -> "Lost $lost tiny ${if (lost == 1L) "bit" else "bits"} of sound. The phone's USB drops them, not the file."
         else -> null
     }
@@ -156,9 +156,10 @@ private fun androidPath(snapshot: UsbPlaybackSnapshot, file: SoundStop?, playing
         if (eqProcessed) StopState.CHANGED else StopState.SAME, eqDetails())
     val android = when {
         out == null -> SoundStop(StopKind.ANDROID, "Android", "Waiting for playback")
-        exact -> SoundStop(StopKind.ANDROID, "Android", "Passed on unchanged, Android says. Evanna can't check it.", StopState.SAME,
+        // The line under the verdict already says why; the stop names only what happens here.
+        exact -> SoundStop(StopKind.ANDROID, "Android", "Passed on unchanged, Android says", StopState.SAME,
             listOfNotNull("Mode" to "Bit-perfect mixer", out.bits?.let { "Gets" to "$it-bit · ${hz(out.sampleRate)}" }, "Volume" to "Not changed by Android"))
-        else -> SoundStop(StopKind.ANDROID, "Android", "Mixed by Android, which may change the rate. Uses the phone's volume.", StopState.CHANGED,
+        else -> SoundStop(StopKind.ANDROID, "Android", "Mixed with other sounds", StopState.CHANGED,
             listOf("Gets" to "${hz(out.sampleRate)} · float", "Volume" to "Phone volume", "Exact copy" to "Not promised"))
     }
     val device = when (out?.deviceType) {

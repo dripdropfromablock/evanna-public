@@ -273,11 +273,11 @@ internal object PlayerUiProbe {
             check(driver.find { it.contentDescription?.toString() == "Hide lyrics" } == null)
             driver.clickDescription("Close lyrics")
             driver.await("The lyrics did not collapse into the preview") { driver.heading("Now Playing") && driver.visible("Lights on in the harbor,") }
+            // The quality badge opens Sound path, a card with a round Close button.
             driver.clickDescription("Audio quality details")
-            driver.await("Audio quality window did not open") {driver.exists("Audio quality") && driver.exists("Source")}
-            driver.click("Advanced")
-            driver.await("Advanced signal path did not show") {driver.exists("Decoder input")}
-            driver.click("Close")
+            driver.await("Sound path did not open") { driver.heading("Sound path") }
+            driver.clickDescription("Close")
+            driver.await("Sound path did not close") { !driver.heading("Sound path") }
             driver.clickDescription("More options");driver.click("Sleep timer");driver.click("15 minutes")
             driver.await("Timer was not set") {owner.sleepTimer.value.mode==SleepMode.MINUTES}
             // The label counts down each second, so a slow device may never draw "15:00"; any "Sleep in m:ss" will do.
@@ -393,10 +393,10 @@ internal object PlayerUiProbe {
             driver.await("USB button ignored saved step") {owner.snapshot.value.usbVolume?.currentDb == -17f}
             inPlayer { driver.progress("USB hardware volume", 0f) }
             driver.await("USB slider exceeded ceiling") {owner.snapshot.value.usbVolume?.currentDb == -5f}
-            driver.reveal("Max USB volume");driver.progress("Max USB volume",-60f)
+            driver.revealBackward("Max USB volume");driver.progress("Max USB volume",-60f)
             driver.await("Minimum ceiling did not settle") {owner.snapshot.value.usbVolume?.let {it.minDb == it.maxDb && it.currentDb == -60f} == true}
             allowLimitSave=false;driver.progress("Max USB volume",-30f)
-            driver.await("Refused ceiling did not show its saved value") {driver.exists("-60 dB maximum") && !driver.exists("-30 dB maximum")}
+            driver.await("Refused ceiling did not show its saved value") {driver.exists("-60 dB") && !driver.exists("-30 dB")}
             main { session.release() }
             driver.clickDescription("Open Now Playing")
             driver.revealForward("Playback controls disconnected. Reopen Evanna to reconnect.")
@@ -582,6 +582,12 @@ internal object PlayerUiProbe {
         fun revealForward(text: String) {
             await("Player status not reachable: $text") {
                 if (visible(text)) true else { scrollList(forward = true); false }
+            }
+        }
+        /** Swipes back up, for pages where the closed Now Playing sheet's list could take the scroll action. */
+        fun revealBackward(text: String) {
+            await("Settings row not reachable: $text") {
+                if (visible(text)) true else { scrollList(forward = false); false }
             }
         }
         fun await(message: String, condition: () -> Boolean) {

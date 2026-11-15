@@ -389,8 +389,11 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                         modifier = Modifier.semantics { heading() })
                     shown?.albumSummary?.displayArtist?.let { Text(it, style = EvannaDesign.typography.titleMedium, color = muted, textAlign = TextAlign.Center) }
                     shown?.let { album ->
-                        val count = if (album.total == 1) "1 song" else "${album.total} songs"
-                        Text(listOfNotNull(album.albumSummary?.year?.toString(), count).joinToString(" · "),
+                        // The length shows once every track is loaded and has one, as on the Carousel.
+                        val songs = album.songs
+                        val lengthMs = if (cursor.base == 0 && songs.size >= album.total && songs.isNotEmpty() && songs.all { it.durationUs != null })
+                            songs.sumOf { it.durationUs ?: 0L } / 1000 else null
+                        Text(albumInfoLine(album.albumSummary?.year, album.total, lengthMs),
                             style = EvannaDesign.typography.bodyMedium,
                             color = muted, modifier = Modifier.padding(bottom = 8.dp))
                     }
@@ -501,8 +504,10 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
             }
         }
         if(!searchHome && cursor.base>0)line {TextButton(onClick={cursor=LibraryPageCursor()},modifier=Modifier.heightIn(min=48.dp)){Text("Start of list")}}
-        // Albums go directly from the filters to the covers. Other lists keep their count.
-        shown?.takeIf { it.total > 0 && !searchHome && (searchMode || kind != null || view != LibraryView.ALBUMS) }?.let {
+        // Albums go directly from the filters to the covers, and an album's page already counts its songs at the top.
+        // Other lists keep their count.
+        shown?.takeIf { it.total > 0 && !searchHome && !(albumDetail && filter.search.isBlank()) &&
+            (searchMode || kind != null || view != LibraryView.ALBUMS) }?.let {
             line { Text(counted(it.total, resultLabel),
                 style = EvannaDesign.typography.titleSmall, color = muted) }
         }
