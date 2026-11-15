@@ -498,9 +498,11 @@ class MainActivity : ComponentActivity() {
                     // The app under the sheet is never taken apart, so closing Now Playing finds the tab exactly as it was.
                     // While the sheet is open its contents are hidden from screen readers.
                     Box(Modifier.fillMaxSize().playerFocusScope(blocked = playerVisible)) {
+                        // Each page paints its background to the screen's edges, camera cutout included, and keeps
+                        // only its content out of the cutout and side bars.
+                        val sideInsets = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                         Box(Modifier.fillMaxSize()
                             .then(if (glassTier.samplesBackdrop && !increaseContrast) Modifier.layerBackdrop(pageBackdrop) else Modifier)
-                            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                             .imePadding()) {
                             val covered = playerVisible || pushed != null
                             CompositionLocalProvider(LocalCovered provides covered) {
@@ -512,7 +514,9 @@ class MainActivity : ComponentActivity() {
                                     TabPager(baseTab(navigation), ::selectTab) { tab ->
                                         val insets = if (tab == PlayerScreen.OUTPUT)
                                             Modifier.statusBarsPadding().padding(horizontal = 16.dp) else Modifier
-                                        Box(Modifier.fillMaxSize().background(screenBackground(tab)).then(insets)) { tabContent(tab) }
+                                        // On its side the Carousel draws its moving backdrop edge to edge and pads itself.
+                                        val sides = if (tab == PlayerScreen.CAROUSEL && sideways) Modifier else sideInsets
+                                        Box(Modifier.fillMaxSize().background(screenBackground(tab)).then(sides).then(insets)) { tabContent(tab) }
                                     }
                                 }
                             }
@@ -535,7 +539,7 @@ class MainActivity : ComponentActivity() {
                                             color = screenBackground(shown)) {
                                             // EQ and Settings reserve their own scroll space below the dock.
                                             val bottom = if (shown in settingsPages || shown == PlayerScreen.EQUALIZER) 0.dp else dockInset
-                                            Box(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp).padding(bottom = bottom)) {
+                                            Box(Modifier.fillMaxSize().then(sideInsets).statusBarsPadding().padding(horizontal = 16.dp).padding(bottom = bottom)) {
                                                 savedScreens.SaveableStateProvider(shown.name) { pushedContent(shown) }
                                             }
                                         }
