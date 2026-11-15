@@ -124,6 +124,7 @@ private fun playerText(size: Int, line: Int, weight: FontWeight = FontWeight.Med
     fontFamily = FontFamily.SansSerif, fontWeight = weight, fontSize = size.sp, lineHeight = line.sp,
     fontFeatureSettings = if (tabular) "tnum" else null)
 private val SongTitle = playerText(20, 24)
+private val SidewaysSongTitle = playerText(22, 27)
 private val HeaderTitle = playerText(17, 22)
 private val HeaderArtist = playerText(17, 22, FontWeight.Normal)
 private val RowArtist = playerText(15, 20, FontWeight.Normal)
@@ -366,10 +367,10 @@ private fun SongPage(state: PlayerPresentation, cover: Bitmap?, onFavorite: (Str
 /** Title and artist, with Favorite and More at the end. */
 @Composable
 private fun SongTitleRow(state: PlayerPresentation, onFavorite: (String, Boolean) -> Unit, more: @Composable () -> Unit,
-    modifier: Modifier = Modifier) {
+    modifier: Modifier = Modifier, titleStyle: TextStyle = SongTitle) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(state.title.ifBlank { "Local audio file" }, style = SongTitle, color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(state.title.ifBlank { "Local audio file" }, style = titleStyle, color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(state.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", style = SongTitle, color = Pv2, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Row(Modifier.offset(x = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -429,9 +430,17 @@ private fun SidewaysPlayer(state: PlayerPresentation, cover: Bitmap?, page: Play
                 transitionSpec = { fadeIn(EvannaMotion.enter) togetherWith fadeOut(EvannaMotion.exit) }) { shown ->
                 Column(Modifier.fillMaxSize().then(if (shown == page) Modifier else Modifier.clearAndSetSemantics {})) {
                     when (shown) {
-                        PlayerPage.SONG -> {
-                            Spacer(Modifier.weight(1f))
-                            SongTitleRow(state, onFavorite, more, Modifier.padding(horizontal = 32.dp))
+                        // The song and controls sit together on the cover's middle line
+                        // (docs/mockups/cover-sideways-proportions.html, B). That line is half a grabber (24 dp) above
+                        // this page's own middle; the block's last 22 dp are empty room under the icons, so it moves
+                        // 11 dp less. When the page is too short it keeps inside it.
+                        PlayerPage.SONG -> Column(Modifier.fillMaxSize().layout { measurable, constraints ->
+                            val block = measurable.measure(constraints.copy(minHeight = 0))
+                            val top = (constraints.maxHeight / 2 - 13.dp.roundToPx() - block.height / 2)
+                                .coerceIn(0, (constraints.maxHeight - block.height).coerceAtLeast(0))
+                            layout(constraints.maxWidth, constraints.maxHeight) { block.place(0, top) }
+                        }) {
+                            SongTitleRow(state, onFavorite, more, Modifier.padding(horizontal = 32.dp), titleStyle = SidewaysSongTitle)
                             controls()
                         }
                         PlayerPage.LYRICS -> {
@@ -532,14 +541,19 @@ private fun PlayerControls(state: PlayerPresentation, actionError: String?, page
         Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             StripButton(PlayerIcons.Lyrics, lyricsOn, if (lyricsOn) "Close lyrics" else "Open lyrics",
                 enabled = lyricsOn || lyrics is LyricsLoad.Ready, onClick = toggleLyrics)
-            if (compact && !directUsb) AndroidMediaVolume(enabled = volumeEnabled,
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp), showLevel = androidVolume, onOpenOutput = onOutput)
-            else {
-                Spacer(Modifier.weight(1f))
-                // Audio output grows out of this button.
-                var outputBox by remember { mutableStateOf<Rect?>(null) }
+            // Audio output grows out of this button. On a short screen it sits after the volume.
+            var outputBox by remember { mutableStateOf<Rect?>(null) }
+            val output = @Composable {
                 StripButton(PlayerIcons.Output, outputSheetOpen, "Sound output",
                     modifier = Modifier.onGloballyPositioned { outputBox = it.screenBox() }) { onOutput(outputBox) }
+            }
+            if (compact && !directUsb) {
+                AndroidMediaVolume(enabled = volumeEnabled,
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp), showLevel = androidVolume, onOpenOutput = onOutput)
+                output()
+            } else {
+                Spacer(Modifier.weight(1f))
+                output()
                 Spacer(Modifier.weight(1f))
             }
             val queueOn = page == PlayerPage.QUEUE
