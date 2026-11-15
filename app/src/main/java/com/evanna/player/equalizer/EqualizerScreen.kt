@@ -21,7 +21,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.alpha
 import com.evanna.player.PlayerIcons
+import com.evanna.player.ScreenHeader
 import com.evanna.player.ui.*
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -99,17 +101,15 @@ internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
             },
             dismissButton = { TextButton(onClick = { naming = false }) { Text("Cancel") } })
     }
+    // Off, everything that shapes the sound fades and holds still until the switch is on again; the curve stays in view
+    // (docs/mockups/library-sideways-eq-off.html, A).
+    val on = config.enabled
+    val faded = Modifier.alpha(if (on) 1f else 0.38f)
     Column(Modifier.fillMaxSize()) {
-        FilledIconButton(onClick = onBack, modifier = Modifier.size(48.dp), colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = p.card, contentColor = p.text)) {
-            Icon(PlayerIcons.ChevronLeft, contentDescription = "Back", modifier = Modifier.size(24.dp))
-        }
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(top = 10.dp, bottom = 24.dp + bottomInset),
+        // The same header as the other Settings pages, scrolling with the page.
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp + bottomInset),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            item(key = "title") {
-                Text("Equalizer", style = eqText(34.sp, 40.sp, FontWeight.Bold), color = p.text,
-                    modifier = Modifier.padding(top = 8.dp).semantics { heading() })
-            }
+            item(key = "title") { ScreenHeader("Equalizer", onBack) }
             item(key = "switch") {
                 EqCard {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -120,27 +120,31 @@ internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
                             Text("Speaker, Bluetooth, headphones and USB DACs", style = eqText(12.5.sp, 17.sp), color = p.muted)
                         }
                         Spacer(Modifier.width(12.dp))
-                        val toggle: (Boolean) -> Unit = { on -> SoundSettings.update { it.copy(enabled = on) } }
+                        val toggle: (Boolean) -> Unit = { turnOn -> SoundSettings.update { it.copy(enabled = turnOn) } }
                         AppleSwitch(config.enabled, true, "Equalizer on", toggle)
                     }
                 }
             }
+            if (!on) item(key = "off") {
+                Text("Off. Every sample plays unchanged.", style = eqText(12.5.sp, 17.sp), color = p.muted,
+                    modifier = Modifier.padding(horizontal = 16.dp))
+            }
             item(key = "presets") {
-                EqCard {
+                EqCard(faded) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("Presets", style = eqText(15.sp, 20.sp, FontWeight.Medium), color = p.text, modifier = Modifier.weight(1f).semantics { heading() })
-                        TextButton(onClick = { naming = true }) { Text("Save") }
+                        TextButton(onClick = { naming = true }, enabled = on) { Text("Save") }
                     }
                     Row(Modifier.fillMaxWidth()) {
-                        TextButton(onClick = { searching = true }) { Text("Find headphones") }
-                        TextButton(onClick = { picker.launch(arrayOf("text/*", "application/octet-stream")) }) { Text("Import file") }
+                        TextButton(onClick = { searching = true }, enabled = on) { Text("Find headphones") }
+                        TextButton(onClick = { picker.launch(arrayOf("text/*", "application/octet-stream")) }, enabled = on) { Text("Import file") }
                     }
                     FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         for (preset in BUILT_IN_PRESETS + mine)
-                            EqChip(preset.name, config.enabled && preset.matches(config), true) { SoundSettings.update { preset.applyTo(it) } }
+                            EqChip(preset.name, on && preset.matches(config), on) { SoundSettings.update { preset.applyTo(it) } }
                     }
                     mine.firstOrNull { it.matches(config) }?.let { preset ->
-                        TextButton(onClick = { SoundSettings.deletePreset(preset.name) }, modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp)) {
+                        TextButton(onClick = { SoundSettings.deletePreset(preset.name) }, enabled = on, modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp)) {
                             Text("Delete ${preset.name}")
                         }
                     }
@@ -148,44 +152,45 @@ internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
                 }
             }
             item(key = "curve") {
-                EqCard {
+                EqCard(faded) {
                     Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
                         Text("Drag a point, or tap to add a band", style = eqText(12.sp, 16.sp), color = p.muted, modifier = Modifier.weight(1f))
                         Text("Preamp ", style = eqText(12.sp, 16.sp), color = p.muted)
                         Text("${eqSigned(applied)} dB", style = eqText(12.sp, 16.sp, FontWeight.Medium, tabular = true), color = p.text)
                     }
+                    // Without the callbacks the curve is only a picture: no drags, no new bands.
+                    val select: (Int) -> Unit = { chosen = it; tab = 1 }
+                    val drag: (Int, Float, Float) -> Unit = { i, hz, db -> config.bands.getOrNull(i)?.let { b ->
+                        setBand(i, b.copy(frequency = hz.coerceIn(20f, 20000f), gainDb = if (b.type.usesGain) snapGain(db) else b.gainDb)) } }
                     EqCurve(config, 120.dp, config.bands.map { it.frequency to it.gainDb }, if (tab == 1) index else -1,
-                        onSelect = { chosen = it; tab = 1 },
-                        onHandle = { i, hz, db -> config.bands.getOrNull(i)?.let { b ->
-                            setBand(i, b.copy(frequency = hz.coerceIn(20f, 20000f), gainDb = if (b.type.usesGain) snapGain(db) else b.gainDb)) } },
-                        onAdd = ::addBand)
+                        onSelect = select.takeIf { on }, onHandle = drag.takeIf { on }, onAdd = (::addBand).takeIf { on })
                 }
             }
             item(key = "tone") {
-                EqCard {
+                EqCard(faded) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                         EqKnob(config.bassDb, 0f..TONE_MAX_DB, config.bassDb / TONE_MAX_DB, eqSigned(config.bassDb), "Bass",
-                            "Bass boost below ${BASS_HZ.roundToInt()} hertz", true) { v -> SoundSettings.update { it.copy(bassDb = v) } }
+                            "Bass boost below ${BASS_HZ.roundToInt()} hertz", on) { v -> SoundSettings.update { it.copy(bassDb = v) } }
                         EqKnob(config.airDb, 0f..TONE_MAX_DB, config.airDb / TONE_MAX_DB, eqSigned(config.airDb), "Air",
-                            "Treble boost above 10 kilohertz", true) { v -> SoundSettings.update { it.copy(airDb = v) } }
+                            "Treble boost above 10 kilohertz", on) { v -> SoundSettings.update { it.copy(airDb = v) } }
                         EqKnob(config.width, 0f..WIDTH_MAX, config.width / WIDTH_MAX, "${config.width.roundToInt()}%", "Width",
-                            "Stereo width, 100 percent is unchanged", true, unit = "") { v ->
+                            "Stereo width, 100 percent is unchanged", on, unit = "") { v ->
                             SoundSettings.update { it.copy(width = v.roundToInt().toFloat().coerceIn(0f, WIDTH_MAX)) }
                         }
                     }
                 }
             }
-            item(key = "tabs") { EqSegments(listOf("Graphic", "Parametric"), tab, { tab = it }) }
+            item(key = "tabs") { EqSegments(listOf("Graphic", "Parametric"), tab, { tab = it }, faded, enabled = on) }
             if (tab == 0) item(key = "graphic") {
-                EqCard {
+                EqCard(faded) {
                     Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("15 bands", style = eqText(15.sp, 20.sp, FontWeight.Medium), color = p.text, modifier = Modifier.weight(1f).semantics { heading() })
                         TextButton(onClick = { SoundSettings.update { it.copy(graphic = List(GRAPHIC_HZ.size) { 0f }) } },
-                            enabled = config.graphic.any { it != 0f }) { Text("Flat") }
+                            enabled = on && config.graphic.any { it != 0f }) { Text("Flat") }
                     }
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         GRAPHIC_HZ.forEachIndexed { i, hz ->
-                            BandSlider(config.graphic[i], graphicLabel(hz), "Band at ${hertz(hz)}", true) { gain ->
+                            BandSlider(config.graphic[i], graphicLabel(hz), "Band at ${hertz(hz)}", on) { gain ->
                                 SoundSettings.update { it.copy(graphic = it.graphic.toMutableList().apply { set(i, gain) }) }
                             }
                         }
@@ -193,30 +198,30 @@ internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
                 }
             } else {
                 item(key = "bands") {
-                    EqCard {
+                    EqCard(faded) {
                         val count = config.bands.size
                         Text(if (count == 1) "1 band" else "$count of $MAX_BANDS bands", style = eqText(15.sp, 20.sp, FontWeight.Medium), color = p.text,
                             modifier = Modifier.semantics { heading() })
                         FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             config.bands.forEachIndexed { i, band ->
-                                BandChip("${i + 1}", i == index, true, "Band ${i + 1}, ${band.type.label}, ${hertz(band.frequency)}") { chosen = i }
+                                BandChip("${i + 1}", i == index, on, "Band ${i + 1}, ${band.type.label}, ${hertz(band.frequency)}") { chosen = i }
                             }
-                            AddBandChip(count < MAX_BANDS) { addBand(1000f, 0f) }
+                            AddBandChip(on && count < MAX_BANDS) { addBand(1000f, 0f) }
                         }
                         if (count == 0) Text("No bands yet. Tap the curve or + to add one.", style = eqText(12.5.sp, 17.sp),
                             color = p.muted, modifier = Modifier.padding(top = 8.dp))
                     }
                 }
                 config.bands.getOrNull(index)?.let { band -> item(key = "band-editor") {
-                    BandEditor(index, band, { setBand(index, it) }) {
+                    BandEditor(index, band, on, faded, { setBand(index, it) }) {
                         SoundSettings.update { it.copy(bands = it.bands.filterIndexed { i, _ -> i != index }) }
                         chosen = (index - 1).coerceAtLeast(0)
                     }
                 } }
             }
             item(key = "preamp") {
-                EqCard {
-                    EqHSlider("Preamp", "${eqSigned(config.preampDb)} dB", (config.preampDb + 20f) / 20f, false, "EQ preamp in decibels", true) { at ->
+                EqCard(faded) {
+                    EqHSlider("Preamp", "${eqSigned(config.preampDb)} dB", (config.preampDb + 20f) / 20f, false, "EQ preamp in decibels", on) { at ->
                         SoundSettings.update { it.copy(preampDb = snapGain(at * 20f - 20f, -20f..0f)) }
                     }
                     val auto = config.preampDb - applied
@@ -238,24 +243,24 @@ internal fun EqualizerScreen(onBack: () -> Unit, bottomInset: Dp) {
 /** One parametric band: its shape, Frequency, Gain (for shapes that have one), Q, on/off and remove. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BandEditor(index: Int, band: Band, onBand: (Band) -> Unit, onRemove: () -> Unit) {
+private fun BandEditor(index: Int, band: Band, enabled: Boolean, modifier: Modifier, onBand: (Band) -> Unit, onRemove: () -> Unit) {
     val p = eqPalette()
-    EqCard {
+    EqCard(modifier) {
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Band ${index + 1} · ${band.type.label}", style = eqText(15.sp, 20.sp, FontWeight.SemiBold), color = p.text,
                 modifier = Modifier.weight(1f).semantics { heading() })
             val toggle: (Boolean) -> Unit = { onBand(band.copy(on = it)) }
-            AppleSwitch(band.on, true, "Band ${index + 1} on", toggle)
+            AppleSwitch(band.on, enabled, "Band ${index + 1} on", toggle)
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (type in FilterType.entries) EqChip(type.label, band.type == type, true) { onBand(band.copy(type = type)) }
+            for (type in FilterType.entries) EqChip(type.label, band.type == type, enabled) { onBand(band.copy(type = type)) }
         }
         EqHSlider("Frequency", String.format(Locale.ROOT, "%,d Hz", band.frequency.roundToInt()), frequencyPosition(band.frequency), false,
-            "Band ${index + 1} frequency", true) { onBand(band.copy(frequency = frequencyAt(it).coerceAtMost(20000f))) }
+            "Band ${index + 1} frequency", enabled) { onBand(band.copy(frequency = frequencyAt(it).coerceAtMost(20000f))) }
         EqHSlider("Gain", if (band.type.usesGain) "${eqSigned(band.gainDb)} dB" else "—", (band.gainDb + 15f) / 30f, true,
-            "Band ${index + 1} gain", band.type.usesGain) { onBand(band.copy(gainDb = snapGain(it * 30f - 15f))) }
-        EqHSlider("Q", String.format(Locale.ROOT, "%.2f", band.q), qPosition(band.q), false, "Band ${index + 1} Q", true) { onBand(band.copy(q = qAt(it))) }
-        TextButton(onClick = onRemove, modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp)) { Text("Remove band ${index + 1}") }
+            "Band ${index + 1} gain", enabled && band.type.usesGain) { onBand(band.copy(gainDb = snapGain(it * 30f - 15f))) }
+        EqHSlider("Q", String.format(Locale.ROOT, "%.2f", band.q), qPosition(band.q), false, "Band ${index + 1} Q", enabled) { onBand(band.copy(q = qAt(it))) }
+        TextButton(onClick = onRemove, enabled = enabled, modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp)) { Text("Remove band ${index + 1}") }
     }
 }
 

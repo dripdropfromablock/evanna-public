@@ -22,6 +22,7 @@ import com.evanna.player.UI_SETTINGS
 import com.evanna.player.EvannaDesign
 import com.evanna.player.counted
 import com.evanna.player.playback.khz
+import com.evanna.player.sidewaysPhone
 import com.evanna.player.ui.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -311,6 +312,49 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
     val windowHeight = LocalConfiguration.current.screenHeightDp.dp
     val stackAlbumActions = LocalConfiguration.current.screenWidthDp < 360 || LocalDensity.current.fontScale > 1.2f
     val libraryInsets = if (albumDetail) Modifier else Modifier.statusBarsPadding().padding(horizontal = 16.dp)
+    // On its side the Library's title and collection picker share one row (docs/mockups/library-sideways-eq-off.html, A).
+    val oneRow = libraryHome && sidewaysPhone()
+
+    /** An iOS pop-up button: a filled capsule with the choice and up-down chevrons, no outline. [compact] sits beside the title. */
+    @Composable
+    fun CollectionPicker(compact: Boolean) {
+        var collectionsOpen by remember { mutableStateOf(false) }
+        val shape = remember { SquirclePillShape() }
+        val fill = AppleColors.fill(LocalLookStyle.current.look.dark)
+        val choice = if (searchMode) "Search in ${view.label.lowercase()}" else view.label
+        Box(if (compact) Modifier else Modifier.fillMaxWidth()) {
+            if (compact) Box(Modifier.heightIn(min = 48.dp).clickable(enabled = !busy, role = Role.Button) { collectionsOpen = true },
+                contentAlignment = Alignment.Center) {
+                Row(Modifier.heightIn(min = 36.dp).clip(shape).background(fill).padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(choice, style = EvannaDesign.typography.bodyLarge, fontSize = 16.sp, maxLines = 1)
+                    Icon(PlayerIcons.ChevronUpDown, null, tint = muted, modifier = Modifier.size(16.dp))
+                }
+            } else Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                .clickable(enabled = !busy, role = Role.Button) { collectionsOpen = true }
+                .clip(shape).background(fill)
+                .padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(choice, style = EvannaDesign.typography.bodyLarge, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                Icon(PlayerIcons.ChevronUpDown, null, tint = muted, modifier = Modifier.size(18.dp))
+            }
+            DropdownMenu(expanded = collectionsOpen, onDismissRequest = { collectionsOpen = false }, checkmarks = true) {
+                val collections = if (libraryHome) listOf(LibraryView.ALBUMS, LibraryView.ARTISTS, LibraryView.TRACKS, LibraryView.FOLDERS)
+                    else LibraryView.entries
+                DropdownChoices(collections, view, collectionsOpen, onSelect = { collection ->
+                    collectionsOpen = false
+                    selectView(collection)
+                }) { Text(it.label) }
+                if (libraryHome) DropdownMenuItem(text = { Text("Playlists") }, onClick = {
+                    collectionsOpen = false
+                    onPlaylists()
+                })
+                if (libraryHome) DropdownMenuItem(text = { Text("Manage music folders") }, onClick = {
+                    collectionsOpen = false
+                    showMusicFolders = true
+                })
+            }
+        }
+    }
     Box(Modifier.fillMaxSize().then(libraryInsets)) {
     CompositionLocalProvider(LocalBarRoom provides barRoom, LocalLineInset provides if (albumDetail) 16.dp else 0.dp) {
     LazyVerticalGrid(cells, Modifier.fillMaxSize(), state = scroll,
@@ -361,8 +405,15 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
             val title = if (kind != null) groupName else if (searchMode) "Search" else "Library"
             val canSort = (kind == null && view in listOf(LibraryView.ALBUMS, LibraryView.TRACKS)) ||
                 kind == LibraryGroupKind.FOLDER
-            Row(Modifier.heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = EvannaDesign.typography.headlineSmall, fontWeight = FontWeight.Bold,
+            Row(Modifier.heightIn(min = if (oneRow) 48.dp else 56.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (oneRow) {
+                    // On its side, iOS shows a small title; the picker sits beside it.
+                    Text(title, style = EvannaDesign.typography.titleLarge, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.semantics { heading() })
+                    Spacer(Modifier.width(12.dp))
+                    CollectionPicker(compact = true)
+                    Spacer(Modifier.weight(1f))
+                } else Text(title, style = EvannaDesign.typography.headlineSmall, fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f).semantics { heading() })
                 if (albumHome || (canSort && !searchHome)) Box {
                     var menuOpen by remember { mutableStateOf(false) }
@@ -412,37 +463,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                 keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
                 modifier = Modifier.fillMaxWidth())
         }
-        if (libraryHome || (searchMode && kind == null && !searchHome)) line {
-            var collectionsOpen by remember { mutableStateOf(false) }
-            val shape = remember { SquirclePillShape() }
-            Box(Modifier.fillMaxWidth()) {
-                // An iOS pop-up button: a filled capsule with the choice and up-down chevrons, no outline.
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .clickable(enabled = !busy, role = Role.Button) { collectionsOpen = true }
-                    .clip(shape).background(AppleColors.fill(LocalLookStyle.current.look.dark))
-                    .padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (searchMode) "Search in ${view.label.lowercase()}" else view.label,
-                        style = EvannaDesign.typography.bodyLarge, fontSize = 17.sp, modifier = Modifier.weight(1f))
-                    Icon(PlayerIcons.ChevronUpDown, null, tint = muted, modifier = Modifier.size(18.dp))
-                }
-                DropdownMenu(expanded = collectionsOpen, onDismissRequest = { collectionsOpen = false }, checkmarks = true) {
-                    val collections = if (libraryHome) listOf(LibraryView.ALBUMS, LibraryView.ARTISTS, LibraryView.TRACKS, LibraryView.FOLDERS)
-                        else LibraryView.entries
-                    DropdownChoices(collections, view, collectionsOpen, onSelect = { collection ->
-                        collectionsOpen = false
-                        selectView(collection)
-                    }) { Text(it.label) }
-                    if (libraryHome) DropdownMenuItem(text = { Text("Playlists") }, onClick = {
-                        collectionsOpen = false
-                        onPlaylists()
-                    })
-                    if (libraryHome) DropdownMenuItem(text = { Text("Manage music folders") }, onClick = {
-                        collectionsOpen = false
-                        showMusicFolders = true
-                    })
-                }
-            }
-        }
+        if (!oneRow && (libraryHome || (searchMode && kind == null && !searchHome))) line { CollectionPicker(compact = false) }
         if (searchHome) {
             line {
                 Text("Quick access", style = EvannaDesign.typography.titleSmall, modifier = Modifier.semantics { heading() })
