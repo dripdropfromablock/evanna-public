@@ -1,0 +1,73 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sideways Cover and controls: proportions</title></head>
+<body style="margin:0">
+<div id="pcs">
+<style>
+#pcs{font:14px/1.35 Roboto,"Segoe UI",sans-serif;color:var(--text,#eee);background:var(--bg,#151517);padding:12px}
+#pcs h3{margin:16px 0 2px;font-size:15px}#pcs p{margin:0 0 8px;font-size:12.5px;color:var(--muted,#9a9aa0)}
+#pcs .rec{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:var(--accent-subtle,#24382a);color:var(--accent,#93d394);margin-left:6px}
+#pcs .ph{width:552px;height:255px;border-radius:20px;overflow:hidden;position:relative;background:#000;color:#fff}
+#pcs .scr{position:absolute;left:0;top:0;width:891px;height:411px;transform:scale(.62);transform-origin:0 0;overflow:hidden;
+  background:radial-gradient(60% 80% at 20% 80%,#4a2626,transparent),linear-gradient(100deg,#2a2a2a,#3d3a3a 50%,#2e2b2b)}
+#pcs .a{position:absolute}
+#pcs .cb{border-radius:50%;text-align:center;font-style:normal}
+#pcs .guide{border:1px dashed rgba(147,211,148,.8);pointer-events:none}
+#pcs .gl{position:absolute;font:600 11px Roboto,sans-serif;color:#93d394;white-space:nowrap}
+</style>
+<p>The green dashed lines show the cover's top and bottom. Sizes are in dp and sp.</p>
+<h3>Now</h3><p>The song starts far below the cover's top. The gap to the cover is wide, and the sound output button is missing.</p><div class="ph" id="c0"><div class="scr"></div></div>
+<h3>A · Lined up with the cover <span class="rec">pick</span></h3><p>The cover moves left. The song starts at the cover's top and the last row ends at its bottom. Bigger title; output is back.</p><div class="ph" id="c1"><div class="scr"></div></div>
+<h3>B · Same place, centred</h3><p>The cover stays put. The song and controls sit together in the middle of the cover's height.</p><div class="ph" id="c2"><div class="scr"></div></div>
+<script>
+(() => {
+const F = "Roboto,'Segoe UI',sans-serif";
+const at = (x, y, e = "") => `left:${x}px;top:${y}px;${e}`;
+const cover = (x, y, s) => `<div class="a" style="${at(x, y, `width:${s}px;height:${s}px;border-radius:10px;overflow:hidden;box-shadow:0 14px 30px rgba(0,0,0,.5);
+  background:linear-gradient(90deg,#fafafa 0 82%,#c9c9c9 82% 100%)`)}">
+  <div class="a" style="${at(s * .2, s * .14, `width:${s * .5}px;height:${s * .86}px;border-radius:45% 45% 8% 8%;background:#141414`)}"></div>
+  <div class="a" style="${at(s * .32, s * .1, `width:${s * .22}px;height:${s * .22}px;border-radius:50%;background:#1d1d1d`)}"></div>
+  <div class="a" style="${at(s * .56, s * .14, `font:900 ${s * .17}px/1 ${F};color:#c42a2a;transform:rotate(-8deg)`)}">BAD</div>
+  <div class="a" style="${at(s * .84, s * .06, `font:900 ${s * .07}px/1 ${F};color:#888;writing-mode:vertical-rl;letter-spacing:2px`)}">MICHAELJACKSON</div></div>`;
+// One layout: where the panel is, where each row sits, and how big the words are.
+const panel = o => {
+  const mid = o.x + o.w / 2, right = o.x + o.w;
+  const step = o.w / 4;
+  return `
+  <div class="a" style="${at(mid - 18, 34, "width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.35)")}"></div>
+  <div class="a" style="${at(o.x, o.title, `font:500 ${o.ts}px/${o.ts + 5}px ${F};width:${o.w - 100}px`)}">Liberian Girl</div>
+  <div class="a" style="${at(o.x, o.title + o.ts + 5, `font:400 ${o.as}px/${o.as + 5}px ${F};color:rgba(255,255,255,.64)`)}">Michael Jackson</div>
+  <i class="a cb" style="${at(right - 88, o.heart, "width:40px;height:40px;line-height:40px;background:#eee;color:#222;font-size:17px")}">♥</i>
+  <i class="a cb" style="${at(right - 40, o.heart, "width:40px;height:40px;line-height:40px;background:rgba(255,255,255,.16);font-size:15px")}">···</i>
+  <div class="a" style="${at(o.x, o.seek, `width:${o.w}px;height:5px;border-radius:3px;background:rgba(255,255,255,.22)`)}"><i style="display:block;width:30%;height:100%;border-radius:3px;background:#eee"></i></div>
+  <div class="a" style="${at(o.x, o.seek + 17, `font:400 13px/16px ${F};color:rgba(255,255,255,.64)`)}">1:15</div>
+  <div class="a" style="${at(right - 40, o.seek + 17, `font:400 13px/16px ${F};color:rgba(255,255,255,.64);width:40px;text-align:right`)}">−2:36</div>
+  <div class="a" style="${at(mid - 64, o.seek + 13, `width:128px;height:22px;border-radius:6px;background:rgba(255,255,255,.12);font:500 11.5px/22px ${F};text-align:center`)}">ALAC · 96 kHz · 24-bit</div>
+  ${[[mid - o.w / 4, 36, "M22 6v20L4 16zM40 6v20L22 16z", .45], [mid, 52, "M10 4h7v24h-7zM23 4h7v24h-7z", 1], [mid + o.w / 4, 36, "M2 6v20l18-10zM20 6v20l18-10z", 1]].map(([x, size, d, op]) =>
+    `<svg class="a" viewBox="0 0 ${d.startsWith("M10") ? 40 : 42} 32" style="${at(x - size / 2, o.play - size * .4, `width:${size}px;height:${size * .8}px;opacity:${op}`)}"><path d="${d}" fill="#f2f2f2"/></svg>`).join("")}
+  <div class="a" style="${at(o.x + 4, o.row - 12, "font-size:20px;line-height:24px")}">❞</div>
+  <div class="a" style="${at(o.x + 46, o.row - 9, "font-size:14px;line-height:18px")}">🔈</div>
+  <div class="a" style="${at(o.x + 68, o.row - 2, `width:${o.slider}px;height:5px;border-radius:3px;background:#eee`)}"></div>
+  ${o.output ? `<div class="a" style="${at(right - 84, o.row - 13, "width:18px;height:26px;border:2.5px solid #eee;border-radius:5px;box-sizing:border-box")}"><i class="a" style="${at(3.5, 9, "width:6px;height:6px;border-radius:50%;border:2px solid #eee")}"></i></div>` : ""}
+  <div class="a" style="${at(right - 30, o.row - 12, "font-size:20px;line-height:24px")}">☰</div>`;
+};
+const guide = (y0, y1, label) => `<div class="a guide" style="${at(0, y0, `width:891px;height:${y1 - y0}px;border-left:0;border-right:0`)}"></div>
+  <div class="gl" style="${at(8, y0 - 15)}">${label}</div>`;
+const phones = [
+  // Now, measured off the emulator.
+  { cover: [106, 52, 310], x: 513, w: 346, title: 136, ts: 20, as: 20, heart: 146, seek: 201, play: 282, row: 352, slider: 206, output: false },
+  // A: 56 dp from the edge, a 48 dp gap, the song at the cover's top and the last row at its bottom.
+  { cover: [56, 52, 307], x: 411, w: 448, title: 52, ts: 24, as: 20, heart: 60, seek: 136, play: 226, row: 335, slider: 258, output: true },
+  // B: the cover where it is, everything else in the middle of its height.
+  { cover: [106, 52, 310], x: 513, w: 346, title: 92, ts: 22, as: 20, heart: 104, seek: 166, play: 240, row: 306, slider: 164, output: true },
+];
+phones.forEach((o, v) => {
+  const [cx, cy, s] = o.cover;
+  document.querySelector(`#c${v} .scr`).innerHTML = `
+    <div class="a" style="${at(46, 6, `font:600 14px/16px ${F}`)}">2:14</div><div class="a" style="right:28px;top:6px;font:600 12px/16px ${F}">▂▄▆ ◠ ▮▮</div>
+    ${guide(cy, cy + s, `cover ${s} dp`)}${cover(cx, cy, s)}${panel(o)}
+    <div class="a" style="${at(392, 400, "width:108px;height:3px;border-radius:2px;background:rgba(255,255,255,.85)")}"></div>`;
+});
+})();
+</script>
+</div>
+</body></html>
