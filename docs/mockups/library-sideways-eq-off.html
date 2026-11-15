@@ -1,0 +1,148 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sideways Library header and the EQ when off</title></head>
+<body style="margin:0">
+<div id="lq">
+<style>
+#lq{font:14px/1.35 Roboto,"Segoe UI",sans-serif;color:var(--text,#eee);background:var(--bg,#151517);padding:12px}
+#lq h3{margin:18px 0 2px;font-size:15px}
+#lq p{margin:0 0 8px;font-size:12.5px;color:var(--muted,#9a9aa0)}
+#lq .rec{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:var(--accent-subtle,#24382a);color:var(--accent,#93d394);margin-left:6px}
+#lq .ctl{margin:0 0 8px}
+#lq .ctl button{font:600 12px Roboto,sans-serif;padding:7px 14px;border-radius:8px;border:1px solid var(--border,#333);cursor:pointer;background:var(--accent,#93d394);color:var(--bg,#111)}
+#lq .set{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+#lq .cap{font-size:12px;line-height:1.4;color:var(--muted,#9a9aa0);margin-top:6px}
+#lq .cap b{display:block;color:var(--text,#eee);font-size:13px;margin-bottom:1px}
+#lq.ns *{transition:none!important}
+#lq .ph{border-radius:22px;overflow:hidden;position:relative;background:#000;color:#fff;box-shadow:0 0 0 1px var(--border,#333)}
+#lq .scr{position:absolute;left:0;top:0;transform-origin:0 0;overflow:hidden;background:#000}
+#lq .a{position:absolute}
+#lq .one{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#lq .gl{background:rgba(30,30,32,.6);border:1px solid rgba(255,255,255,.16);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+#lq .card{position:absolute;left:16px;width:379px;border-radius:16px;background:#1c1c1e}
+#lq .chip{display:inline-flex;align-items:center;height:34px;border-radius:17px;background:#2c2c2e;padding:0 14px;font:500 15px Roboto,sans-serif;margin:0 6px 8px 0}
+#lq .sw{position:absolute;left:312px;top:24px;width:51px;height:31px;border-radius:16px;background:#39393d;transition:background .3s}
+#lq .sw i{position:absolute;left:2px;top:2px;width:27px;height:27px;border-radius:50%;background:#fff;transition:transform .3s}
+#lq .on .sw{background:#30d158}
+#lq .on .sw i{transform:translateX(20px)}
+#lq .rest{transition:opacity .35s,filter .35s,transform .35s}
+#lq .note{transition:opacity .3s}
+#lq .on .note{opacity:0}
+#lq .dim:not(.on) .rest{opacity:.38;filter:grayscale(1)}
+#lq .hide:not(.on) .rest{opacity:0;transform:translateY(-14px)}
+</style>
+<h3>1 · Library on its side</h3>
+<p>The Albums list, on its side. The bar at the bottom is the same in all three.</p>
+<div class="set" id="lq-lib"></div>
+<h3>2 · Equalizer when off</h3>
+<p>Each phone starts with the equalizer off. Press the button to turn it on in all three.</p>
+<div class="ctl"><button id="lq-eq">Turn the EQ on</button></div>
+<div class="set" id="lq-eqs"></div>
+<script>
+(() => {
+const root = document.getElementById("lq");
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) root.classList.add("ns");
+const F = "Roboto,'Segoe UI',sans-serif";
+const name = k => k === "now" ? "now" : "option " + k.toUpperCase();
+const bat = (x, y) => `<div class="a" style="left:${x}px;top:${y}px;width:26px;height:13px;border-radius:4px;background:#fff"></div>`;
+
+// 1. Sideways: 891 x 411 dp, drawn at 0.62.
+const cov = ["linear-gradient(135deg,#dfe3dc,#8fa58c 45%,#33402f)", "linear-gradient(170deg,#0e2a24,#26594a 55%,#070b0a)",
+  "linear-gradient(135deg,#c9cfcf,#f2f2f2 30%,#3f9a93 58%,#1d1d1d)", "linear-gradient(160deg,#16301f,#2fbf5a 45%,#0f1d16)",
+  "linear-gradient(110deg,#f2f2f0 0 55%,#1a1a1a 55% 82%,#f2f2f0 82%)"];
+const albums = [["2 Alivë", "Yeat"], ["2093", "Yeat"], ["4L", "Yeat"], ["Alivë", "Yeat"], ["Bad (25th Anniversary)", "Michael Jackson"]];
+const grid = top => {
+  let h = "";
+  for (let r = 0; r < 2; r++) for (let c = 0; c < 5; c++) {
+    const i = r ? 4 - c : c, x = 57 + c * 166, y = top + r * 212;
+    h += `<div class="a" style="left:${x}px;top:${y}px;width:154px;height:154px;border-radius:8px;background:${cov[i]}"></div>
+      <div class="a one" style="left:${x}px;top:${y + 160}px;width:154px;font:600 15px/19px ${F}">${albums[i][0]}</div>
+      <div class="a one" style="left:${x}px;top:${y + 179}px;width:154px;font:400 14px/18px ${F};color:#8e8e93">${albums[i][1]}</div>`;
+  }
+  return h;
+};
+const updown = '<svg width="14" height="18" viewBox="0 0 14 18" style="display:block"><path d="M3 7l4-4 4 4M3 11l4 4 4-4" stroke="#8e8e93" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const down = '<svg width="18" height="18" viewBox="0 0 24 24" style="display:block"><path d="M5 9l7 7 7-7" stroke="#8e8e93" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const layout = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" style="display:block"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>';
+const heads = {
+  now: [158, `<div class="a" style="left:57px;top:36px;font:700 32px/40px ${F}">Library</div><div class="a" style="left:842px;top:44px">${layout}</div>
+    <div class="a" style="left:57px;top:98px;width:818px;height:48px;border-radius:24px;background:#1c1c1e;display:flex;align-items:center;justify-content:space-between;padding:0 18px;box-sizing:border-box;font:400 17px ${F}">Albums${updown}</div>`],
+  a: [84, `<div class="a" style="left:57px;top:40px;font:700 20px/26px ${F}">Library</div>
+    <div class="a" style="left:150px;top:35px;height:36px;border-radius:18px;background:#1c1c1e;display:flex;align-items:center;gap:10px;padding:0 14px;font:400 16px ${F}">Albums${updown}</div>
+    <div class="a" style="left:842px;top:41px">${layout}</div>`],
+  b: [96, `<div class="a" style="left:57px;top:38px;display:flex;align-items:center;gap:8px;font:700 30px/38px ${F}">Albums${down}</div><div class="a" style="left:842px;top:45px">${layout}</div>`],
+};
+const dock = `<div class="a" style="left:0;top:295px;width:891px;height:116px;background:linear-gradient(rgba(0,0,0,0),#000 28%)"></div>
+  <div class="a gl" style="left:57px;top:327px;width:443px;height:56px;border-radius:28px;display:flex;align-items:center;gap:12px;padding:0 24px 0 14px;box-sizing:border-box">
+    <div style="width:38px;height:38px;border-radius:7px;background:${cov[2]}"></div><div style="flex:1;line-height:1.2"><div style="font:600 16px ${F}">Tëslas &amp; Rovers</div><div style="font:400 14px ${F};color:#c7c7cc">Yeat</div></div>
+    <svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 3.5l14 8.5-14 8.5z" fill="#fff"/></svg><svg width="26" height="20" viewBox="0 0 30 22" style="margin-left:18px"><path d="M1 2l13 9-13 9zM15 2l13 9-13 9z" fill="#fff"/></svg></div>
+  <div class="a gl" style="left:512px;top:327px;width:298px;height:56px;border-radius:28px;display:flex;align-items:center;justify-content:space-around;font:500 12px ${F};color:#ddd">
+    <span>Carousel</span><span style="background:rgba(255,255,255,.14);padding:8px 16px;border-radius:20px;color:#fff">Library</span><span>Settings</span></div>
+  <div class="a gl" style="left:819px;top:327px;width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg></div>
+  <div class="a" style="left:375px;top:398px;width:140px;height:4px;border-radius:2px;background:#fff"></div>`;
+const libCaps = {
+  now: "<b>Now</b>The title and picker take 120 dp. The album names hide under the bar.",
+  a: '<b>A · One row <span class="rec">pick</span></b>A small title with the picker beside it, as iOS does on its side. The names show, and the next row peeks in.',
+  b: "<b>B · Picker as the title</b>The big title names the list; tap it to switch. It saves one row.",
+};
+root.querySelector("#lq-lib").innerHTML = ["now", "a", "b"].map(k =>
+  `<div style="width:552px"><div class="ph" style="width:552px;height:255px" role="img" aria-label="Library on its side, ${name(k)}"><div class="scr" style="width:891px;height:411px;transform:scale(.62)">
+  <div class="a" style="left:46px;top:6px;font:600 15px ${F}">6:00</div>${bat(838, 9)}
+  ${heads[k][1]}${grid(heads[k][0])}${dock}</div></div><div class="cap">${libCaps[k]}</div></div>`).join("");
+
+// 2. Upright Equalizer: 411 x 700 dp of the screen, drawn at 0.66.
+const header = k => k === "now"
+  ? { y: 168, html: `<div class="a" style="left:16px;top:44px;width:48px;height:48px;border-radius:50%;background:#1c1c1e;display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="a" style="left:16px;top:108px;font:700 34px/40px ${F}">Equalizer</div>` }
+  : { y: 100, html: `<div class="a" style="left:12px;top:50px"><svg width="28" height="28" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="a" style="left:0;top:52px;width:411px;text-align:center;font:600 17px/24px ${F}">Equalizer</div>` };
+const bars = '<svg width="20" height="20" viewBox="0 0 24 24" stroke="#8e8e93" stroke-width="2" stroke-linecap="round"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg>';
+const knob = (f, text, label) => {
+  const c = 2 * Math.PI * 23, arc = c * .75;
+  return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px"><svg width="56" height="56" viewBox="0 0 56 56">
+    <circle cx="28" cy="28" r="23" fill="none" stroke="#3a3a3c" stroke-width="5" stroke-linecap="round" stroke-dasharray="${arc} ${c}" transform="rotate(135 28 28)"/>
+    <circle cx="28" cy="28" r="23" fill="none" stroke="#e5e5ea" stroke-width="5" stroke-linecap="round" stroke-dasharray="${arc * f} ${c}" transform="rotate(135 28 28)"/>
+    <text x="28" y="33" text-anchor="middle" font-size="13" font-weight="600" font-family="${F}" fill="#fff">${text}</text></svg>
+    <span style="font:400 13px ${F};color:#8e8e93">${label}</span></div>`;
+};
+const curve = `<svg width="339" height="140" viewBox="0 0 339 140" style="position:absolute;left:20px;top:44px">
+  ${[20, 45, 70, 95, 120].map(y => `<line x1="0" x2="339" y1="${y}" y2="${y}" stroke="#333" stroke-width="1"/>`).join("")}
+  ${[77, 177, 277].map(x => `<line y1="0" y2="140" x1="${x}" x2="${x}" stroke="#333" stroke-width="1"/>`).join("")}
+  <path d="M0 8 C40 8 60 12 80 35 C100 60 110 80 150 76 C190 72 200 70 230 74 C250 76 260 68 275 72 C285 74 290 50 300 48 C310 46 320 40 339 40 L339 70 L0 70 Z" fill="rgba(255,255,255,.12)"/>
+  <path d="M0 8 C40 8 60 12 80 35 C100 60 110 80 150 76 C190 72 200 70 230 74 C250 76 260 68 275 72 C285 74 290 50 300 48 C310 46 320 40 339 40" fill="none" stroke="#f2f2f7" stroke-width="2.5"/>
+  ${[[78, 30], [86, 62], [150, 72], [195, 76], [222, 68], [240, 78], [262, 77], [272, 58], [282, 52], [296, 64]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="5" fill="#d1d1d6"/>`).join("")}</svg>`;
+const eqCaps = {
+  now: "<b>Now</b>Off looks just like on. The round back button and big title differ from the other Settings pages.",
+  a: '<b>A · Fade when off <span class="rec">pick</span></b>The Settings header. Off, the rest turns grey and does nothing until you switch it on. Your curve stays in view.',
+  b: "<b>B · Hide when off</b>The Settings header. Off, only the switch and a note show. Switching it on brings the controls back.",
+};
+const look = { now: "", a: "dim", b: "hide" };
+root.querySelector("#lq-eqs").innerHTML = ["now", "a", "b"].map(k => {
+  const h = header(k), y = h.y;
+  const note = k === "now" ? "" : `<div class="a note" style="left:32px;top:${y + 90}px;width:350px;font:400 13px/18px ${F};color:#8e8e93">Off. Every sample plays unchanged.</div>`;
+  const rest = y + (k === "now" ? 92 : 120);
+  return `<div style="width:271px"><div class="ph" style="width:271px;height:462px" aria-label="Equalizer, ${name(k)}"><div class="scr eq ${look[k]}" style="width:411px;height:700px;transform:scale(.66)">
+  <div class="a" style="left:28px;top:12px;font:600 15px ${F}">6:00</div>${bat(358, 15)}${h.html}
+  <div class="card" style="top:${y}px;height:82px"><div class="a" style="left:20px;top:31px">${bars}</div>
+    <div class="a" style="left:56px;top:13px;font:500 16px/21px ${F}">Equalizer</div>
+    <div class="a" style="left:56px;top:35px;width:240px;font:400 12.5px/17px ${F};color:#8e8e93">Speaker, Bluetooth, headphones and USB DACs</div>
+    <div class="sw"><i></i></div></div>${note}
+  <div class="rest">
+    <div class="card" style="top:${rest}px;height:184px"><div class="a" style="left:20px;top:20px;font:500 15px ${F}">Presets</div><div class="a" style="left:330px;top:20px;font:500 15px ${F}">Save</div>
+      <div class="a" style="left:20px;top:58px;font:500 15px ${F}">Find headphones</div><div class="a" style="left:168px;top:58px;font:500 15px ${F}">Import file</div>
+      <div class="a" style="left:20px;top:96px;width:350px">${["Flat", "Bass boost", "Warm", "Bright", "Vocal", "Loudness"].map(c => `<span class="chip">${c}</span>`).join("")}</div></div>
+    <div class="card" style="top:${rest + 194}px;height:200px"><div class="a" style="left:20px;top:16px;font:400 12px ${F};color:#8e8e93">Drag a point, or tap to add a band</div>
+      <div class="a" style="left:248px;top:16px;font:400 12px ${F};color:#8e8e93">Preamp <b style="color:#fff;font-weight:500">−12.3 dB</b></div>${curve}</div>
+    <div class="card" style="top:${rest + 404}px;height:104px;display:flex;align-items:center;justify-content:space-evenly">${knob(.5, "+6.0", "Bass")}${knob(.233, "+2.8", "Air")}${knob(.585, "117%", "Width")}</div>
+  </div></div></div><div class="cap">${eqCaps[k]}</div></div>`;
+}).join("");
+const eqBtn = root.querySelector("#lq-eq");
+eqBtn.onclick = () => {
+  const on = !root.querySelector(".eq").classList.contains("on");
+  root.querySelectorAll(".eq").forEach(e => e.classList.toggle("on", on));
+  eqBtn.textContent = on ? "Turn the EQ off" : "Turn the EQ on";
+};
+})();
+</script>
+</div>
+</body></html>
