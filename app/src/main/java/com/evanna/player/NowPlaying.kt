@@ -2,6 +2,8 @@ package com.evanna.player
 
 import android.graphics.Bitmap
 import android.os.Build
+import android.os.SystemClock
+import android.view.accessibility.AccessibilityManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -65,9 +67,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.lerp
@@ -90,7 +97,10 @@ import com.evanna.player.library.Lyrics
 import com.evanna.player.playback.SleepMode
 import com.evanna.player.playback.nearest
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /** The three pages of the Now Playing sheet; [heading] names the page for screen readers. */
 internal enum class PlayerPage(val heading: String) { LYRICS("Lyrics"), SONG("Now Playing"), QUEUE("Queue") }
@@ -1090,7 +1100,36 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
     var pane by remember { mutableStateOf(PlayerPage.LYRICS) }
     SideEffect { if (page != PlayerPage.SONG) pane = page }
     val shift by animateFloatAsState(if (page == PlayerPage.SONG) 0f else 1f, tween(420, easing = FastOutSlowInEasing), label = "details shift")
+    // Left alone while music plays, the bar slides down off the screen and the cover and pages grow into its room.
+    // Any touch or key brings it back. It stays while paused, while Audio output is open and with TalkBack on.
+    val context = LocalContext.current
+    val talkBack = remember(context) { context.getSystemService(AccessibilityManager::class.java)?.isTouchExplorationEnabled == true }
+    val canHide = state.playing && !outputSheetOpen && !talkBack
+    val lastTouch = remember { mutableLongStateOf(SystemClock.uptimeMillis()) }
+    var idle by remember { mutableStateOf(false) }
+    LaunchedEffect(canHide) {
+        idle = false
+        if (!canHide) return@LaunchedEffect
+        lastTouch.longValue = SystemClock.uptimeMillis()
+        while (true) {
+            val wait = lastTouch.longValue + BAR_IDLE_MS - SystemClock.uptimeMillis()
+            if (wait > 0) delay(wait)
+            else {
+                idle = true
+                snapshotFlow { idle }.first { !it }
+            }
+        }
+    }
+    fun wake() {
+        lastTouch.longValue = SystemClock.uptimeMillis()
+        if (idle) idle = false
+    }
+    val hidden by animateFloatAsState(if (idle) 1f else 0f, tween(if (idle) 420 else 260, easing = FastOutSlowInEasing), label = "bar hide")
+    val navigationBars = WindowInsets.navigationBars
     Column(Modifier.fillMaxSize().graphicsLayer { alpha = contentAlpha() }
+        // Watched before anything below acts on it, and never consumed, so the touch still does what it touched.
+        .pointerInput(Unit) { awaitPointerEventScope { while (true) { awaitPointerEvent(PointerEventPass.Initial); wake() } } }
+        .onPreviewKeyEvent { wake(); false }
         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))) {
         Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             PlayerHeaderButton(PlayerIcons.ChevronDown, "Minimize player", onClick = onBack)
@@ -1140,9 +1179,20 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
                 else LyricsPage(lyrics, state, onSeek, Modifier.fillMaxSize(), small = true, accent = accent)
             }
         }
-        DetailsBar(state, page, onPage, lyrics, accent, onPlayPause, onPrevious, onNext, onOutput, outputSheetOpen, onSeek)
+        // Hidden, the bar keeps only the room above the home bar; it slides by its full height, so it leaves the screen.
+        Box(Modifier.layout { measurable, constraints ->
+            val bar = measurable.measure(constraints)
+            val rest = navigationBars.getBottom(this) + 6.dp.roundToPx()
+            val height = bar.height - ((bar.height - rest).coerceAtLeast(0) * hidden).roundToInt()
+            layout(bar.width, height) { bar.place(0, (rest * hidden).roundToInt()) }
+        }.graphicsLayer { alpha = 1f - hidden }.then(if (idle) Modifier.clearAndSetSemantics {} else Modifier)) {
+            DetailsBar(state, page, onPage, lyrics, accent, onPlayPause, onPrevious, onNext, onOutput, outputSheetOpen, onSeek)
+        }
     }
 }
+
+/** How long the sideways Details bar waits, with music playing and nothing touched, before it slides away. */
+private const val BAR_IDLE_MS = 5_000L
 
 /** Details · Lyrics · Queue, as an iOS segmented control. */
 @Composable
