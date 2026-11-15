@@ -1,0 +1,115 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sideways Now Playing: page dots</title></head>
+<body style="margin:0">
+<div id="pdm">
+<style>
+#pdm{font:14px/1.35 Roboto,"Segoe UI",sans-serif;color:var(--text,#eee);background:var(--bg,#151517);padding:12px}
+#pdm h3{margin:16px 0 2px;font-size:15px}#pdm p{margin:0 0 8px;font-size:12.5px;color:var(--muted,#9a9aa0)}
+#pdm .rec{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:var(--accent-subtle,#24382a);color:var(--accent,#93d394);margin-left:6px}
+#pdm .ctl{display:flex;gap:8px;margin:0 0 6px}
+#pdm .ctl button{font:600 12px Roboto,sans-serif;padding:7px 14px;border-radius:8px;border:1px solid var(--border,#333);cursor:pointer;background:var(--card,#222);color:var(--card-fg,#eee)}
+#pdm .ctl button.go{background:var(--accent,#93d394);color:var(--bg,#111);border-color:transparent}
+#pdm.ns *{transition:none!important}
+#pdm .ph{width:560px;height:259px;border-radius:22px;overflow:hidden;position:relative;background:#000;color:#fff}
+#pdm .scr{position:absolute;left:0;top:0;width:800px;height:370px;transform:scale(.7);transform-origin:0 0;overflow:hidden;background:radial-gradient(80% 100% at 30% 40%,#4a3a3a,#141213)}
+#pdm .a{position:absolute}
+#pdm .t{transition:transform .45s cubic-bezier(.2,.8,.2,1),opacity .45s,left .25s cubic-bezier(.3,.7,.3,1),width .25s cubic-bezier(.3,.7,.3,1)}
+#pdm .cb{border-radius:50%;background:rgba(255,255,255,.14);width:28px;height:28px;text-align:center;line-height:28px;font-size:13px;font-style:normal}
+#pdm .cov{border-radius:10px;box-shadow:0 12px 28px rgba(0,0,0,.5)}
+#pdm .disc{border-radius:50%;-webkit-mask:radial-gradient(circle,transparent 0 9%,#000 9.5%);mask:radial-gradient(circle,transparent 0 9%,#000 9.5%);box-shadow:inset 0 0 0 3px rgba(255,255,255,.6)}
+#pdm .bd{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 7px;border-radius:5px;background:rgba(255,255,255,.16);margin-right:5px}
+#pdm .mut{color:rgba(255,255,255,.6)}
+#pdm .rgn{left:250px;top:56px;width:520px;height:236px;overflow:hidden}
+#pdm .pg{left:0;top:0;width:520px;height:236px}
+#pdm .row{height:34px;display:flex;align-items:center;font-size:13.5px;border-bottom:.5px solid rgba(255,255,255,.1)}
+#pdm .bar{left:30px;right:30px;top:300px;height:48px;border-radius:24px;background:rgba(255,255,255,.12)}
+#pdm .ind{left:379px;top:36px;width:42px;height:6px}
+#pdm .dt{position:absolute;top:0;width:6px;height:6px;border-radius:3px;background:rgba(255,255,255,.35)}
+#pdm .pill{position:absolute;top:-1px;height:8px;border-radius:4px;background:#fff;box-shadow:0 0 8px rgba(255,255,255,.35)}
+#pdm .lbl{left:340px;top:26px;width:120px;height:26px;border-radius:13px;background:rgba(255,255,255,.2);text-align:center;line-height:26px;font-size:12.5px;font-weight:600;opacity:0;transform:scale(.3)}
+#pdm .lbl.on{opacity:1;transform:scale(1)}
+#pdm .idle .bar{transform:translateY(80px);opacity:0}
+#pdm .idle .ind,#pdm .idle .lbl{opacity:0}
+#pdm .idle .left{transform:scale(1.16)}
+#pdm .idle .rgn{transform:translateX(34px)}
+</style>
+<p>The Details · Lyrics · Queue bar goes. Swipe left or right on the screen to change page; the bar's lyrics and queue buttons still work.</p>
+<div class="ctl"><button class="go" id="pd-swipe">Swipe to next page →</button><button id="pd-idle">Leave it idle</button></div>
+<h3>A · No bar, nothing on top</h3><p>The cleanest. Nothing says which page you are on.</p><div class="ph" id="pa"><div class="scr"></div></div>
+<h3>B · Three dots <span class="rec">pick</span></h3><p>The bright dot stretches toward the next one as you swipe, then settles. Hides with the bar.</p><div class="ph" id="pb"><div class="scr"></div></div>
+<h3>C · Dots that say the page</h3><p>Like B, and on each change the dot grows into the page name for a second.</p><div class="ph" id="pc"><div class="scr"></div></div>
+<script>
+(() => {
+const AC = "#f3a093";
+const COVER = "linear-gradient(172deg,transparent 22%,#d01818 23% 27%,transparent 28%),linear-gradient(90deg,transparent 16%,#111 16% 86%,transparent 86%),linear-gradient(transparent 8%,#f4f4f2 8% 90%,transparent 90%),#f4f4f2";
+const PAGES = ["Details", "Lyrics", "Queue"];
+const at = (x, y, e = "") => `left:${x}px;top:${y}px;${e}`;
+const root = document.getElementById("pdm");
+const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let page = 0, idle = false;
+const details = `<div class="a" style="${at(140, 6, "font-size:26px;font-weight:700")}">JumpOutTheHouse</div>
+  <div class="a" style="${at(140, 42, `font-size:16px;font-weight:500;color:${AC}`)}">Playboi Carti</div>
+  <div class="a mut" style="${at(140, 66, "font-size:12.5px")}">Whole Lotta Red · 2020 · Hip-Hop/Rap</div>
+  <div class="a" style="${at(140, 92)}"><b class="bd">ALAC</b><b class="bd">16-bit · 44.1 kHz</b><b class="bd">2.0</b></div>
+  <div class="a mut" style="${at(140, 130, "font-size:10.5px;font-weight:700;letter-spacing:.8px")}">UP NEXT · TRACK 5 OF 24</div>
+  <div class="a" style="${at(140, 146, "width:370px")}"><div class="row">Meh <span class="mut">&nbsp;· Playboi Carti</span></div><div class="row">Vamp Anthem <span class="mut">&nbsp;· Playboi Carti</span></div></div>`;
+const lyrics = `<div class="a" style="${at(20, 30, "width:480px;text-align:center;font-weight:700;line-height:1.5")}">
+  <div style="color:rgba(255,255,255,.4);font-size:15px">Radio low, the windows down</div>
+  <div style="color:rgba(255,255,255,.4);font-size:15px">Every song we used to know</div>
+  <div style="color:${AC};font-size:21px;margin:6px 0">Turn it up, we found the sound</div>
+  <div style="color:rgba(255,255,255,.85);font-size:15px">Hold the note and let it ring</div>
+  <div style="color:rgba(255,255,255,.85);font-size:15px">Count the stars along the way</div></div>`;
+const queue = `<div class="a" style="${at(20, 6, "font-size:17px;font-weight:700")}">Playing Next</div>
+  <div class="a" style="${at(20, 36, "width:480px")}">${["Meh", "Vamp Anthem", "New N3on", "Control", "Beno!"].map(s =>
+  `<div class="row">${s} <span class="mut">&nbsp;· Playboi Carti</span></div>`).join("")}</div>`;
+const bar = `<div class="a bar t"><div class="a" style="${at(22, 11, "font-size:20px;letter-spacing:16px")}">⏮⏸⏭</div>
+  <div class="a" style="${at(150, 16, "font-size:12px")}">0:19</div>
+  <div class="a" style="${at(192, 21, "width:370px;height:6px;border-radius:3px;background:rgba(255,255,255,.2)")}"><i style="display:block;width:22%;height:100%;border-radius:3px;background:#fff"></i></div>
+  <div class="a" style="${at(572, 16, "font-size:12px")}">−1:14</div><div class="a mut" style="${at(630, 13, "font-size:16px;letter-spacing:20px")}">❞🔈☰</div></div>`;
+for (const id of ["pa", "pb", "pc"]) {
+  const dots = id === "pa" ? "" : `<div class="a ind t"><i class="dt" style="left:0"></i><i class="dt" style="left:18px"></i><i class="dt" style="left:36px"></i><i class="pill t"></i></div>`;
+  const label = id === "pc" ? `<div class="a lbl t"></div>` : "";
+  document.querySelector(`#${id} .scr`).innerHTML = `<div class="a" style="${at(44, 8, "font-size:12px;font-weight:600")}">1:27</div>
+    <i class="a cb" style="${at(40, 26)}">⌄</i><i class="a cb" style="right:76px;top:26px">♥</i><i class="a cb" style="right:40px;top:26px">···</i>
+    ${dots}${label}
+    <div class="a left t" style="left:0;top:0;width:250px;height:370px;transform-origin:44px 66px">
+      <div class="a disc t" style="${at(154, 73, `width:200px;height:200px;background:radial-gradient(circle,#d9dde0 0 21%,#aab 21.5% 22.5%,transparent 23%),${COVER}`)}"></div>
+      <div class="a cov t" style="${at(44, 66, `width:214px;height:214px;background:${COVER};transform-origin:0 0`)}"></div>
+      <div class="a name t" style="${at(44, 250, "opacity:0")}"><div style="font-size:15px;font-weight:600">JumpOutTheHouse</div><div style="font-size:13px;color:${AC}">Playboi Carti</div></div>
+    </div>
+    <div class="a rgn t">${[details, lyrics, queue].map((p, i) => `<div class="a pg t" data-p="${i}">${p}</div>`).join("")}</div>${bar}`;
+}
+// The bright dot: a stretch that covers both dots, then it settles on the new one.
+const pillAt = (el, from, to) => {
+  const lo = Math.min(from, to), hi = Math.max(from, to);
+  el.style.left = `${lo * 18 - 2}px`; el.style.width = `${(hi - lo) * 18 + 10}px`;
+  setTimeout(() => { el.style.left = `${to * 18 - 2}px`; el.style.width = "10px"; }, still ? 0 : 230);
+};
+const show = (from, first) => {
+  root.querySelectorAll(".ph").forEach(ph => {
+    ph.classList.toggle("idle", idle);
+    ph.querySelectorAll(".pg").forEach(p => p.style.transform = `translateX(${(+p.dataset.p - page) * 100}%)`);
+    const d = page === 0;
+    ph.querySelector(".disc").style.transform = d ? "none" : "translateX(-110px)";
+    ph.querySelector(".disc").style.opacity = d ? 1 : 0;
+    ph.querySelector(".cov").style.transform = d ? "none" : "scale(.84)";
+    ph.querySelector(".name").style.opacity = d ? 0 : 1;
+    const pill = ph.querySelector(".pill");
+    if (pill) first ? (pill.style.left = `${page * 18 - 2}px`, pill.style.width = "10px") : pillAt(pill, from, page);
+    const lbl = ph.querySelector(".lbl");
+    if (lbl && !first) {
+      lbl.textContent = PAGES[page]; lbl.classList.add("on");
+      clearTimeout(lbl.timer); lbl.timer = setTimeout(() => lbl.classList.remove("on"), 1200);
+    }
+  });
+};
+root.classList.add("ns"); show(0, true);
+requestAnimationFrame(() => requestAnimationFrame(() => { if (!still) root.classList.remove("ns"); }));
+document.getElementById("pd-swipe").onclick = () => { const from = page; page = (page + 1) % 3; idle = false; show(from, false); idleBtn(); };
+const ib = document.getElementById("pd-idle");
+const idleBtn = () => ib.textContent = idle ? "Touch the screen" : "Leave it idle";
+ib.onclick = () => { idle = !idle; show(page, true); idleBtn(); };
+})();
+</script>
+</div>
+</body></html>
