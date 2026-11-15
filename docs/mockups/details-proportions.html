@@ -1,0 +1,125 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sideways Details: proportions and idle</title></head>
+<body style="margin:0">
+<div id="pdp">
+<style>
+#pdp{font:14px/1.35 Roboto,"Segoe UI",sans-serif;color:var(--text,#eee);background:var(--bg,#151517);padding:12px}
+#pdp h3{margin:16px 0 2px;font-size:15px}#pdp p{margin:0 0 8px;font-size:12.5px;color:var(--muted,#9a9aa0)}
+#pdp .rec{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:var(--accent-subtle,#24382a);color:var(--accent,#93d394);margin-left:6px}
+#pdp .ctl{display:flex;gap:8px;margin:0 0 6px}
+#pdp .ctl button{font:600 12px Roboto,sans-serif;padding:7px 14px;border-radius:8px;border:1px solid var(--border,#333);cursor:pointer;background:var(--accent,#93d394);color:var(--bg,#111)}
+#pdp.ns *{transition:none!important}
+#pdp .ph{width:552px;height:255px;border-radius:20px;overflow:hidden;position:relative;background:#000;color:#fff}
+#pdp .scr{position:absolute;left:0;top:0;width:891px;height:411px;transform:scale(.62);transform-origin:0 0;overflow:hidden;
+  background:linear-gradient(100deg,#121212 0%,#333 40%,#474747 72%,#2b2b2b 100%)}
+#pdp .a{position:absolute}
+#pdp .t{transition:left .45s cubic-bezier(.2,.8,.2,1),top .45s cubic-bezier(.2,.8,.2,1),width .45s cubic-bezier(.2,.8,.2,1),height .45s cubic-bezier(.2,.8,.2,1),transform .45s cubic-bezier(.2,.8,.2,1),opacity .4s}
+#pdp .cb{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.14);text-align:center;line-height:32px;font-size:15px;font-style:normal}
+#pdp .cov{border-radius:10px;box-shadow:0 12px 28px rgba(0,0,0,.5)}
+#pdp .disc{border-radius:50%;-webkit-mask:radial-gradient(circle,transparent 0 9%,#000 9.5%);mask:radial-gradient(circle,transparent 0 9%,#000 9.5%);box-shadow:inset 0 0 0 3px rgba(255,255,255,.6)}
+#pdp .tb{display:flex;flex-direction:column;overflow:hidden}
+#pdp .one{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pdp .bdg{display:flex;flex-wrap:wrap;gap:6px}
+#pdp .pl{display:inline-flex;align-items:center;border-radius:6px}
+#pdp .row{display:flex;align-items:center;border-bottom:.5px solid rgba(255,255,255,.12);white-space:nowrap;overflow:hidden}
+#pdp .m2{color:rgba(255,255,255,.64)}
+#pdp .idle .bar{transform:translateY(70px);opacity:0}
+#pdp .idle .dots{opacity:0}
+#pdp .idle.hidetop .top{opacity:0;transform:translateY(-18px)}
+</style>
+<p>Press the button to leave each phone alone. In A and B the top buttons hide too, and the song grows into the room.</p>
+<div class="ctl"><button id="pp-idle">Leave it idle</button></div>
+<h3>Now</h3><p>The picture badges are tiny next to "16-bit · 44.1 kHz". The top buttons stay when idle.</p><div class="ph" id="p0"><div class="scr"></div></div>
+<h3>A · Lined up with the cover <span class="rec">pick</span></h3><p>The text starts at the cover's top and ends at its bottom. Badges are one height, pictures as big as the words.</p><div class="ph" id="p1"><div class="scr"></div></div>
+<h3>B · Bigger song, less below</h3><p>A larger title and artist, outlined badges, and one song under Up next. The text sits in the middle.</p><div class="ph" id="p2"><div class="scr"></div></div>
+<h3>Badges up close</h3><p>Shown bigger. In A and B the pictures grow, so their words match "44.1 kHz".</p><div id="pp-bz"></div>
+<script>
+(() => {
+const AC = "#f3a093", F = "Roboto,'Segoe UI',sans-serif";
+const COVER = "linear-gradient(160deg,transparent 30%,#d01818 31% 35%,transparent 36%),linear-gradient(90deg,transparent 15%,#0d0d0d 15% 87%,transparent 87%),linear-gradient(transparent 7%,#f4f4f2 7% 88%,transparent 88%),#f4f4f2";
+const at = (x, y, e = "") => `left:${x}px;top:${y}px;${e}`;
+const root = document.getElementById("pdp");
+const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+// The theme's pictures, drawn the same shape: the words inside are about 40% of the picture's height.
+const alac = h => `<svg viewBox="0 0 233 60" style="height:${h}px;width:${h * 233 / 60}px;display:block"><circle cx="24" cy="34" r="16" fill="#fff"/><rect x="24" y="5" width="7" height="12" rx="3.5" fill="#fff" transform="rotate(35 27 11)"/><path d="M50 32c7-22 13 22 20 0s13 22 20 0 13 22 20 0" stroke="#fff" stroke-width="5" fill="none"/><text x="124" y="44" font-size="32" font-family="${F}" fill="#fff">ALAC</text></svg>`;
+const ch2 = h => `<svg viewBox="0 0 121 60" style="height:${h}px;width:${h * 121 / 60}px;display:block"><path d="M4 22h10l14-12v40L14 38H4z" fill="#fff"/><rect x="40" y="13" width="76" height="34" rx="5" fill="#fff"/><text x="78" y="40" font-size="26" font-weight="700" text-anchor="middle" font-family="${F}" fill="#111">2.0</text></svg>`;
+const pill = (h, inner, look) => `<span class="pl" style="height:${h}px;padding:0 ${Math.round(h / 3)}px;${look}">${inner}</span>`;
+const line = "Whole Lotta Red · 2020 · Hip-Hop/Rap · added Nov 12, 2026";
+const rows = (n, h, size) => ["Meh", "Vamp Anthem"].slice(0, n).map(s =>
+  `<div class="row" style="height:${h}px;font-size:${size}px">${s}<span class="m2">&nbsp;· Playboi Carti</span></div>`).join("");
+const cap = (text, extra = "") => `<div class="m2" style="font:600 11px/14px ${F};letter-spacing:.8px;${extra}">${text}</div>`;
+const fill = "background:rgba(255,255,255,.12)";
+const quality = w => `<span style="font:${w} 12px ${F}">16-bit · 44.1 kHz</span>`;
+const badges = [
+  [pill(24, alac(12), fill), pill(24, quality(600), fill), pill(24, ch2(12), fill)],
+  [pill(26, alac(18), fill), pill(26, quality(500), fill), pill(26, ch2(18), fill)],
+  [alac(16), quality(500), ch2(16)].map(x => pill(24, x, "box-shadow:inset 0 0 0 1px rgba(255,255,255,.3)")),
+].map(b => b.join(""));
+const text = [
+  // Now: as built.
+  `<div style="font:700 26px/31px ${F}">JumpOutTheHouse</div>
+   <div style="font:500 16px/21px ${F};color:${AC};margin-top:2px">Playboi Carti</div>
+   <div class="m2" style="font:400 13px/17px ${F};margin-top:4px">${line}</div>
+   <div class="bdg" style="margin-top:12px">${badges[0]}</div>
+   ${cap("UP NEXT · TRACK 4 OF 24", "margin-top:18px;margin-bottom:2px")}${rows(2, 40, 14)}`,
+  // A: the song at the cover's top, Up next at its bottom.
+  `<div><div style="font:700 28px/33px ${F}">JumpOutTheHouse</div>
+   <div style="font:500 18px/23px ${F};color:${AC};margin-top:2px">Playboi Carti</div>
+   <div class="m2" style="font:400 13px/17px ${F};margin-top:6px">${line}</div>
+   <div class="bdg" style="margin-top:12px">${badges[1]}</div></div>
+   <div>${cap("UP NEXT · TRACK 4 OF 24", "margin-bottom:2px")}${rows(2, 36, 14)}</div>`,
+  // B: a bigger song, one song under Up next, all in the middle.
+  `<div style="font:700 34px/40px ${F}">JumpOutTheHouse</div>
+   <div style="font:500 20px/25px ${F};color:${AC};margin-top:3px">Playboi Carti</div>
+   <div class="m2" style="font:400 14px/18px ${F};margin-top:6px">${line}</div>
+   <div class="bdg" style="margin-top:14px">${badges[2]}</div>
+   <div class="row" style="height:40px;font-size:15px;margin-top:18px;border-top:.5px solid rgba(255,255,255,.12)">${cap("UP NEXT", "margin-right:10px")}Meh<span class="m2">&nbsp;· Playboi Carti</span></div>`,
+];
+const justify = ["flex-start", "space-between", "center"];
+// [side, top] of the cover: while in use, then left alone. A and B also take the top buttons' room.
+const geo = [[[236, 82], [293, 82]], [[236, 82], [300, 54]], [[236, 82], [300, 54]]];
+const bar = `<div class="a bar t" style="left:55px;top:325px;width:822px;height:52px;border-radius:26px;background:rgba(255,255,255,.1)">
+  <div class="a" style="${at(20, 13, "font-size:21px;letter-spacing:14px")}">⏮▶⏭</div>
+  <div class="a" style="${at(150, 17, "font-size:14px")}">1:12</div>
+  <div class="a" style="${at(176, 23, "width:442px;height:6px;border-radius:3px;background:rgba(255,255,255,.22)")}"><i style="display:block;width:33%;height:100%;border-radius:3px;background:#ddd"></i></div>
+  <div class="a" style="${at(636, 17, "font-size:14px")}">−2:26</div>
+  <div class="a" style="${at(684, 12, "font-size:20px;letter-spacing:24px")}">❞🔈☰</div></div>`;
+["p0", "p1", "p2"].forEach((id, v) => {
+  document.querySelector(`#${id} .scr`).innerHTML = `
+    <div class="a" style="${at(46, 6, `font:600 14px/16px ${F}`)}">1:49</div><div class="a" style="right:28px;top:6px;font:600 12px/16px ${F}">▂▄▆ ◠ ▮▮</div>
+    <div class="a top t" style="left:0;top:0;width:891px;height:80px">
+      <i class="a cb" style="${at(65, 36)}">⌄</i>
+      <i class="a cb" style="${at(779, 36, "background:#eee;color:#222")}">♥</i><i class="a cb" style="${at(835, 36)}">···</i></div>
+    <div class="a dots t" style="${at(442, 49, "width:48px;height:6px")}">
+      ${[0, 18, 36].map(x => `<i class="a" style="${at(x, 0, "width:6px;height:6px;border-radius:3px;background:rgba(255,255,255,.35)")}"></i>`).join("")}
+      <i class="a" style="${at(-2, -1, "width:10px;height:8px;border-radius:4px;background:#fff")}"></i></div>
+    <div class="a disc t" style="background:radial-gradient(circle,#d9dde0 0 20%,#aab 20.5% 21.5%,transparent 22%),${COVER}"></div>
+    <div class="a cov t" style="background:${COVER}"></div>
+    <div class="a tb t" style="justify-content:${justify[v]}">${text[v]}</div>
+    ${bar}<div class="a" style="${at(392, 400, "width:108px;height:3px;border-radius:2px;background:rgba(255,255,255,.85)")}"></div>`;
+  if (v > 0) document.getElementById(id).classList.add("hidetop");
+});
+// The three badge rows at twice the size, so the picture-to-word match is easy to see.
+document.getElementById("pp-bz").innerHTML = ["Now", "A", "B"].map((name, v) =>
+  `<div style="display:flex;align-items:center;gap:14px;height:68px;padding:0 14px;border-radius:12px;margin-bottom:6px;background:#2f2f2f;color:#fff">
+    <b style="width:40px;font-size:13px">${name}</b><div class="bdg" style="zoom:1.6;flex-wrap:nowrap">${badges[v]}</div></div>`).join("");
+let idle = location.hash === "#idle";
+const show = () => root.querySelectorAll(".ph").forEach((ph, v) => {
+  ph.classList.toggle("idle", idle);
+  const [side, top] = geo[v][idle ? 1 : 0];
+  const box = (el, x, y, w, h) => Object.assign(ph.querySelector(el).style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` });
+  box(".cov", 67, top, side, side);
+  box(".disc", 67 + side * 0.53, top + side * 0.03, side * 0.94, side * 0.94);
+  const x = 67 + side * 1.47 + 24;
+  box(".tb", x, top, 865 - x, side);
+});
+root.classList.add("ns"); show();
+requestAnimationFrame(() => requestAnimationFrame(() => { if (!still) root.classList.remove("ns"); }));
+const b = document.getElementById("pp-idle");
+const label = () => b.textContent = idle ? "Touch the screen" : "Leave it idle";
+label();
+b.onclick = () => { idle = !idle; show(); label(); };
+})();
+</script>
+</div>
+</body></html>
