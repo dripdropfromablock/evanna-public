@@ -424,7 +424,10 @@ class MainActivity : ComponentActivity() {
                         onPlayNext = { id, result -> librarySong(id, true, result, next=true) },
                         searchMode = tab == PlayerScreen.SEARCH,onPlaylists={openPlaylists()},
                         onPlaylistSong={openPlaylists(listOf(it))},onPlaylistAlbum={openPlaylists(filter=it)},onFavorites={navigate(PlayerScreen.FAVORITES)},
-                        onRecent={navigate(PlayerScreen.RECENT)},onMostPlayed={navigate(PlayerScreen.MOST)})
+                        onRecent={navigate(PlayerScreen.RECENT)},onMostPlayed={navigate(PlayerScreen.MOST)},
+                        nowPlaying = playerUi.takeIf { it.hasSong }?.let {
+                            com.evanna.player.library.NowPlayingMark(it.title, it.album, it.playing)
+                        })
                 }
                 // Screens pushed over the tabs; Now Playing is the sheet above everything.
                 val pushedContent: @Composable (PlayerScreen) -> Unit = { shown -> when (shown) {

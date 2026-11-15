@@ -881,23 +881,9 @@ private fun CarouselTracks(
                 onSelect(LibraryContextRequest(filter, song.id, LibraryContextAction.PLAY_FROM)) { if (!it) onPlaybackFailed() }
             }, onAdd = onAdd, onPlayNext = onPlayNext, onPlaylistSong = onPlaylistSong, onTrackInfo = { onTrackInfo(song) },
                 swipeToQueue = true) {
-                // The track number, or moving bars on the song that is playing; the album cover is already above.
-                Box(Modifier.width(28.dp).heightIn(min = 40.dp), contentAlignment = Alignment.Center) {
-                    if (playingHere) PlayingBars(nowPlaying?.playing == true, colors.primary,
-                        Modifier.semantics { contentDescription = if (nowPlaying?.playing == true) "Now playing" else "Paused" })
-                    else Text((song.musicTags.trackNumber ?: (index + 1)).toString(), style = EvannaType.playbackTime,
-                        color = colors.onSurfaceVariant, maxLines = 1)
-                }
-                Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                    Text(song.title, style = EvannaDesign.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        color = if (playingHere) colors.primary else Color.Unspecified,
-                        fontWeight = if (playingHere) FontWeight.SemiBold else null)
-                    val guests = if (song.available) trackGuests(song.artist, albumArtist) else "Unavailable · reconnect or rescan"
-                    if (guests != null) Text(guests, style = EvannaDesign.typography.bodySmall, color = colors.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
+                AlbumTrackCells(song, song.musicTags.trackNumber ?: (index + 1), albumArtist, nowPlaying?.playing?.takeIf { playingHere })
             }
-            HorizontalDivider(Modifier.padding(start = 40.dp), color = colors.outlineVariant.copy(alpha = 0.32f))
+            AlbumTrackDivider()
         }
         if (songs.isEmpty()) item { Text("No tracks in this album.", modifier = Modifier.padding(vertical = 12.dp)) }
         if (failed) item {
@@ -905,6 +891,37 @@ private fun CarouselTracks(
         }
     }
 }
+
+/**
+ * One album track, the same on the Library's album page and the Carousel (docs/mockups/song-rows.html, A): the number,
+ * or bars on the song that is playing; the title; guests only; the length. [playing] is null unless this song is the
+ * one Now Playing shows, then whether it plays.
+ */
+@Composable
+internal fun RowScope.AlbumTrackCells(song: LibrarySong, number: Int?, albumArtist: String?, playing: Boolean?) {
+    val colors = EvannaDesign.colorScheme
+    val here = playing != null
+    Box(Modifier.width(28.dp).heightIn(min = 40.dp), contentAlignment = Alignment.Center) {
+        if (here) PlayingBars(playing == true, colors.primary,
+            Modifier.semantics { contentDescription = if (playing == true) "Now playing" else "Paused" })
+        else if (number != null) Text(number.toString(), style = EvannaType.playbackTime, color = colors.onSurfaceVariant, maxLines = 1,
+            modifier = Modifier.semantics { contentDescription = "Track $number" })
+    }
+    Column(Modifier.weight(1f).padding(start = 8.dp)) {
+        Text(song.title, style = EvannaDesign.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            color = if (here) colors.primary else Color.Unspecified, fontWeight = if (here) FontWeight.SemiBold else FontWeight.Medium)
+        val guests = if (song.available) trackGuests(song.artist, albumArtist) else "Unavailable · reconnect or rescan"
+        if (guests != null) Text(guests, style = EvannaDesign.typography.bodySmall, color = colors.onSurfaceVariant,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    song.durationUs?.let { Text(playbackTime(it / 1000), style = EvannaType.playbackTime, color = colors.onSurfaceVariant,
+        maxLines = 1, modifier = Modifier.padding(start = 6.dp)) }
+}
+
+/** The hairline under an album track, starting at the title. */
+@Composable
+internal fun AlbumTrackDivider(modifier: Modifier = Modifier) =
+    HorizontalDivider(modifier.padding(start = 40.dp), color = EvannaDesign.colorScheme.outlineVariant.copy(alpha = 0.32f))
 
 /** Three small bars in the cover's colour on the playing track: they move while it plays and rest while paused. */
 @Composable

@@ -81,7 +81,7 @@ const cols = [
     lib: tracks.map(libNow).join(""), car: tracks.map(carNow).join(""), songs: idx + songs.map(song3).join("") },
   { cap: '<b>A · One album row, two-line songs <span class="rec">pick</span></b>Both album pages share one row: number or bars, title, guests only, length. Songs rows drop to two lines with the length on the right, as Search already does. Format stays in Track info and Sound path.',
     lib: tracks.map(album).join(""), car: tracks.map(album).join(""), songs: idx + songs.map(song2).join("") },
-  { cap: "<b>B · One album row, Songs keep the format</b>Album pages as in A. Songs rows stay three lines, so the format shows in the list. About one row fewer per screen.",
+  { cap: "<b>B · One album row, Songs keep the format</b>Album pages as in A. Songs rows stay three lines, so the format shows in the list. The cover sets the row height, so both fit the same number of songs.",
     lib: tracks.map(album).join(""), car: tracks.map(album).join(""), songs: idx + songs.map(song3).join("") },
 ];
 root.querySelector("#sr-set").innerHTML = cols.map(c => `<div class="col">

@@ -21,7 +21,6 @@ import com.evanna.player.SettingsLink
 import com.evanna.player.UI_SETTINGS
 import com.evanna.player.EvannaDesign
 import com.evanna.player.counted
-import com.evanna.player.playback.khz
 import com.evanna.player.sidewaysPhone
 import com.evanna.player.ui.*
 import androidx.compose.runtime.*
@@ -113,7 +112,7 @@ internal fun rememberAddMusicFolder(): () -> Unit {
 internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) -> Unit, onAdd: (String, (Boolean) -> Unit) -> Unit,
     onPlayNext: (String, (Boolean) -> Unit) -> Unit, bottomInset: Dp,
     searchMode: Boolean = false,onPlaylists:()->Unit={},onPlaylistSong:(String)->Unit={},onPlaylistAlbum:(LibraryFilter)->Unit={},onFavorites:()->Unit={},
-    onRecent:()->Unit={},onMostPlayed:()->Unit={}) {
+    onRecent:()->Unit={},onMostPlayed:()->Unit={}, nowPlaying: NowPlayingMark? = null) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val preferences = remember(context) { context.getSharedPreferences(UI_SETTINGS, 0) }
@@ -561,7 +560,6 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                                 modifier = Modifier.padding(vertical = 8.dp).semantics { heading() })
                         }
                         val albumTrack = kind == LibraryGroupKind.ALBUM
-                        val compactRow = searchMode || albumTrack
                         val duration = song.durationUs?.let { com.evanna.player.playbackTime(it / 1000) }
                         LibrarySongRow(song, enabled = !busy && !loading, scope = personalScope,
                             onPlay = {
@@ -579,30 +577,26 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                                 }
                             },
                         ) {
-                            if (albumTrack) {
-                                val number = song.musicTags.trackNumber
-                                Text(number?.toString().orEmpty(), color = muted, style = EvannaDesign.typography.bodyMedium,
-                                    modifier = Modifier.widthIn(min = 28.dp).semantics {
-                                        if (number != null) contentDescription = "Track $number"
-                                    })
-                            } else {
+                            // Album tracks match the Carousel's; other songs are two lines, as in Search (docs/mockups/song-rows.html, A).
+                            if (albumTrack) AlbumTrackCells(song, song.musicTags.trackNumber ?: (cursor.base + index + 1),
+                                albumArtist ?: shown.albumSummary?.displayArtist, nowPlaying?.takeIf { it.matches(song) }?.playing)
+                            else {
                                 LibraryArtwork("song:${song.id}", revision, Modifier.size(if (searchMode) 44.dp else 52.dp)) { artwork.song(song.id) }
-                            }
-                            Column(Modifier.weight(1f).padding(start = if (albumTrack) 0.dp else 12.dp)) {
-                                Text(song.title, style = EvannaDesign.typography.bodyLarge, fontWeight = FontWeight.Medium,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                val subtitle = if (albumTrack) song.artist else listOfNotNull(song.artist, song.album).joinToString(" · ")
-                                subtitle?.takeIf { it.isNotBlank() }?.let {
-                                    Text(it, style = EvannaDesign.typography.bodyMedium, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                                    Text(song.title, style = EvannaDesign.typography.bodyLarge, fontWeight = FontWeight.Medium,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    listOfNotNull(song.artist, song.album).joinToString(" · ").takeIf { it.isNotBlank() }?.let {
+                                        Text(it, style = EvannaDesign.typography.bodyMedium, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    if (!song.available) Text("Unavailable · reconnect or rescan the folder",
+                                        style = EvannaDesign.typography.bodySmall, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                if (!song.available || !compactRow) Text(if (!song.available) "Unavailable · reconnect or rescan the folder" else
-                                    "${song.codec ?: "Unknown format"} · ${song.rate?.let(::khz) ?: "rate unknown"} · ${duration ?: "Duration unknown"}",
-                                    style = EvannaDesign.typography.bodySmall, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (duration != null) Text(duration, style = EvannaType.playbackTime, color = muted,
+                                    maxLines = 1, modifier = Modifier.padding(start = 6.dp))
                             }
-                            if (compactRow && duration != null) Text(duration,
-                                style = EvannaDesign.typography.labelSmall, color = muted,
-                                maxLines = 1, modifier = Modifier.padding(start = 6.dp))
                         }
+                        // The grid leaves 8 dp between rows; drawing the line 4 dp lower centres it in that gap.
+                        if (albumTrack) AlbumTrackDivider(Modifier.offset(y = 4.dp))
                     }
                 }
             } else if (view == LibraryView.ALBUMS) {
