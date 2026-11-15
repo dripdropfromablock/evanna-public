@@ -107,6 +107,7 @@ import com.evanna.player.ui.glass.REDUCE_TRANSPARENCY_PREFERENCE
 import com.evanna.player.ui.glass.backdrop.backdrops.layerBackdrop
 import com.evanna.player.ui.glass.backdrop.backdrops.rememberLayerBackdrop
 import com.evanna.player.ui.glass.floorBrush
+import com.evanna.player.ui.glass.solidFloorBrush
 import com.evanna.player.ui.glass.glassTier
 import com.evanna.player.ui.glass.samplesBackdrop
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
@@ -551,9 +552,18 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
-                        // Under see-through controls, lists fade into the page colour instead of running out from under them.
-                        if (!keyboard && glassTier != GlassTier.SOLID && dockHeight > 0)
-                            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(dockInset + 28.dp).background(floorBrush(pageColor)))
+                        // Lists fade out just above the mini player, and the page colour fills the rest, so no words show in the
+                        // dock's gaps. The glass still sees the list: the floor is not part of the recorded page.
+                        // The Carousel paints its own backdrop there, so it keeps the light fade under see-through controls.
+                        val underDock = pushed ?: dockTab
+                        if (!keyboard && dockHeight > 0) {
+                            if (underDock != PlayerScreen.CAROUSEL) {
+                                val fadeShare = FloorFade / (dockInset + FloorFade)
+                                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(dockInset + FloorFade)
+                                    .background(solidFloorBrush(screenBackground(underDock), fadeShare)))
+                            } else if (glassTier != GlassTier.SOLID)
+                                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(dockInset + 28.dp).background(floorBrush(pageColor)))
+                        }
                         if (!keyboard) CompositionLocalProvider(LocalGlass provides glass) { PlayerDock(dockTab, ::selectTab,
                             listOf(Triple(PlayerScreen.CAROUSEL, "Carousel", PlayerIcons.AlbumCarousel),
                                 Triple(PlayerScreen.LIBRARY, "Library", musicNote),
@@ -1564,6 +1574,8 @@ private class SettingsEntry(val label: String, val note: String?, val value: Str
     val icon: androidx.compose.ui.graphics.vector.ImageVector, val tile: Color) {
     fun matches(query: String) = listOfNotNull(label, note, value).any { it.contains(query, ignoreCase = true) }
 }
+/** How far above the mini player a list fades out. Lists end 24 dp above the dock, so their last row stays clear. */
+private val FloorFade = 32.dp
 private data class LicenseFile(val title: String, val asset: String, val source: String? = null)
 private val licenseFiles = listOf(
     LicenseFile("Evanna · GPL 3.0", "licenses/Evanna-GPL-3.0.txt"),

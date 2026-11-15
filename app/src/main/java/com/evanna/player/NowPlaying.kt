@@ -11,6 +11,7 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -30,12 +31,19 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.horizontalDrag
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -73,14 +81,17 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.lerp
@@ -104,6 +115,7 @@ import com.evanna.player.library.Lyrics
 import com.evanna.player.playback.SleepMode
 import com.evanna.player.playback.nearest
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -1003,19 +1015,50 @@ private fun QueuePage(state: PlayerPresentation, onShuffle: () -> Unit, onRepeat
                 state.connected && state.canRepeat, Modifier.weight(1f), onRepeat)
         }
         val current = state.queue.indexOfFirst { it.id == state.id }.takeIf { it >= 0 } ?: state.queueIndex.coerceIn(-1, state.queue.lastIndex)
+        val upcoming = state.queue.drop(current + 1)
+        val ids = upcoming.map { it.id }
+        val list = rememberLazyListState()
+        val drag = remember { QueueDrag() }
+        val scope = rememberCoroutineScope()
+        val haptics = LocalHapticFeedback.current
+        val density = LocalDensity.current
+        val latestIds by rememberUpdatedState(ids)
+        val latestMove by rememberUpdatedState(onMove)
+        // The queue that comes back after a drop shows the new order. A queue that changes mid-drag ends the drag.
+        LaunchedEffect(ids) {
+            if (drag.held == null) drag.order = null
+            else if (drag.order?.toSet() != ids.toSet()) drag.cancel()
+        }
+        // A move that never lands puts the rows back.
+        LaunchedEffect(drag.drops) { if (drag.drops > 0) { delay(2000); if (drag.held == null) drag.order = null } }
+        // Near the list's top or bottom, the held row scrolls the list, faster the deeper it goes.
+        LaunchedEffect(drag.held) {
+            if (drag.held == null) return@LaunchedEffect
+            val zone = with(density) { 56.dp.toPx() }
+            val most = with(density) { 12.dp.toPx() }
+            while (true) {
+                withFrameNanos { }
+                val over = drag.overEdge(list, zone)
+                if (over != 0f) {
+                    list.scrollBy((over / zone).coerceIn(-1f, 1f) * most)
+                    if (drag.settle(list)) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                }
+            }
+        }
+        val shown = drag.order?.let { order -> upcoming.associateBy { it.id }.let { byId -> order.mapNotNull { byId[it] } } }
+            ?.takeIf { it.size == upcoming.size } ?: upcoming
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(top = 6.dp).graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .drawWithContent {
                 drawContent()
                 drawRect(Brush.verticalGradient(0.8f to Color.Black, 1f to Color.Transparent), blendMode = BlendMode.DstIn)
-            }, contentPadding = PaddingValues(start = 24.dp, end = 14.dp, bottom = 24.dp)) {
+            }, state = list, contentPadding = PaddingValues(start = 24.dp, end = 14.dp, bottom = 24.dp)) {
             if (current > 0) {
                 item(key = "history") { Text("History", style = SectionTitle, color = Pv2, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp).semantics { heading() }) }
                 itemsIndexed(state.queue.take(current), key = { _, item -> item.id }) { _, item ->
-                    QueueRow(item, played = true, state, loadArtwork, onSelect, null, null, null)
+                    QueueRow(item, played = true, state, loadArtwork, onSelect, edit = null)
                 }
             }
             item(key = "next") { Text("Playing Next", style = SectionTitle, color = Pv1, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp).semantics { heading() }) }
-            val upcoming = state.queue.drop(current + 1)
             // An empty "Playing Next" offers the library; a full one ends with its last song, as in the mockup.
             if (upcoming.isEmpty()) item(key = "empty") {
                 Column {
@@ -1025,14 +1068,125 @@ private fun QueuePage(state: PlayerPresentation, onShuffle: () -> Unit, onRepeat
                     }
                 }
             }
-            itemsIndexed(upcoming, key = { _, item -> item.id }) { offset, item ->
-                QueueRow(item, played = false, state, loadArtwork, onSelect,
-                    upcoming.getOrNull(offset - 1)?.let { neighbor -> { onMove(item.id, neighbor.id) } },
-                    upcoming.getOrNull(offset + 1)?.let { neighbor -> { onMove(item.id, neighbor.id) } },
-                    { onRemove(item.id) })
+            itemsIndexed(shown, key = { _, item -> item.id }) { offset, item ->
+                val held = drag.held == item.id
+                val handle = Modifier.pointerInput(item.id) {
+                    detectDragGestures(
+                        onDragStart = { if (drag.pick(item.id, latestIds, list)) haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
+                        onDragEnd = { drag.drop(list, latestIds, latestMove, scope) },
+                        onDragCancel = { drag.drop(list, latestIds, latestMove, scope) },
+                    ) { change, amount ->
+                        change.consume()
+                        if (drag.dragBy(amount.y, list)) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    }
+                }
+                val edit = QueueEdit(
+                    up = shown.getOrNull(offset - 1)?.let { above -> { onMove(item.id, above.id) } },
+                    down = shown.getOrNull(offset + 1)?.let { below -> { onMove(item.id, below.id) } },
+                    remove = { onRemove(item.id) }, handle = handle, held = held)
+                // The held row follows the finger above the others; the rest slide to make room.
+                QueueRow(item, played = false, state, loadArtwork, onSelect, edit, Modifier.zIndex(if (held || drag.landed == item.id) 1f else 0f)
+                    .then(when {
+                        held -> Modifier.graphicsLayer { translationY = drag.offset(list) }
+                        drag.landed == item.id -> Modifier.graphicsLayer { translationY = drag.landing.value }
+                        else -> Modifier.animateItem()
+                    }))
             }
         }
     }
+}
+
+/**
+ * The queue row held by its handle, after the Compose drag-and-drop list sample: it follows the finger, the rows it
+ * passes make room, and letting go asks the player for a single move.
+ */
+private class QueueDrag {
+    var held by mutableStateOf<String?>(null)
+        private set
+    /** The songs still to come in the order shown while a row is held, and until the moved queue comes back. */
+    var order by mutableStateOf<List<String>?>(null)
+    var drops by mutableIntStateOf(0)
+        private set
+    /** The row easing into its slot after a drop. */
+    var landed by mutableStateOf<String?>(null)
+        private set
+    val landing = Animatable(0f)
+    private var startTop = 0
+    private var moved by mutableFloatStateOf(0f)
+
+    private fun row(list: LazyListState, id: String?) = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == id }
+
+    /** How far the held row is drawn from where the list lays it out. */
+    fun offset(list: LazyListState): Float = row(list, held)?.let { startTop + moved - it.offset } ?: 0f
+
+    fun pick(id: String, ids: List<String>, list: LazyListState): Boolean {
+        val row = row(list, id) ?: return false
+        startTop = row.offset; moved = 0f; order = ids; landed = null; held = id
+        return true
+    }
+
+    /** Moves the held row with the finger; true when it took another row's place. */
+    fun dragBy(dy: Float, list: LazyListState): Boolean {
+        if (held == null) return false
+        moved += dy
+        return settle(list)
+    }
+
+    /** Puts the held row in the place of the row under its middle, once its middle has passed that row's middle. */
+    fun settle(list: LazyListState): Boolean {
+        val id = held ?: return false
+        val now = order ?: return false
+        val size = row(list, id)?.size ?: return false
+        val middle = startTop + moved + size / 2f
+        val from = now.indexOf(id)
+        for (other in list.layoutInfo.visibleItemsInfo) {
+            val key = other.key as? String ?: continue
+            val to = now.indexOf(key)
+            if (key == id || to < 0 || middle < other.offset || middle > other.offset + other.size) continue
+            // Rows not yet laid out in their new places still pass this test the wrong way round, so they never swap back.
+            val centre = other.offset + other.size / 2f
+            if (to > from && middle > centre || to < from && middle < centre) {
+                order = now.toMutableList().apply { add(to, removeAt(from)) }
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * How far the held row reaches into the [zone] at the list's top (negative) or bottom (positive). Only the edge it is
+     * being dragged toward counts: a row picked up near the bottom and dragged up must not scroll the list down.
+     */
+    fun overEdge(list: LazyListState, zone: Float): Float {
+        val size = row(list, held)?.size ?: return 0f
+        val info = list.layoutInfo
+        val top = startTop + moved
+        val over = when {
+            top < info.viewportStartOffset + zone -> top - (info.viewportStartOffset + zone)
+            top + size > info.viewportEndOffset - zone -> top + size - (info.viewportEndOffset - zone)
+            else -> 0f
+        }
+        return if (over * moved > 0f) over else 0f
+    }
+
+    /** Lets go: one move into the new place, then the row eases into its slot. */
+    fun drop(list: LazyListState, ids: List<String>, onMove: (String, String) -> Unit, scope: CoroutineScope) {
+        val id = held ?: return
+        val left = offset(list)
+        held = null
+        val now = order
+        val to = now?.indexOf(id) ?: -1
+        if (now == null || to < 0 || now == ids || now.size != ids.size) order = null
+        else { onMove(id, ids[to]); drops++ }
+        landed = id
+        scope.launch {
+            landing.snapTo(left)
+            landing.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = 600f))
+            if (landed == id) landed = null
+        }
+    }
+
+    fun cancel() { held = null; order = null; landed = null }
 }
 
 /** A capsule toggle fills with the current accent when selected. */
@@ -1056,35 +1210,104 @@ private fun QueuePill(label: String, icon: ImageVector, on: Boolean, description
     }
 }
 
-/** A 64 dp queue row: 48 dp cover, title and artist; songs still to come can move up or down or leave the queue. */
+/** What a song still to come can do: move one place (for screen readers), leave the queue, or be dragged by [handle]. */
+private class QueueEdit(val up: (() -> Unit)?, val down: (() -> Unit)?, val remove: () -> Unit, val handle: Modifier, val held: Boolean)
+
+/** How far a queue row slides toward the start before letting go removes it. */
+private val RemoveReach = 96.dp
+private val QueueRowShape = RoundedCornerShape(10.dp)
+/** The held row's own fill, so the rows it passes over don't show through it. */
+private val HeldRowFill = Color(0xF23A3A3C)
+
+/**
+ * A 64 dp queue row: 48 dp cover, title and artist. A song still to come has a handle to drag it to another place and
+ * slides toward the start to leave the queue (docs/mockups/dock-fade-queue-rows.html, A). Screen readers get Move up,
+ * Move down and Remove as actions on the row instead.
+ */
 @Composable
 private fun QueueRow(item: PlayerQueueItem, played: Boolean, state: PlayerPresentation, loadArtwork: suspend (String) -> Bitmap?,
-    onSelect: (String) -> Unit, up: (() -> Unit)?, down: (() -> Unit)?, remove: (() -> Unit)?) {
+    onSelect: (String) -> Unit, edit: QueueEdit?, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
-    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).alpha(if (played) 0.55f else 1f).clip(RoundedCornerShape(10.dp))
-        .controlFocus(interaction, RoundedCornerShape(10.dp))
-        .clickable(interaction, indication = null, enabled = state.connected, onClickLabel = "Play this song") { onSelect(item.id) },
-        verticalAlignment = Alignment.CenterVertically) {
-        LibraryArtwork(item.id, 0, Modifier.size(48.dp), SmallCoverShape) { loadArtwork(item.id) }
-        Column(Modifier.weight(1f).padding(start = 12.dp).pressScale(interaction)) {
-            Text(item.title, style = HeaderTitle, color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(item.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", style = RowArtist, color = Pv2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    val canEdit = edit != null && state.connected
+    val held = edit?.held == true
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val reach = with(LocalDensity.current) { RemoveReach.toPx() }
+    val latestEdit by rememberUpdatedState(edit)
+    var slide by remember(item.id) { mutableFloatStateOf(0f) }
+    // Only a slide toward the start is taken; the other way is left for the sideways page swipe.
+    val swipe = if (!canEdit) Modifier else Modifier.pointerInput(item.id, rtl) {
+        val toward = if (rtl) 1f else -1f
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            var start = 0f
+            val first = awaitHorizontalTouchSlopOrCancellation(down.id) { change, over ->
+                if (over * toward > 0f) { change.consume(); start = over }
+            } ?: return@awaitEachGesture
+            val width = size.width.toFloat()
+            fun clamp(x: Float) = if (toward < 0f) x.coerceIn(-width, 0f) else x.coerceIn(0f, width)
+            slide = clamp(slide + start)
+            horizontalDrag(first.id) { change ->
+                val before = slide
+                slide = clamp(slide + change.positionChange().x)
+                change.consume()
+                // A tick as the row passes the point where letting go removes it.
+                if ((abs(before) < reach) != (abs(slide) < reach)) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+            }
+            val gone = abs(slide) >= reach
+            scope.launch {
+                if (gone) {
+                    animate(slide, toward * width, animationSpec = tween(160)) { value, _ -> slide = value }
+                    latestEdit?.remove?.invoke()
+                    // Still here after a while: the queue did not change, so the row comes back.
+                    delay(1500)
+                }
+                animate(slide, 0f, animationSpec = spring(dampingRatio = 0.8f, stiffness = 500f)) { value, _ -> slide = value }
+            }
         }
-        if (!played) {
-            RowButton(PlayerIcons.ChevronUp, "Move ${item.title} up", state.connected && up != null) { up?.invoke() }
-            RowButton(PlayerIcons.ChevronDown, "Move ${item.title} down", state.connected && down != null) { down?.invoke() }
-            RowButton(PlayerIcons.Close, "Remove ${item.title} from queue", state.connected && remove != null) { remove?.invoke() }
+    }
+    val actions = if (!canEdit) emptyList() else listOfNotNull(
+        edit!!.up?.let { up -> CustomAccessibilityAction("Move up") { up(); true } },
+        edit.down?.let { down -> CustomAccessibilityAction("Move down") { down(); true } },
+        CustomAccessibilityAction("Remove") { edit.remove(); true })
+    Box(modifier.fillMaxWidth().then(swipe)) {
+        if (slide != 0f) RemoveStrip(slide, reach)
+        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp)
+            .graphicsLayer {
+                translationX = slide
+                if (held) { scaleX = 1.03f; scaleY = 1.03f; shadowElevation = 12.dp.toPx(); shape = QueueRowShape; clip = true }
+            }
+            .then(if (held) Modifier.background(HeldRowFill, QueueRowShape) else Modifier)
+            .alpha(if (played) 0.55f else 1f).clip(QueueRowShape)
+            .controlFocus(interaction, QueueRowShape)
+            .clickable(interaction, indication = null, enabled = state.connected, onClickLabel = "Play this song") { onSelect(item.id) }
+            .semantics { if (actions.isNotEmpty()) customActions = actions },
+            verticalAlignment = Alignment.CenterVertically) {
+            LibraryArtwork(item.id, 0, Modifier.size(48.dp), SmallCoverShape) { loadArtwork(item.id) }
+            Column(Modifier.weight(1f).padding(start = 12.dp).pressScale(interaction)) {
+                Text(item.title, style = HeaderTitle, color = Pv1, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(item.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", style = RowArtist, color = Pv2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (edit != null) Box(Modifier.size(width = 44.dp, height = 48.dp).then(if (canEdit) edit.handle else Modifier).clearAndSetSemantics {},
+                contentAlignment = Alignment.Center) {
+                Icon(PlayerIcons.Grip, contentDescription = null, modifier = Modifier.size(22.dp), tint = if (canEdit) Pv2 else Pv3)
+            }
         }
     }
 }
 
+/** What a queue row shows at its end as it slides toward the start: red, with Remove once there is room. */
 @Composable
-private fun RowButton(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    Box(Modifier.size(width = 40.dp, height = 48.dp).controlFocus(interaction, CircleShape)
-        .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
-        .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp).pressScale(interaction), tint = if (enabled) Pv2 else Pv3)
+private fun BoxScope.RemoveStrip(slide: Float, reach: Float) {
+    val width = with(LocalDensity.current) { abs(slide).toDp() }
+    val ready = abs(slide) >= reach
+    Box(Modifier.matchParentSize()) {
+        Box(Modifier.align(Alignment.CenterEnd).width(width).fillMaxHeight().padding(vertical = 6.dp)
+            .clip(QueueRowShape).background(AppleColors.red(true)), contentAlignment = Alignment.Center) {
+            if (width > 72.dp) Text("Remove", style = PillLabel, color = Color.White, maxLines = 1,
+                modifier = Modifier.graphicsLayer { alpha = if (ready) 1f else 0.7f })
+        }
     }
 }
 

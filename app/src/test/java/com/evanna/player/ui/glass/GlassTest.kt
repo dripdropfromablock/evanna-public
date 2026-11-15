@@ -34,6 +34,7 @@ class GlassTest {
         var previous = -1f
         for (i in 0..20) { val a = floorAlpha(i / 20f); assertTrue(a >= previous); previous = a }
         assertTrue(floorAlpha(0.1f) < 0.05f)  // the top edge is near invisible
+        assertEquals(1f, floorAlpha(1f, most = 1f), 0f)  // the solid floor ends fully opaque
     }
     @Test fun increaseContrastEdgesStandOutFromThePageAndTheFill() {
         for (dark in listOf(true, false)) {

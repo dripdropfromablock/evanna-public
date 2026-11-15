@@ -242,7 +242,8 @@ internal object PlayerIcons {
     }
     /** Back (chevron.left). */
     val ChevronLeft = icon("Chevron left") { thin(2.6f) { moveTo(15f, 5f); lineTo(8f, 12f); lineTo(15f, 19f) } }
-    val ChevronUp = icon("Chevron up") { thin(2.6f) { moveTo(5f, 15.5f); lineTo(12f, 8.5f); lineTo(19f, 15.5f) } }
+    /** Three lines (line.3.horizontal): the handle a queue row is dragged by. */
+    val Grip = icon("Drag handle") { thin(2f) { for (y in listOf(7.5f, 12f, 16.5f)) { moveTo(4.5f, y); horizontalLineTo(19.5f) } } }
     val ChevronDown = icon("Chevron down") { thin(2.6f) { moveTo(5f, 8.5f); lineTo(12f, 15.5f); lineTo(19f, 8.5f) } }
     /** A play triangle with softened corners (play.fill). */
     val Play = icon("Play") {

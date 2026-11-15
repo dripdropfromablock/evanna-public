@@ -145,11 +145,23 @@ private fun Modifier.glassRim(shape: CornerBasedShape, dark: Boolean): Modifier 
 }
 
 /** How strong the page colour is at [t] (0 top, 1 bottom) of the floor under the floating dock: eased in, never a line. */
-internal fun floorAlpha(t: Float): Float {
+internal fun floorAlpha(t: Float, most: Float = 0.94f): Float {
     val x = t.coerceIn(0f, 1f)
-    return x * x * (3 - 2 * x) * 0.94f
+    return x * x * (3 - 2 * x) * most
 }
 
 /** The floor under the floating dock: the page colour faded in from nothing, so lists don't run out from under the glass. */
 internal fun floorBrush(page: Color): Brush =
     Brush.verticalGradient(colorStops = Array(13) { i -> (i / 12f).let { it to page.copy(alpha = floorAlpha(it)) } })
+
+/**
+ * The floor under the dock over a plain page (docs/mockups/dock-fade-queue-rows.html, A): the page colour eased in over
+ * the top [fade] share of its height, then solid, so a list ends just above the mini player and nothing shows in the
+ * gaps between the dock's parts.
+ */
+internal fun solidFloorBrush(page: Color, fade: Float): Brush {
+    val share = fade.coerceIn(0.01f, 1f)
+    return Brush.verticalGradient(colorStops = Array(10) { i ->
+        if (i == 9) 1f to page else (share * i / 8f) to page.copy(alpha = floorAlpha(i / 8f, most = 1f))
+    })
+}

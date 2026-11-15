@@ -348,17 +348,17 @@ internal object PlayerUiProbe {
             check(runBlocking { owner.seekTo(4_000_000L) })
             driver.await("Preview did not follow a seek across the lyric boundary") { driver.visible("every window hums along") }
             // The current song (First) sits in the header; Second is the one song still to come.
-            driver.await("First upcoming song must have Move up disabled") {
-                driver.find { it.isVisibleToUser && it.contentDescription?.toString() == "Move Second up" }?.isEnabled == false
+            driver.await("First upcoming song must not offer Move up") {
+                driver.hasAction("Second", "Remove") && !driver.hasAction("Second", "Move up")
             }
             check(runBlocking { owner.enqueue(source("Third")) })
-            driver.clickDescription("Move Third up")
+            driver.action("Third", "Move up")
             driver.await("Shuffled queue reorder did not change what plays next") {
                 val queue = owner.queue.value
                 queue.items.getOrNull(queue.navigationIndex(1))?.title == "Third" &&
                     queue.items.map { it.title } == listOf("First", "Second", "Third")
             }
-            driver.clickDescription("Remove Third from queue")
+            driver.action("Third", "Remove")
             driver.await("Queue removal did not settle") { owner.queue.value.items.size == 2 }
             driver.click("Second")
             driver.await("Queue selection did not settle") { owner.queue.value.current?.title == "Second" }
@@ -592,6 +592,20 @@ internal object PlayerUiProbe {
         /** Skips text fields: a search box can hold the same text as the result being clicked. */
         fun click(text: String) = clickWhere(text) { !it.isEditable && it.text?.toString() == text }
         fun clickDescription(text: String) = clickWhere(text) { it.contentDescription?.toString() == text }
+        /** The screen-reader action [label] on the row showing [text], such as a queue row's "Move up". */
+        private fun actionOn(text: String, label: String): Pair<AccessibilityNodeInfo, Int>? {
+            var node = find { it.isVisibleToUser && it.text?.toString() == text }
+            repeat(6) {
+                val owner = node ?: return null
+                owner.actionList.firstOrNull { it.label?.toString() == label }?.let { return owner to it.id }
+                node = owner.parent
+            }
+            return null
+        }
+        fun hasAction(text: String, label: String) = actionOn(text, label) != null
+        fun action(text: String, label: String) = await("Action $label not reachable on $text") {
+            actionOn(text, label)?.let { (node, id) -> node.performAction(id) } == true
+        }
         fun clickVolumeOutput() = clickWhere("volume slider") { node ->
             node.actionList.any { it.label?.toString() == "Open audio output" }
         }

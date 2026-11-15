@@ -424,6 +424,7 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
         moveQueueLocked(entries.indexOfFirst { it.item.id == id }, target)
     }
 
+    /** Moves a song still to come into [neighborId]'s place in play order; the songs between shift one place. */
     suspend fun moveQueue(id: String, neighborId: String): Boolean = command(interruptSelection=true) {
         moveQueueLocked(playOrder.indexOf(id), playOrder.indexOf(neighborId), upcomingOnly = true)
     }
@@ -434,7 +435,7 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
             if (!upcomingOnly) return true
             val current = if (moveInShuffleOrder) entries.getOrNull(queueIndex)?.item?.id?.let(playOrder::indexOf) ?: -1
                 else queueIndex
-            return current >= 0 && from > current && target > current && kotlin.math.abs(from - target) == 1
+            return current >= 0 && from > current && target > current
         }
         if (from !in entries.indices || target !in entries.indices || !canMove()) return false
         val playing=snapshot.value

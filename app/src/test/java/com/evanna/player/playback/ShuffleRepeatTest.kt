@@ -120,7 +120,11 @@ class ShuffleRepeatTest {
             assertTrue(owner.setShuffle(true))
             assertEquals(listOf(current, third, fourth, first), owner.queue.value.playOrder)
             assertFalse(owner.moveQueue(third, current))
-            assertFalse(owner.moveQueue(first, third))
+            // A drag can pass several songs: first jumps into third's place, then goes back to the end.
+            assertTrue(owner.moveQueue(first, third))
+            assertEquals(listOf(current, first, third, fourth), owner.queue.value.playOrder)
+            assertTrue(owner.moveQueue(first, fourth))
+            assertEquals(listOf(current, third, fourth, first), owner.queue.value.playOrder)
             assertTrue(owner.moveQueue(fourth, third))
             val shuffled = listOf(current, fourth, third, first)
             assertEquals(shuffled, store.value!!.playOrder)
