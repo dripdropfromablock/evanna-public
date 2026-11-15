@@ -1,0 +1,109 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Carousel on its side</title></head>
+<body style="margin:0">
+<div id="cm">
+<style>
+#cm{font:14px/1.35 Roboto,"Segoe UI",sans-serif;color:var(--text,#eee);background:var(--bg,#151517);padding:12px}
+#cm h3{margin:16px 0 2px;font-size:15px}#cm p{margin:0 0 8px;font-size:12.5px;color:var(--muted,#9a9aa0)}
+#cm .rec{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:var(--accent-subtle,#24382a);color:var(--accent,#93d394);margin-left:6px}
+#cm .nx{font:600 12px Roboto,sans-serif;padding:7px 14px;border-radius:8px;border:0;cursor:pointer;background:var(--accent,#93d394);color:var(--bg,#111)}
+#cm.ns *{transition:none!important}
+.ph{width:560px;height:259px;border-radius:22px;overflow:hidden;position:relative;background:#000;color:#fff}
+.scr{position:absolute;left:0;top:0;width:800px;height:370px;transform:scale(.7);transform-origin:0 0;overflow:hidden;background:#161617}
+.bd{position:absolute;inset:0;transition:background-color .45s}
+.ov{position:absolute;inset:0;background:radial-gradient(75% 95% at 27% 45%,rgba(18,18,20,.28),rgba(16,16,18,.93))}
+.sb{position:absolute;left:44px;top:7px;font-size:12px;font-weight:600}.sb2{position:absolute;right:30px;top:7px;font-size:10px;letter-spacing:2px}
+.lh{position:absolute;left:40px;top:28px;width:360px;height:278px;overflow:hidden}
+.cv{position:absolute;border-radius:12px;box-shadow:0 12px 26px rgba(0,0,0,.5);transition:transform .45s cubic-bezier(.2,.8,.2,1),filter .45s,opacity .45s}
+.rp{position:absolute;left:420px;top:30px;width:340px;height:274px;border-radius:18px;background:rgba(255,255,255,.07);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.12);overflow:hidden}
+.rc{position:absolute;inset:0;transition:opacity .2s}
+.rt{position:absolute;left:18px;top:14px;right:52px;font-size:19px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ra{position:absolute;left:18px;top:40px;font-size:13.5px;font-weight:500}.ri{position:absolute;left:18px;top:60px;font-size:11.5px;color:rgba(255,255,255,.6)}
+.dice{position:absolute;right:12px;top:12px;width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.12);text-align:center;line-height:30px;font-size:15px}
+.pl{position:absolute;top:84px;height:30px;width:148px;border-radius:15px;text-align:center;line-height:30px;font-size:13px;font-weight:600}
+.tl{position:absolute;left:12px;right:12px;top:124px;bottom:0;-webkit-mask:linear-gradient(#000 70%,transparent);mask:linear-gradient(#000 70%,transparent)}
+.tr{display:flex;align-items:center;height:30px;border-bottom:.5px solid rgba(255,255,255,.08);font-size:13px}
+.tr i{width:26px;text-align:center;font-style:normal;color:rgba(255,255,255,.55);font-size:11.5px}.tr span{color:rgba(255,255,255,.55);font-size:10.5px;margin-left:6px}
+.dk{position:absolute;top:314px;height:46px;border-radius:23px;background:rgba(62,62,68,.92);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.14)}
+.band{position:absolute;left:8px;right:8px;top:108px;height:62px;border-radius:14px;background:rgba(255,255,255,.1)}
+.row{position:absolute;left:18px;right:8px;top:108px;height:62px;display:flex;align-items:center;gap:12px;transition:transform .45s cubic-bezier(.2,.8,.2,1),opacity .45s}
+.row b{display:block;font-size:14px}.row span{font-size:12px}
+.row .cv{position:static;width:48px;height:48px;border-radius:8px;flex:none;box-shadow:0 4px 10px rgba(0,0,0,.4);transition:none}
+</style>
+<p>Left half: albums scroll up and down. Right half: the album's tracks. The right side and the dock are the same in all three.</p>
+<button class="nx" id="nx">Next album ↓</button>
+<h3>A · One big cover <span class="rec">pick</span></h3>
+<p>As drawn. One album fills the left half. The ones above and below peek out.</p>
+<div class="ph" id="a"><div class="scr"></div></div>
+<h3>B · Cover Flow, turned upright</h3>
+<p>Today's carousel on its side. Two covers lean back above and below.</p>
+<div class="ph" id="b"><div class="scr"></div></div>
+<h3>C · Album wheel</h3>
+<p>Small covers with names, on a wheel. The middle row is the album shown.</p>
+<div class="ph" id="c"><div class="scr"></div></div>
+<script>
+(() => {
+const AL = [
+  ["Low Tide", "Evanna Test Band", 2021, 12, "41 min", "linear-gradient(160deg,#3f6f93,#0e1a26 75%)", "#8cc3ec", "#2a4256"],
+  ["Paper Moons", "Mara Vale", 2022, 9, "33 min", "radial-gradient(circle at 70% 30%,#f6d27a 0 14%,#7a2b2b 15%,#1a0c0c 80%)", "#ff9a86", "#4d2424"],
+  ["Neon Choir", "The Placeholders", 2024, 22, "1 h 11 min", "radial-gradient(circle at 30% 70%,#e8e36a 0 5%,transparent 6%),radial-gradient(circle at 72% 70%,#e8e36a 0 5%,transparent 6%),linear-gradient(170deg,#24493f,#0b1513 70%)", "#a6dcb4", "#2d4a3e"],
+  ["Midnight Static", "Evanna Test Band", 2023, 14, "52 min", "radial-gradient(circle at 50% 45%,#f4e9c8 0 16%,#3a3a36 44%,#151514)", "#f2c14e", "#4a4232"],
+  ["Glass Hours", "Mara Vale", 2019, 10, "38 min", "linear-gradient(135deg,#f1ede6 0 45%,#1d1d1f 46%)", "#e9e4da", "#4a4846"],
+  ["Static Bloom", "The Placeholders", 2020, 11, "44 min", "linear-gradient(200deg,#8a5bc4,#22143a 70%)", "#c9a8ff", "#3a2a55"],
+  ["North Lights", "Evanna Test Band", 2018, 13, "49 min", "linear-gradient(20deg,#0f2b2e,#3fb6a8 120%)", "#7fe0d2", "#204a46"],
+];
+const T = ["Opening Light", "Static Bloom", "Northbound", "Paper Kites", "Slow Engines", "Night Market", "Afterglow", "Undertow", "Last Ferry"];
+const G = { 2: "with Mara Vale", 5: "with Low Choir" };
+const n = AL.length, root = document.getElementById("cm");
+const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let cur = 2;
+const panel = k => {
+  const [t, a, y, s, l, , ac] = AL[k];
+  let r = "";
+  for (let j = 0; j < 7; j++) r += `<div class="tr"><i>${j + 1}</i>${T[(j + k) % T.length]}${G[j] ? `<span>${G[j]}</span>` : ""}</div>`;
+  return `<div class="rt">${t}</div><div class="ra" style="color:${ac}">${a}</div><div class="ri">${y} · ${s} songs · ${l}</div>
+    <div class="dice">⚄</div><div class="pl" style="left:18px;background:${ac};color:#141414">▶ Play</div>
+    <div class="pl" style="left:174px;background:rgba(255,255,255,.12)">⤮ Shuffle</div><div class="tl">${r}</div>`;
+};
+const dock = `<div class="dk" style="left:40px;width:390px"><i style="position:absolute;left:8px;top:7px;width:32px;height:32px;border-radius:6px;background:linear-gradient(135deg,#f1ede6 0 45%,#1d1d1f 46%)"></i>
+  <b style="position:absolute;left:50px;top:7px;font-size:13px">Smooth Criminal</b><span style="position:absolute;left:50px;top:25px;font-size:11px;color:#aaa">Michael Jackson</span>
+  <em style="position:absolute;right:18px;top:12px;font-style:normal;font-size:16px;letter-spacing:10px">▶ ⏭</em></div>
+  <div class="dk" style="left:440px;width:262px;display:flex;align-items:center;justify-content:space-around;font-size:11px;color:#ccc">
+  <b style="background:rgba(255,255,255,.14);padding:9px 12px;border-radius:18px;color:#fff">Carousel</b><span>Library</span><span>Settings</span></div>
+  <div class="dk" style="left:712px;width:46px;text-align:center;line-height:46px;font-size:17px">⌕</div>`;
+const d = i => { let x = ((i - cur) % n + n) % n; return x > n / 2 ? x - n : x; };
+const K = {
+  a: (e, x) => { const m = Math.abs(x); e.style.transform = `translateY(${x * 198}px) scale(${m ? .86 : 1})`;
+    e.style.filter = `brightness(${m ? .5 : 1})`; e.style.opacity = m > 1 ? 0 : 1; e.style.zIndex = 9 - m; },
+  b: (e, x) => { const m = Math.abs(x), s = Math.sign(x);
+    e.style.transform = `translateY(${s * [0, 96, 170, 230][m]}px) rotateX(${s * [0, 40, 52, 60][m]}deg) scale(${[1, .86, .72, .6][m]})`;
+    e.style.filter = `brightness(${[1, .6, .42, .3][m]})`; e.style.opacity = m > 2 ? 0 : 1; e.style.zIndex = 9 - m; },
+  c: (e, x) => { e.style.transform = `translateY(${x * 66}px) rotateX(${-x * 20}deg)`; e.style.opacity = [1, .62, .32, 0][Math.abs(x)]; },
+};
+for (const id of ["a", "b", "c"]) {
+  let L = id === "c" ? '<div class="band"></div>' : "";
+  AL.forEach((al, i) => {
+    if (id === "c") L += `<div class="row" data-i="${i}"><i class="cv" style="background:${al[5]}"></i><div><b>${al[0]}</b><span style="color:${al[6]}">${al[1]}</span></div></div>`;
+    else { const z = id === "a" ? 200 : 150; L += `<div class="cv" data-i="${i}" style="left:${(360 - z) / 2}px;top:${139 - z / 2}px;width:${z}px;height:${z}px;background:${al[5]}"></div>`; }
+  });
+  document.querySelector(`#${id} .scr`).innerHTML = `<div class="bd"></div><div class="ov"></div><div class="sb">11:56</div><div class="sb2">▮▮▮ ◥ ▭</div>
+    <div class="lh" style="${id === "b" ? "perspective:700px" : ""}">${L}</div><div class="rp"><div class="rc"></div></div>${dock}`;
+}
+const place = () => document.querySelectorAll("#cm .ph").forEach(p => {
+  p.querySelectorAll("[data-i]").forEach(e => K[p.id](e, d(+e.dataset.i)));
+  p.querySelector(".bd").style.backgroundColor = AL[cur][7];
+});
+const panels = () => document.querySelectorAll("#cm .rc").forEach(r => { r.innerHTML = panel(cur); r.style.opacity = 1; });
+root.classList.add("ns"); panels(); place();
+requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("ns")));
+if (still) root.classList.add("ns");
+document.getElementById("nx").onclick = () => {
+  cur = (cur + 1) % n; place();
+  if (still) return panels();
+  document.querySelectorAll("#cm .rc").forEach(r => r.style.opacity = 0);
+  setTimeout(panels, 200);
+};
+})();
+</script>
+</div>
+</body></html>
