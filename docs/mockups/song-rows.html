@@ -1,0 +1,93 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Song rows: one look per kind of list</title></head>
+<body style="margin:0">
+<div id="sr">
+<style>
+#sr{font:14px/1.35 Roboto,"Segoe UI",sans-serif;color:var(--text,#eee);background:var(--bg,#151517);padding:12px}
+#sr h3{margin:18px 0 2px;font-size:15px}
+#sr p{margin:0 0 10px;font-size:12.5px;color:var(--muted,#9a9aa0)}
+#sr .rec{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:var(--accent-subtle,#24382a);color:var(--accent,#93d394);margin-left:6px}
+#sr .set{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+#sr .col{width:255px}
+#sr .cap{font-size:12px;line-height:1.4;color:var(--muted,#9a9aa0);margin-top:4px}
+#sr .cap b{display:block;color:var(--text,#eee);font-size:13px;margin-bottom:1px}
+#sr .lbl{font:600 11px Roboto,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--muted,#9a9aa0);margin:10px 0 4px}
+#sr .ph{border-radius:14px;overflow:hidden;position:relative;background:#000;color:#fff;box-shadow:0 0 0 1px var(--border,#333)}
+#sr .scr{width:411px;transform-origin:0 0;transform:scale(.62);padding:4px 0}
+#sr .row{display:flex;align-items:center;padding:0 0 0 16px;position:relative}
+#sr .in{flex:1;min-width:0;display:flex;align-items:center;padding:6px 4px}
+#sr .one{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#sr .t{font:500 16px/22px Roboto,sans-serif}
+#sr .s{font:400 14px/20px Roboto,sans-serif;color:#8e8e93}
+#sr .x{font:400 12px/17px Roboto,sans-serif;color:#8e8e93}
+#sr .num{font:400 14px Roboto,sans-serif;color:#8e8e93;font-variant-numeric:tabular-nums}
+#sr .dur{font:400 13px Roboto,sans-serif;color:#8e8e93;font-variant-numeric:tabular-nums;padding-left:6px}
+#sr .more{width:48px;height:48px;display:flex;align-items:center;justify-content:center;flex:none}
+#sr .hr{position:absolute;left:56px;right:0;bottom:0;height:1px;background:rgba(255,255,255,.1)}
+#sr .art{width:52px;height:52px;border-radius:6px;flex:none}
+#sr .idx{position:absolute;right:4px;top:6px;font:500 10px/14px Roboto,sans-serif;color:#8e8e93;text-align:center}
+#sr .bars{display:inline-flex;align-items:flex-end;gap:2px;height:14px}
+#sr .bars i{width:3px;background:#93d394;border-radius:1px}
+</style>
+<h3>Song rows</h3>
+<p>The same album's tracks look different on the Library and the Carousel, and the Songs list has a third look.
+Each column shows the three lists. The green song is the one playing.</p>
+<div class="set" id="sr-set"></div>
+<script>
+(() => {
+const root = document.getElementById("sr");
+const more = '<svg width="22" height="6" viewBox="0 0 22 6"><circle cx="3" cy="3" r="2.4" fill="#fff"/><circle cx="11" cy="3" r="2.4" fill="#fff"/><circle cx="19" cy="3" r="2.4" fill="#fff"/></svg>';
+const bars = '<span class="bars" role="img" aria-label="Now playing"><i style="height:8px"></i><i style="height:14px"></i><i style="height:10px"></i></span>';
+const cov = { "2093": "linear-gradient(170deg,#0e2a24,#26594a 55%,#070b0a)", "Alivë": "linear-gradient(160deg,#16301f,#2fbf5a 45%,#0f1d16)",
+  "4L": "linear-gradient(135deg,#c9cfcf,#f2f2f2 30%,#3f9a93 58%,#1d1d1d)" };
+const tracks = [[1, "Poppin", "2:47"], [2, "Outsidë (feat. Young Thug)", "3:50"], [3, "Rëal six", "3:28"]];
+const playing = 3;
+const songs = [["1093", "2093", "2:36"], ["2 Up", "Alivë", "2:40"], ["2093", "2093", "2:24"], ["All I See", "4L", "3:34"]];
+
+// Library album page today: blank number box, artist on every row, length at the end, no line between rows.
+const libNow = ([n, t, d]) => `<div class="row"><div class="in"><span class="num" style="min-width:28px">${n}</span>
+  <div style="flex:1;min-width:0"><div class="t one">${t}</div><div class="s one">Yeat</div></div><span class="dur" style="font-size:11px">${d}</span></div>
+  <div class="more">${more}</div></div>`;
+// Carousel today: number or bars, the artist only for guests, no length, a hairline.
+const carNow = ([n, t]) => {
+  const on = n === playing;
+  return `<div class="row"><div class="in"><span style="width:28px;text-align:center">${on ? bars : `<span class="num">${n}</span>`}</span>
+  <div class="t one" style="flex:1;padding-left:8px;font-weight:${on ? 600 : 400};color:${on ? "#93d394" : "#fff"}">${t}</div></div>
+  <div class="more">${more}</div><div class="hr"></div></div>`;
+};
+// A and B: one album row on both pages. Number or bars, title, guests only, length, hairline.
+const album = ([n, t, d]) => {
+  const on = n === playing;
+  return `<div class="row"><div class="in" style="min-height:40px"><span style="width:28px;text-align:center">${on ? bars : `<span class="num">${n}</span>`}</span>
+  <div class="t one" style="flex:1;padding-left:8px;font-weight:${on ? 600 : 500};color:${on ? "#93d394" : "#fff"}">${t}</div><span class="dur">${d}</span></div>
+  <div class="more">${more}</div><div class="hr"></div></div>`;
+};
+const song3 = ([t, a, d]) => `<div class="row" style="padding-right:22px"><div class="in"><div class="art" style="background:${cov[a]}"></div>
+  <div style="flex:1;min-width:0;padding-left:12px"><div class="t one">${t}</div><div class="s one">Yeat · ${a}</div><div class="x one">ALAC · 44.1 kHz · ${d}</div></div></div>
+  <div class="more">${more}</div></div>`;
+const song2 = ([t, a, d]) => `<div class="row" style="padding-right:22px"><div class="in"><div class="art" style="background:${cov[a]}"></div>
+  <div style="flex:1;min-width:0;padding-left:12px"><div class="t one">${t}</div><div class="s one">Yeat · ${a}</div></div><span class="dur">${d}</span></div>
+  <div class="more">${more}</div></div>`;
+const idx = '<div class="idx">#<br>A<br>B<br>C<br>D<br>E<br>F<br>G<br>H<br>I<br>J<br>K<br>L<br>M<br>N<br>O<br>P<br>Q</div>';
+
+const phone = (rows, label, n) => {
+  // Each strip is cut at the same height, so a taller row shows as fewer rows.
+  const h = n * 62;
+  return `<div class="lbl">${label}</div><div class="ph" style="height:${Math.round(h * .62)}px" role="img" aria-label="${label}">
+    <div class="scr" style="position:relative">${rows}</div></div>`;
+};
+const cols = [
+  { cap: "<b>Now</b>Three looks. The Library's album page repeats “Yeat” on every row and shows no playing bars. The Carousel has no lengths. Songs rows are three lines tall.",
+    lib: tracks.map(libNow).join(""), car: tracks.map(carNow).join(""), songs: idx + songs.map(song3).join("") },
+  { cap: '<b>A · One album row, two-line songs <span class="rec">pick</span></b>Both album pages share one row: number or bars, title, guests only, length. Songs rows drop to two lines with the length on the right, as Search already does. Format stays in Track info and Sound path.',
+    lib: tracks.map(album).join(""), car: tracks.map(album).join(""), songs: idx + songs.map(song2).join("") },
+  { cap: "<b>B · One album row, Songs keep the format</b>Album pages as in A. Songs rows stay three lines, so the format shows in the list. About one row fewer per screen.",
+    lib: tracks.map(album).join(""), car: tracks.map(album).join(""), songs: idx + songs.map(song3).join("") },
+];
+root.querySelector("#sr-set").innerHTML = cols.map(c => `<div class="col">
+  ${phone(c.lib, "Library · album page", 3)}${phone(c.car, "Carousel · album", 3)}${phone(c.songs, "Library · Songs", 4.4)}
+  <div class="cap">${c.cap}</div></div>`).join("");
+})();
+</script>
+</div>
+</body></html>
