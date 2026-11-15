@@ -1,0 +1,119 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Carousel on its side, A v2</title></head>
+<body style="margin:0">
+<div id="cm2">
+<style>
+#cm2{font:14px/1.35 Roboto,"Segoe UI",sans-serif;color:var(--text,#eee);background:var(--bg,#151517);padding:12px}
+#cm2 p{margin:0 0 8px;font-size:12.5px;color:var(--muted,#9a9aa0)}
+#cm2 .ctl{display:flex;gap:8px;margin:0 0 10px}
+#cm2 .ctl button{font:600 12px Roboto,sans-serif;padding:7px 14px;border-radius:8px;border:1px solid var(--border,#333);cursor:pointer;background:var(--card,#222);color:var(--card-fg,#eee)}
+#cm2 .ctl button.go{background:var(--accent,#93d394);color:var(--bg,#111);border-color:transparent}
+#cm2.ns *{transition:none!important}
+#cm2 .ph{width:560px;height:259px;border-radius:22px;overflow:hidden;position:relative;background:#000;color:#fff}
+#cm2 .scr{position:absolute;left:0;top:0;width:800px;height:370px;transform:scale(.7);transform-origin:0 0;overflow:hidden;background:#424242}
+#cm2 .bgs{position:absolute;inset:0}
+#cm2 .bg{position:absolute;left:-60px;top:-60px;width:920px;height:490px;overflow:hidden;background:#424242;filter:blur(56px) saturate(2.5)}
+#cm2 .ly{position:absolute;width:1152px;height:1152px}
+#cm2 .scrim{position:absolute;inset:0;background:linear-gradient(rgba(255,255,255,.05),rgba(255,255,255,.05)),rgba(0,0,0,.55)}
+#cm2 .sb{position:absolute;left:44px;top:7px;font-size:12px;font-weight:600}#cm2 .sb2{position:absolute;right:30px;top:7px;font-size:10px;letter-spacing:2px}
+#cm2 .lh{position:absolute;left:40px;top:28px;width:360px;height:278px;overflow:hidden}
+#cm2 .cv{position:absolute;border-radius:12px;box-shadow:0 12px 26px rgba(0,0,0,.5);transition:transform .45s cubic-bezier(.2,.8,.2,1),filter .45s,opacity .45s}
+#cm2 .rc{position:absolute;left:420px;top:30px;width:340px;height:276px;transition:opacity .2s}
+#cm2 .rt{position:absolute;left:6px;top:12px;right:48px;font-size:20px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#cm2 .ra{position:absolute;left:6px;top:40px;font-size:14px;font-weight:500}#cm2 .ri{position:absolute;left:6px;top:61px;font-size:11.5px;color:rgba(255,255,255,.62)}
+#cm2 .dice{position:absolute;right:0;top:10px;width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.14);text-align:center;line-height:30px;font-size:15px}
+#cm2 .pl{position:absolute;top:86px;height:30px;width:160px;border-radius:15px;text-align:center;line-height:30px;font-size:13px;font-weight:600}
+#cm2 .tl{position:absolute;left:0;right:0;top:128px;bottom:0;-webkit-mask:linear-gradient(#000 68%,transparent);mask:linear-gradient(#000 68%,transparent)}
+#cm2 .tr{display:flex;align-items:center;height:30px;border-bottom:.5px solid rgba(255,255,255,.1);font-size:13px}
+#cm2 .tr i{width:26px;text-align:center;font-style:normal;color:rgba(255,255,255,.55);font-size:11.5px}#cm2 .tr span{color:rgba(255,255,255,.55);font-size:10.5px;margin-left:6px}
+#cm2 .dk{position:absolute;top:314px;height:46px;border-radius:23px;background:rgba(62,62,68,.88);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.14)}
+</style>
+<p>A, remade: no card behind the tracks. Behind it all, the album's blurred cover turns, like Now Playing.</p>
+<div class="ctl"><button class="go" id="nx2">Next album ↓</button><button id="pz2">Pause motion</button></div>
+<div class="ph" id="p2"><div class="scr"></div></div>
+<p style="margin-top:8px">It moves for 6 s on each new album, then rests, like Now Playing. That saves battery.</p>
+<script>
+(() => {
+const AL = [
+  ["Low Tide", "Evanna Test Band", 2021, 12, "41 min", "linear-gradient(160deg,#3f6f93,#0e1a26 75%)", "#8cc3ec"],
+  ["Paper Moons", "Mara Vale", 2022, 9, "33 min", "radial-gradient(circle at 70% 30%,#f6d27a 0 14%,#7a2b2b 15%,#1a0c0c 80%)", "#ff9a86"],
+  ["Neon Choir", "The Placeholders", 2024, 22, "1 h 11 min", "radial-gradient(circle at 30% 70%,#e8e36a 0 5%,transparent 6%),radial-gradient(circle at 72% 70%,#e8e36a 0 5%,transparent 6%),linear-gradient(170deg,#24493f,#0b1513 70%)", "#a6dcb4"],
+  ["Midnight Static", "Evanna Test Band", 2023, 14, "52 min", "radial-gradient(circle at 50% 45%,#f4e9c8 0 16%,#3a3a36 44%,#151514)", "#f2c14e"],
+  ["Glass Hours", "Mara Vale", 2019, 10, "38 min", "linear-gradient(135deg,#f1ede6 0 45%,#1d1d1f 46%)", "#e9e4da"],
+  ["Static Bloom", "The Placeholders", 2020, 11, "44 min", "linear-gradient(200deg,#8a5bc4,#22143a 70%)", "#c9a8ff"],
+  ["North Lights", "Evanna Test Band", 2018, 13, "49 min", "linear-gradient(20deg,#0f2b2e,#3fb6a8 120%)", "#7fe0d2"],
+];
+const T = ["Opening Light", "Static Bloom", "Northbound", "Paper Kites", "Slow Engines", "Night Market", "Afterglow", "Undertow", "Last Ferry"];
+const G = { 2: "with Mara Vale", 5: "with Low Choir" };
+// Now Playing's three turning layers (PlayerBackdrop.kt): place, turn time and direction, rest angle.
+const LY = [{ x: .5, y: .154, per: 120000, dir: -1, off: -24 }, { x: 0, y: -.256, per: 90000, dir: 1, off: 38 },
+  { x: .389, y: .538, per: 70000, dir: 1, off: -70 }];
+const DRIFT = 6000, n = AL.length, root = document.getElementById("cm2");
+const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let cur = 2, clock = 0, last = 0, paused = false, running = false;
+const scr = document.querySelector("#p2 .scr");
+const layers = LY.map(l => `<div class="ly" style="left:${60 + l.x * 800 - 576}px;top:${60 + l.y * 370}px"></div>`).join("");
+let covers = "";
+AL.forEach((al, i) => covers += `<div class="cv" data-i="${i}" style="left:80px;top:39px;width:200px;height:200px;background:${al[5]}"></div>`);
+scr.innerHTML = `<div class="bgs"><div class="bg">${layers}</div><div class="bg">${layers}</div></div><div class="scrim"></div>
+  <div class="sb">11:56</div><div class="sb2">▮▮▮ ◥ ▭</div><div class="lh">${covers}</div><div class="rc"></div>
+  <div class="dk" style="left:40px;width:390px"><i style="position:absolute;left:8px;top:7px;width:32px;height:32px;border-radius:6px;background:linear-gradient(135deg,#f1ede6 0 45%,#1d1d1f 46%)"></i>
+  <b style="position:absolute;left:50px;top:7px;font-size:13px">Smooth Criminal</b><span style="position:absolute;left:50px;top:25px;font-size:11px;color:#aaa">Michael Jackson</span>
+  <em style="position:absolute;right:18px;top:12px;font-style:normal;font-size:16px;letter-spacing:10px">▶ ⏭</em></div>
+  <div class="dk" style="left:440px;width:262px;display:flex;align-items:center;justify-content:space-around;font-size:11px;color:#ccc">
+  <b style="background:rgba(255,255,255,.14);padding:9px 12px;border-radius:18px;color:#fff">Carousel</b><span>Library</span><span>Settings</span></div>
+  <div class="dk" style="left:712px;width:46px;text-align:center;line-height:46px;font-size:17px">⌕</div>`;
+let [front, back] = scr.querySelectorAll(".bg");
+const rc = scr.querySelector(".rc");
+const panel = k => {
+  const [t, a, y, s, l, , ac] = AL[k];
+  let r = "";
+  for (let j = 0; j < 7; j++) r += `<div class="tr"><i>${j + 1}</i>${T[(j + k) % T.length]}${G[j] ? `<span>${G[j]}</span>` : ""}</div>`;
+  return `<div class="rt">${t}</div><div class="ra" style="color:${ac}">${a}</div><div class="ri">${y} · ${s} songs · ${l}</div>
+    <div class="dice">⚄</div><div class="pl" style="left:6px;background:${ac};color:#141414">▶ Play</div>
+    <div class="pl" style="left:178px;background:rgba(255,255,255,.14)">⤮ Shuffle</div><div class="tl">${r}</div>`;
+};
+const d = i => { let x = ((i - cur) % n + n) % n; return x > n / 2 ? x - n : x; };
+const placeCovers = () => scr.querySelectorAll(".cv").forEach(e => {
+  const x = d(+e.dataset.i), m = Math.abs(x);
+  e.style.transform = `translateY(${x * 198}px) scale(${m ? .86 : 1})`;
+  e.style.filter = `brightness(${m ? .5 : 1})`; e.style.opacity = m > 1 ? 0 : 1; e.style.zIndex = 9 - m;
+});
+// Eased out (cubic) over 6 s, then still: the same clock as backdropDriftPhase.
+const pose = (el, ms) => {
+  const t = Math.min(ms / DRIFT, 1), phase = DRIFT * (1 - (1 - t) ** 3);
+  LY.forEach((l, i) => el.children[i].style.transform = `rotate(${l.dir * 360 * phase / l.per + l.off}deg)`);
+};
+const frame = now => {
+  if (paused) { running = false; return; }
+  clock += Math.max(0, Math.min(now - last, 100)); last = now;
+  const ms = clock - front.start;
+  pose(front, ms);
+  if (ms < DRIFT) requestAnimationFrame(frame); else running = false;
+};
+const run = () => { if (still || running || paused) return; running = true; last = performance.now(); requestAnimationFrame(frame); };
+const showAlbum = first => {
+  [front, back] = [back, front];
+  front.querySelectorAll(".ly").forEach(l => l.style.background = AL[cur][5]);
+  front.start = clock; pose(front, 0);
+  front.style.zIndex = 2; back.style.zIndex = 1;
+  front.style.transition = "none"; front.style.opacity = first || still ? 1 : 0;
+  void front.offsetWidth;
+  front.style.transition = "opacity 1s cubic-bezier(0,0,.3,1)"; front.style.opacity = 1;
+  run();
+};
+const showPanel = () => { rc.innerHTML = panel(cur); rc.style.opacity = 1; };
+root.classList.add("ns"); placeCovers(); showPanel(); showAlbum(true);
+requestAnimationFrame(() => requestAnimationFrame(() => { if (!still) root.classList.remove("ns"); }));
+document.getElementById("nx2").onclick = () => {
+  cur = (cur + 1) % n; placeCovers(); showAlbum(false);
+  if (still) return showPanel();
+  rc.style.opacity = 0; setTimeout(showPanel, 200);
+};
+const pz = document.getElementById("pz2");
+if (still) pz.disabled = true;
+pz.onclick = () => { paused = !paused; pz.textContent = paused ? "Play motion" : "Pause motion"; if (!paused) run(); };
+})();
+</script>
+</div>
+</body></html>
