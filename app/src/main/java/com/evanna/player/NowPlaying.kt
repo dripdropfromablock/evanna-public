@@ -36,6 +36,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -1317,6 +1318,8 @@ internal enum class SidewaysStyle(val label: String) {
     companion object { fun stored(value: Any?) = entries.firstOrNull { it.name == value } ?: DETAILS }
 }
 internal const val SIDEWAYS_STYLE_PREFERENCE = "sideways-player"
+/** UI_SETTINGS key: on its side, Now Playing and Carousel hide the phone's status and navigation bars (default on). */
+internal const val FULL_SCREEN_SIDEWAYS_PREFERENCE = "sideways-full-screen"
 
 private val DetailsGap = 24.dp
 private val SideTitle = playerText(28, 33, FontWeight.Bold)
@@ -1351,11 +1354,13 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
     val turn by rememberUpdatedState({ step: Int -> pages.getOrNull(pages.indexOf(page) + step)?.let(onPage) })
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val shift by animateFloatAsState(if (page == PlayerPage.SONG) 0f else 1f, tween(420, easing = FastOutSlowInEasing), label = "details shift")
-    // Left alone while music plays, the bar slides down off the screen and the cover and pages grow into its room.
-    // Any touch or key brings it back. It stays while paused, while Audio output is open and with TalkBack on.
+    // Left alone, playing or paused, the bar slides down off the screen and the cover and pages grow into its room.
+    // A single tap on the page brings it back, or sends it away at once. A double tap plays or pauses, and a swipe turns
+    // the page (or, on the cover, the song); neither moves the bar. Touches while it shows keep it there, and so do keys.
+    // It stays while Audio output is open and with TalkBack on.
     val context = LocalContext.current
     val talkBack = remember(context) { context.getSystemService(AccessibilityManager::class.java)?.isTouchExplorationEnabled == true }
-    val canHide = state.playing && !outputSheetOpen && !talkBack
+    val canHide = !outputSheetOpen && !talkBack
     val lastTouch = remember { mutableLongStateOf(SystemClock.uptimeMillis()) }
     var idle by remember { mutableStateOf(false) }
     LaunchedEffect(canHide) {
@@ -1375,11 +1380,20 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
         lastTouch.longValue = SystemClock.uptimeMillis()
         if (idle) idle = false
     }
+    val tap by rememberUpdatedState({ if (idle) wake() else if (canHide) idle = true })
+    val doubleTap by rememberUpdatedState({ if (state.connected && state.canPlayPause) onPlayPause() })
+    val changeSong by rememberUpdatedState({ forward: Boolean ->
+        if (forward) { if (state.connected && state.canNext) onNext() } else if (state.connected && state.canPrevious) onPrevious()
+    })
+    // Where the cover (and the disc beside it) sits, for the swipe that changes the song.
+    val coverZone = remember { CoverZone() }
     val hidden by animateFloatAsState(if (idle) 1f else 0f, tween(if (idle) 420 else 260, easing = FastOutSlowInEasing), label = "bar hide")
     val navigationBars = WindowInsets.navigationBars
     Column(Modifier.fillMaxSize().graphicsLayer { alpha = contentAlpha() }
         // Watched before anything below acts on it, and never consumed, so the touch still does what it touched.
-        .pointerInput(Unit) { awaitPointerEventScope { while (true) { awaitPointerEvent(PointerEventPass.Initial); wake() } } }
+        .pointerInput(Unit) {
+            awaitPointerEventScope { while (true) { awaitPointerEvent(PointerEventPass.Initial); if (!idle) lastTouch.longValue = SystemClock.uptimeMillis() } }
+        }
         .onPreviewKeyEvent { wake(); false }
         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))) {
         // The top buttons and the dots go with the bar: they slide up out of sight and the song takes their room.
@@ -1402,17 +1416,23 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
             }
             PageDots(pages, page, Modifier)
         }
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 26.dp, vertical = 6.dp)
+        // Taps that no button, row or line took: one shows or hides the bar, two play or pause.
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()
+            .pointerInput(Unit) { detectTapGestures(onDoubleTap = { doubleTap() }, onTap = { tap() }) }
+            .padding(horizontal = 26.dp, vertical = 6.dp)
             .pointerInput(rtl) {
                 val threshold = 48.dp.toPx()
                 var distance = 0f
                 var turned = false
-                // One page per swipe, as soon as the finger has gone far enough; up and down still scroll the page.
-                detectHorizontalDragGestures(onDragStart = { distance = 0f; turned = false }) { _, delta ->
+                var onCover = false
+                // One page (or one song, on the cover) per swipe, as soon as the finger has gone far enough; up and down
+                // still scroll the page.
+                detectHorizontalDragGestures(onDragStart = { at -> distance = 0f; turned = false; onCover = coverZone.rect.contains(at) }) { _, delta ->
                     distance += delta
                     if (!turned && abs(distance) >= threshold) {
                         turned = true
-                        turn(if ((distance < 0) != rtl) 1 else -1)
+                        val forward = (distance < 0) != rtl
+                        if (onCover) changeSong(forward) else turn(if (forward) 1 else -1)
                     }
                 }
             }) {
@@ -1427,6 +1447,12 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
             val top = lerp((maxHeight - start) / 2, ((maxHeight - end - nameRoom) / 2).coerceAtLeast(0.dp), t)
             val rolled = (t * 1.6f).coerceAtMost(1f)
             val songLeft = start * 1.47f + DetailsGap
+            with(LocalDensity.current) {
+                // The disc's far edge while it is out, else the cover's; mirrored when the cover sits on the right.
+                val width = maxOf(side, if (t < 1f) side * 0.5f * (1f - rolled) + side * 0.97f else side).toPx()
+                val left = if (rtl) maxWidth.toPx() - width else 0f
+                coverZone.rect = Rect(left, top.toPx(), left + width, (top + side).toPx())
+            }
             if (t < 1f) {
                 Disc(cover, state.playing && page == PlayerPage.SONG, Modifier
                     .offset(side * 0.5f * (1f - rolled) + side * 0.03f, top + side * 0.03f).size(side * 0.94f)
@@ -1474,8 +1500,11 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
     }
 }
 
-/** How long the sideways Details bar waits, with music playing and nothing touched, before it slides away. */
+/** How long the sideways Details bar waits, with nothing touched, before it slides away. */
 private const val BAR_IDLE_MS = 5_000L
+
+/** The cover's place in the Details page, in the page's pixels; set while laying out, read by the swipe. */
+private class CoverZone { var rect = Rect.Zero }
 
 /**
  * Which page shows, as page dots (docs/mockups/details-page-dots.html, B). On a change the bright one stretches over to

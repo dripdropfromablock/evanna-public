@@ -544,14 +544,16 @@ private fun CarouselBrowser(
         if (sideways) Box(Modifier.fillMaxSize()) {
             PlayerBackdrop(backdropCover, look == EvannaLook.APPLE_LIGHT, Modifier.matchParentSize())
             Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))) {
-                BoxWithConstraints(Modifier.weight(1f).fillMaxHeight().padding(bottom = bottomInset)) {
-                    val side = minOf(maxHeight * 0.72f, maxWidth - 32.dp, 304.dp)
+                // The covers run on under the dock, so when scrolling sends it away the next one shows to the bottom edge.
+                BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                    val room = maxHeight - bottomInset
+                    val side = minOf(room * 0.72f, maxWidth - 32.dp, 304.dp)
                     VerticalPager(
                         state = pager,
                         modifier = Modifier.fillMaxSize().clipToBounds().albumsSemantics(expandable = false),
                         userScrollEnabled = active && count > 1 && !rolling,
                         // No gap: the covers either side shrink, which leaves the space between them.
-                        contentPadding = PaddingValues(vertical = (maxHeight - side) / 2),
+                        contentPadding = PaddingValues(top = (room - side) / 2, bottom = (room - side) / 2 + bottomInset),
                         pageSize = PageSize.Fixed(side),
                         flingBehavior = flingBehavior,
                         beyondViewportPageCount = 1,

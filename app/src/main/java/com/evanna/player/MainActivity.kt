@@ -21,6 +21,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings as AndroidSettings
 import android.view.KeyEvent
+import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.SystemBarStyle
@@ -30,6 +31,9 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -45,6 +49,10 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -153,6 +161,8 @@ class MainActivity : ComponentActivity() {
     private var increaseContrast by mutableStateOf(false)
     /** Now Playing's layout on a phone on its side. */
     private var sidewaysStyle by mutableStateOf(SidewaysStyle.DETAILS)
+    /** On its side, Now Playing and Carousel hide the phone's status and navigation bars. */
+    private var fullScreenSideways by mutableStateOf(true)
     private var foreground by mutableStateOf(false)
     private var startPage by mutableStateOf(PlayerScreen.LIBRARY)
     private val motionScale = AppMotionScale()
@@ -315,6 +325,7 @@ class MainActivity : ComponentActivity() {
         reduceTransparency = uiPreferences[REDUCE_TRANSPARENCY_PREFERENCE] as? Boolean ?: false
         increaseContrast = uiPreferences[INCREASE_CONTRAST_PREFERENCE] as? Boolean ?: false
         sidewaysStyle = SidewaysStyle.stored(uiPreferences[SIDEWAYS_STYLE_PREFERENCE])
+        fullScreenSideways = uiPreferences[FULL_SCREEN_SIDEWAYS_PREFERENCE] as? Boolean ?: true
         motionScale.speed = storedAnimationSpeed(uiPreferences[ANIMATION_SPEED_PREFERENCE])
         fun readSystemMotionScale() = AndroidSettings.Global.getFloat(
             contentResolver, AndroidSettings.Global.ANIMATOR_DURATION_SCALE, 1f)
@@ -461,8 +472,23 @@ class MainActivity : ComponentActivity() {
                 }
                 val pushed = pushedScreen(navigation)
                 val dockTab = selectedTab(navigation)
+                // On its side, Now Playing and the Carousel take the whole screen: the clock and the home line stay hidden
+                // until a swipe in from an edge shows them for a moment (Settings → Appearance).
+                val carouselShown = pushed == null && dockTab == PlayerScreen.CAROUSEL
+                val fullScreen = fullScreenSideways && sideways && (playerVisible || carouselShown)
+                LaunchedEffect(fullScreen) {
+                    val bars = WindowCompat.getInsetsController(window, window.decorView)
+                    bars.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    if (fullScreen) bars.hide(WindowInsetsCompat.Type.systemBars()) else bars.show(WindowInsetsCompat.Type.systemBars())
+                }
                 // Scrolling a tab down folds the dock into one row; scrolling up, a new tab or a new screen opens it again.
+                // On its side the Carousel's dock leaves the screen instead, and comes back the same way.
                 var dockFolded by remember(dockTab, pushed, playerUi.hasSong) { mutableStateOf(false) }
+                LaunchedEffect(playerVisible) { if (playerVisible && sideways) dockFolded = false }
+                val talkBack = remember { getSystemService(AccessibilityManager::class.java)?.isTouchExplorationEnabled == true }
+                val dockAway = sideways && carouselShown && dockFolded && !talkBack
+                val dockGone by animateFloatAsState(if (dockAway) 1f else 0f, tween(if (dockAway) 320 else 260, easing = FastOutSlowInEasing),
+                    label = "dock away")
                 val dockThreshold = with(LocalDensity.current) { 32.dp.toPx() }
                 val dockScroll = remember(dockTab, pushed, playerUi.hasSong, dockThreshold) {
                     object : NestedScrollConnection {
@@ -562,7 +588,8 @@ class MainActivity : ComponentActivity() {
                                 Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(dockInset + FloorFade)
                                     .background(solidFloorBrush(screenBackground(underDock), fadeShare)))
                             } else if (glassTier != GlassTier.SOLID)
-                                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(dockInset + 28.dp).background(floorBrush(pageColor)))
+                                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(dockInset + 28.dp)
+                                    .graphicsLayer { alpha = 1f - dockGone }.background(floorBrush(pageColor)))
                         }
                         if (!keyboard) CompositionLocalProvider(LocalGlass provides glass) { PlayerDock(dockTab, ::selectTab,
                             listOf(Triple(PlayerScreen.CAROUSEL, "Carousel", PlayerIcons.AlbumCarousel),
@@ -570,7 +597,11 @@ class MainActivity : ComponentActivity() {
                                 Triple(PlayerScreen.OUTPUT, "Settings", PlayerIcons.Gear)),
                             // On its side the phone is short, so the dock is always one row and never folds.
                             PlayerIcons.Search, playerUi.hasSong, dockFolded && !sideways, { dockFolded = false },
-                            Modifier.align(Alignment.BottomCenter).onSizeChanged { dockHeight = it.height }
+                            Modifier.align(Alignment.BottomCenter)
+                                // Slid out of sight it keeps its size, so the Carousel underneath never moves.
+                                .graphicsLayer { translationY = size.height * dockGone; alpha = 1f - dockGone }
+                                .then(if (dockAway) Modifier.clearAndSetSemantics {} else Modifier)
+                                .onSizeChanged { dockHeight = it.height }
                                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
                                 .padding(start = 16.dp, end = 16.dp, bottom = if (sideways) 4.dp else 8.dp), oneRow = sideways) { compact ->
                             MiniPlayer(playerUi, cover, { setPlayerOpen(true) }, ::togglePlayback,
@@ -1510,6 +1541,15 @@ class MainActivity : ComponentActivity() {
                                 getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putString(SIDEWAYS_STYLE_PREFERENCE, choice.name).apply()
                             }
                         }
+                    }
+                }
+                item(key = "full-screen") {
+                    SettingsSection(footer = "On its side, Now Playing and Carousel hide the clock and the home line. " +
+                        "Swipe in from an edge to see them.") {
+                        row { SwitchRow("Full screen on its side", checked = fullScreenSideways) { on ->
+                            fullScreenSideways = on
+                            getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putBoolean(FULL_SCREEN_SIDEWAYS_PREFERENCE, on).apply()
+                        } }
                     }
                 }
                 item(key = "start") {
