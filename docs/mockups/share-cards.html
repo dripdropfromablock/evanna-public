@@ -1,0 +1,139 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Share a lyric card or an album card</title></head>
+<body style="margin:0">
+<div id="sc">
+<style>
+#sc{font:14px/1.35 Roboto,"Segoe UI",sans-serif;color:var(--text,#eee);background:var(--bg,#151517);padding:12px}
+#sc h3{margin:18px 0 2px;font-size:15px}
+#sc p{margin:0 0 10px;font-size:12.5px;color:var(--muted,#9a9aa0)}
+#sc .rec{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:var(--accent-subtle,#24382a);color:var(--accent,#93d394);margin-left:6px}
+#sc .set{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+#sc .col{width:180px}
+#sc .col.wide{width:206px}
+#sc .cap{font-size:12px;line-height:1.4;color:var(--muted,#9a9aa0);margin-top:6px}
+#sc .cap b{display:block;color:var(--text,#eee);font-size:13px;margin-bottom:1px}
+/* A story picture is 1080 × 1920; drawn here at 360 × 640, shown at half size. */
+#sc .story{width:180px;height:320px;border-radius:12px;overflow:hidden;position:relative;background:#000;box-shadow:0 0 0 1px var(--border,#333)}
+#sc .ph{width:206px;height:446px;border-radius:20px;overflow:hidden;position:relative;background:#000;box-shadow:0 0 0 1px var(--border,#333)}
+#sc .scr{position:absolute;left:0;top:0;transform:scale(.5);transform-origin:0 0;color:#fff;overflow:hidden}
+#sc .story .scr{width:360px;height:640px}
+#sc .ph .scr{width:411px;height:891px}
+#sc .a{position:absolute}
+#sc .glow{inset:0;background:radial-gradient(70% 45% at 22% 32%,#7a3416 0,transparent 70%),radial-gradient(60% 40% at 85% 78%,#6a2e14 0,transparent 70%),
+  radial-gradient(80% 50% at 70% 20%,#123238 0,transparent 70%),linear-gradient(#171d1f,#0e1213)}
+#sc .art{background:
+  radial-gradient(3% 3% at 30% 52%,#ffd27a 0 70%,transparent 80%),radial-gradient(3% 3% at 46% 50%,#ffd27a 0 70%,transparent 80%),
+  radial-gradient(3% 3% at 64% 53%,#ffe2a0 0 70%,transparent 80%),radial-gradient(2.5% 2.5% at 78% 51%,#ffd27a 0 70%,transparent 80%),
+  radial-gradient(40% 14% at 50% 62%,rgba(255,190,90,.35) 0,transparent 70%),
+  radial-gradient(14% 14% at 76% 22%,#f3e9d2 0 60%,transparent 64%),
+  linear-gradient(#152a4a 0 50%,#0d1b30 50% 56%,#0a1424 56% 100%)}
+#sc .glass{background:rgba(18,18,20,.58);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);box-shadow:0 0 0 1px rgba(255,255,255,.06)}
+#sc .mark{font:500 10.5px Roboto,sans-serif;color:rgba(255,255,255,.55);display:flex;align-items:center;gap:4px}
+#sc .chk{width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,.4);box-sizing:border-box}
+#sc .chk.on{background:#0a84ff;border-color:#0a84ff}
+#sc .round{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.12)}
+#sc .lbl{font:500 12px Roboto,sans-serif;color:rgba(255,255,255,.85);text-align:center;width:84px;margin-top:6px}
+</style>
+<h3>Lyric card</h3>
+<p>Pick up to 4 lines of a song, then share them as a story picture. Each card has the cover's own glow behind it.</p>
+<div class="set" id="sc-lyric"></div>
+<h3>Album card</h3>
+<p>The album's cover, its name and the artist. Nothing else.</p>
+<div class="set" id="sc-album"></div>
+<h3>How you share</h3>
+<p>Long-press a lyric line, or choose Share album in a ••• menu. One sheet then sends or saves the picture.</p>
+<div class="set" id="sc-flow"></div>
+<script>
+(() => {
+const root = document.getElementById("sc");
+const F = "Roboto,'Segoe UI',sans-serif";
+const song = { title: "Glass Harbor", artist: "Mira Vale", album: "Glass Harbor" };
+const lines = ["Lights on in the harbor,", "the tide keeps the time,", "and I count every boat home."];
+const note = '<svg width="11" height="11" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12" stroke="currentColor" stroke-width="2.4" fill="none"/><circle cx="6.5" cy="18" r="2.8" fill="currentColor"/><circle cx="17.5" cy="16" r="2.8" fill="currentColor"/></svg>';
+const mark = `<span class="mark">${note}Evanna</span>`;
+const words = (size, gap) => lines.map(l => `<div style="font:700 ${size}px/${Math.round(size * 1.22)}px ${F};margin-bottom:${gap}px">${l}</div>`).join("");
+const songRow = (cover, top) => `<div style="display:flex;gap:12px;align-items:center;margin-top:${top}px">
+  <div class="art" style="width:${cover}px;height:${cover}px;border-radius:6px;flex:none"></div>
+  <div style="min-width:0"><div style="font:600 14px/18px ${F}">${song.title}</div><div style="font:400 13px/17px ${F};color:rgba(255,255,255,.7)">${song.artist}</div>
+  <div style="margin-top:3px">${mark}</div></div></div>`;
+const story = (label, body) => `<div class="story" role="img" aria-label="${label}"><div class="scr"><div class="a glow"></div>${body}</div></div>`;
+const col = (cap, body, wide) => `<div class="col${wide ? " wide" : ""}">${body}<div class="cap">${cap}</div></div>`;
+
+root.querySelector("#sc-lyric").innerHTML = [
+  col('<b>A · Glass card <span class="rec">pick</span></b>Like Apple Music. The words sit in a dark glass card, with the song under them.',
+    story("Lyric card, glass card", `<div class="a glass" style="left:40px;top:196px;width:236px;padding:22px;border-radius:20px">${words(19, 8)}${songRow(46, 18)}</div>`)),
+  col("<b>B · Big words</b>No card. Large words on the glow, the song small at the bottom.",
+    story("Lyric card, big words", `<div class="a" style="left:32px;top:190px;width:296px">${words(30, 10)}</div>
+      <div class="a" style="left:32px;top:530px;width:296px">${songRow(40, 0)}</div>`)),
+  col("<b>C · Cover on top</b>The cover first, the words under it, then the song's name.",
+    story("Lyric card, cover on top", `<div class="a art" style="left:40px;top:88px;width:280px;height:280px;border-radius:12px;box-shadow:0 14px 30px rgba(0,0,0,.5)"></div>
+      <div class="a" style="left:40px;top:392px;width:280px">${words(18, 6)}
+      <div style="margin-top:14px;font:600 13px ${F}">${song.title} <span style="font-weight:400;color:rgba(255,255,255,.7)">· ${song.artist}</span></div>
+      <div style="margin-top:6px">${mark}</div></div>`)),
+].join("");
+
+const names = (align, size) => `<div style="text-align:${align}"><div style="font:700 ${size}px/${Math.round(size * 1.25)}px ${F}">${song.album}</div>
+  <div style="font:400 ${Math.round(size * 0.78)}px/${Math.round(size * 1.1)}px ${F};color:rgba(255,255,255,.7)">${song.artist}</div>
+  <div style="margin-top:8px;display:flex;justify-content:${align === "center" ? "center" : "flex-start"}">${mark}</div></div>`;
+root.querySelector("#sc-album").innerHTML = [
+  col('<b>A · Glass card <span class="rec">pick</span></b>The same card as the lyric card, so the two look like a set.',
+    story("Album card, glass card", `<div class="a glass" style="left:44px;top:132px;width:240px;padding:16px;border-radius:22px">
+      <div class="art" style="width:240px;height:240px;border-radius:12px"></div><div style="margin-top:14px">${names("left", 19)}</div></div>`)),
+  col("<b>B · Floating cover</b>No card. A big cover with a shadow, the names centred under it.",
+    story("Album card, floating cover", `<div class="a art" style="left:40px;top:150px;width:280px;height:280px;border-radius:12px;box-shadow:0 22px 44px rgba(0,0,0,.6)"></div>
+      <div class="a" style="left:40px;top:452px;width:280px">${names("center", 20)}</div>`)),
+  col("<b>C · Full cover</b>The cover fills the top and fades into the glow, like the full cover in Now Playing.",
+    story("Album card, full cover", `<div class="a art" style="left:0;top:0;width:360px;height:420px;-webkit-mask-image:linear-gradient(#000 0 60%,transparent);mask-image:linear-gradient(#000 0 60%,transparent)"></div>
+      <div class="a" style="left:32px;top:432px;width:296px">${names("left", 22)}</div>`)),
+].join("");
+
+// The flow: pick lines on the Lyrics page, then the share sheet, then (with a Meta app ID) Instagram's own story screen.
+const lyricRows = [["Night falls on the water,", 0], ...lines.slice(0, 2).map(l => [l, 1]), [lines[2], 0], ["Hold the light for me.", 0]];
+const picking = `<div class="a glow"></div>
+  <div class="a" style="left:28px;top:14px;font:600 14px ${F}">12:41</div>
+  <div class="a" style="left:187px;top:58px;width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.55)"></div>
+  <div class="a" style="left:24px;top:84px;display:flex;gap:14px;align-items:center"><div class="art" style="width:54px;height:54px;border-radius:5px"></div>
+    <div><div style="font:600 17px ${F}">${song.title}</div><div style="font:400 15px ${F};color:rgba(255,255,255,.6)">${song.artist}</div></div></div>
+  <div class="a" style="left:24px;top:190px;width:360px">${lyricRows.map(([l, on]) => `<div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:22px">
+    <div class="chk${on ? " on" : ""}" style="margin-top:8px;flex:none"></div>
+    <div style="font:700 28px/34px ${F};color:${on ? "#fff" : "rgba(255,255,255,.35)"}">${l}</div></div>`).join("")}</div>
+  <div class="a glass" style="left:16px;top:770px;width:379px;height:64px;border-radius:32px;display:flex;align-items:center;justify-content:space-between;padding:0 10px 0 22px;box-sizing:border-box">
+    <span style="font:500 15px ${F}">Cancel</span><span style="font:400 13px ${F};color:rgba(255,255,255,.6)">2 of 4 lines</span>
+    <span style="font:600 15px ${F};background:#fff;color:#111;border-radius:22px;padding:11px 22px">Share</span></div>
+  <div class="a" style="left:150px;top:872px;width:111px;height:4px;border-radius:2px;background:#fff"></div>`;
+const igRing = '<svg width="30" height="30" viewBox="0 0 30 30"><defs><linearGradient id="sc-ig" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#f9a23a"/><stop offset=".5" stop-color="#e1306c"/><stop offset="1" stop-color="#7b3fe4"/></linearGradient></defs><circle cx="15" cy="15" r="11" fill="none" stroke="url(#sc-ig)" stroke-width="3" stroke-dasharray="5 2.2"/><path d="M15 10v10M10 15h10" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>';
+const save = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14"/></svg>';
+const more = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M8 8l4-4 4 4M6 12v7h12v-7"/></svg>';
+const sheet = `<div class="a glow"></div><div class="a" style="inset:0;background:rgba(0,0,0,.45)"></div>
+  <div class="a" style="left:0;top:96px;width:411px;height:795px;border-radius:28px 28px 0 0;background:#1c1c1e">
+    <div class="a" style="left:187px;top:8px;width:36px;height:5px;border-radius:3px;background:rgba(255,255,255,.3)"></div>
+    <div class="a" style="left:0;top:28px;width:411px;text-align:center;font:600 17px ${F}">Share lyrics</div>
+    <div class="a" style="left:105px;top:70px;width:200px;height:356px;border-radius:14px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.5)">
+      <div style="position:absolute;left:0;top:0;width:360px;height:640px;transform:scale(.5556);transform-origin:0 0"><div class="a glow"></div>
+      <div class="a glass" style="left:40px;top:196px;width:236px;padding:22px;border-radius:20px">${words(19, 8)}${songRow(46, 18)}</div></div></div>
+    <div class="a" style="left:0;top:460px;width:411px;display:flex;justify-content:center;gap:22px">
+      <div><div class="round" style="margin:0 14px">${igRing}</div><div class="lbl">Instagram Stories</div></div>
+      <div><div class="round" style="margin:0 14px">${save}</div><div class="lbl">Save to Photos</div></div>
+      <div><div class="round" style="margin:0 14px">${more}</div><div class="lbl">More apps</div></div></div>
+    <div class="a" style="left:32px;top:600px;width:347px;font:400 13px/18px ${F};color:#8e8e93;text-align:center">More apps opens Android's share menu: Instagram Feed and Chats, WhatsApp, X and the rest.</div>
+    <div class="a" style="left:150px;top:776px;width:111px;height:4px;border-radius:2px;background:#fff"></div></div>`;
+const circle = d => `<div style="width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font:600 15px ${F}">${d}</div>`;
+const instagram = `<div class="a glow"></div>
+  <div class="a" style="left:20px;top:40px">${circle("✕")}</div>
+  <div class="a" style="left:206px;top:40px;display:flex;gap:10px">${circle("Aa")}${circle("☺")}${circle("♪")}${circle("⋯")}</div>
+  <div class="a" style="left:76px;top:238px;width:260px;transform:rotate(-3deg)">
+    <div class="glass" style="padding:20px;border-radius:20px;outline:2px dashed rgba(255,255,255,.55);outline-offset:6px">${words(17, 7)}${songRow(42, 16)}</div></div>
+  <div class="a" style="left:0;top:560px;width:411px;text-align:center;font:500 13px ${F};color:rgba(255,255,255,.75)">Pinch to size it · drag to move it</div>
+  <div class="a" style="left:20px;top:800px;display:flex;gap:10px">
+    <span style="font:600 15px ${F};background:#fff;color:#111;border-radius:22px;padding:11px 20px">Your story</span>
+    <span style="font:600 15px ${F};background:rgba(0,0,0,.4);border-radius:22px;padding:11px 20px">Close Friends</span></div>`;
+const phone = (label, body) => `<div class="ph" role="img" aria-label="${label}"><div class="scr">${body}</div></div>`;
+root.querySelector("#sc-flow").innerHTML = [
+  col("<b>1 · Pick lines</b>Long-press a line on the Lyrics page. Tick up to 4. Playback and the words keep going.", phone("Picking lyric lines", picking), true),
+  col("<b>2 · Share sheet</b>A preview, then three buttons. Save to Photos puts the picture in Pictures/Evanna.", phone("The share sheet", sheet), true),
+  col("<b>3 · Instagram Stories</b>Only with a Meta app ID. The glow is the background and the card is a sticker, as with Apple Music.", phone("Instagram's story screen", instagram), true),
+].join("");
+})();
+</script>
+</div>
+</body></html>
