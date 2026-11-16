@@ -1,0 +1,114 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Album share card: new Floating and Full cover looks</title></head>
+<body style="margin:0">
+<div id="al">
+<style>
+#al{font:14px/1.35 Roboto,"Segoe UI",sans-serif;color:var(--text,#eee);background:var(--bg,#151517);padding:12px}
+#al h3{margin:18px 0 2px;font-size:15px}
+#al p{margin:0 0 10px;font-size:12.5px;color:var(--muted,#9a9aa0);max-width:70ch}
+#al .rec{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:var(--accent-subtle,#24382a);color:var(--accent,#93d394);margin-left:6px}
+#al .now{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:#2a2a2e;color:#9a9aa0;margin-left:6px}
+#al .set{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+#al .col{width:180px}
+#al .cap{font-size:12px;line-height:1.4;color:var(--muted,#9a9aa0);margin-top:6px}
+#al .cap b{display:block;color:var(--text,#eee);font-size:13px;margin-bottom:1px}
+/* A story picture is 1080 × 1920; drawn at 360 × 640, shown at half size. */
+#al .story{width:180px;height:320px;border-radius:12px;overflow:hidden;position:relative;background:#000;box-shadow:0 0 0 1px var(--border,#333)}
+#al .scr{position:absolute;left:0;top:0;width:360px;height:640px;transform:scale(.5);transform-origin:0 0;color:#fff;overflow:hidden}
+#al .a{position:absolute}
+#al .glow{inset:0;background:radial-gradient(70% 45% at 22% 32%,#5a3a16 0,transparent 70%),radial-gradient(60% 40% at 85% 78%,#4a2a14 0,transparent 70%),
+  radial-gradient(80% 50% at 70% 20%,#123238 0,transparent 70%),linear-gradient(#171d1f,#0e1213)}
+#al .art{background:
+  radial-gradient(3% 3% at 30% 52%,#ffd27a 0 70%,transparent 80%),radial-gradient(3% 3% at 46% 50%,#ffd27a 0 70%,transparent 80%),
+  radial-gradient(3% 3% at 64% 53%,#ffe2a0 0 70%,transparent 80%),radial-gradient(2.5% 2.5% at 78% 51%,#ffd27a 0 70%,transparent 80%),
+  radial-gradient(40% 14% at 50% 62%,rgba(255,190,90,.35) 0,transparent 70%),
+  radial-gradient(14% 14% at 76% 22%,#f3e9d2 0 60%,transparent 64%),
+  linear-gradient(#152a4a 0 50%,#0d1b30 50% 56%,#0a1424 56% 100%)}
+#al .mark{font:500 10.5px Roboto,sans-serif;color:rgba(255,255,255,.55);display:flex;align-items:center;gap:4px}
+#al .tn{font-feature-settings:"tnum"}
+</style>
+<h3>Floating, three new ways</h3>
+<p>The album card with no frame around it. Each keeps the cover whole, unlike Full cover.</p>
+<div class="set" id="al-float"></div>
+<h3>Full cover, three new ways</h3>
+<p>The cover is the picture. Each puts the album's name where it reads well over the cover.</p>
+<div class="set" id="al-full"></div>
+<script>
+(() => {
+const root = document.getElementById("al");
+const F = "Roboto,'Segoe UI',sans-serif";
+const A = { album: "Glass Harbor", artist: "Mira Vale", meta: "2026 · 10 songs · 38 min" };
+const gold = "#f0c27a";  // the cover's own accent, as the app samples it
+const tracks = [["Lights on the Water","3:41"],["Night Bus","3:55"],["Paper Moons","4:02"],["Low Tide","3:12"],["Glass Harbor","4:20"],["Count Every Boat","3:48"]];
+const note = '<svg width="11" height="11" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12" stroke="currentColor" stroke-width="2.4" fill="none"/><circle cx="6.5" cy="18" r="2.8" fill="currentColor"/><circle cx="17.5" cy="16" r="2.8" fill="currentColor"/></svg>';
+const mark = (center) => `<div class="mark" style="${center ? "justify-content:center;" : ""}margin-top:10px">${note}Evanna</div>`;
+const story = (label, body, bg = '<div class="a glow"></div>') =>
+  `<div class="story" role="img" aria-label="${label}"><div class="scr">${bg}${body}</div></div>`;
+const col = (cap, body) => `<div class="col">${body}<div class="cap">${cap}</div></div>`;
+const names = (align, size, extra = "") => `<div style="text-align:${align}">
+  <div style="font:700 ${size}px/${Math.round(size * 1.15)}px ${F};letter-spacing:-.01em">${A.album}</div>
+  <div style="font:400 ${Math.round(size * .75)}px/${Math.round(size * 1.05)}px ${F};color:rgba(255,255,255,.72);margin-top:2px">${A.artist}</div>
+  ${extra}${mark(align === "center")}</div>`;
+const meta = (align) => `<div class="tn" style="font:500 11px ${F};color:rgba(255,255,255,.5);margin-top:6px;text-align:${align}">${A.meta}</div>`;
+
+root.querySelector("#al-float").innerHTML = [
+  col('<b>Now <span class="now">built</span></b>A big cover with a shadow, the names centred under it.',
+    story("Floating now", `<div class="a art" style="left:40px;top:150px;width:280px;height:280px;border-radius:12px;box-shadow:0 22px 44px rgba(0,0,0,.6)"></div>
+      <div class="a" style="left:40px;top:452px;width:280px">${names("center", 20)}</div>`)),
+  col('<b>A · Cover Flow <span class="rec">pick</span></b>The cover stands on a dark glass floor with its reflection, like the Carousel. Square corners, as on a real sleeve.',
+    story("Cover Flow", `<div class="a art" style="left:56px;top:118px;width:248px;height:248px;box-shadow:0 18px 36px rgba(0,0,0,.55)"></div>
+      <div class="a" style="left:0;top:366px;width:360px;height:180px;background:linear-gradient(rgba(255,255,255,.05),transparent)"></div>
+      <div class="a art" style="left:56px;top:368px;width:248px;height:248px;transform:scaleY(-1);opacity:.55;filter:brightness(1.35);
+        -webkit-mask-image:linear-gradient(to top,rgba(0,0,0,.9),transparent 48%);mask-image:linear-gradient(to top,rgba(0,0,0,.9),transparent 48%)"></div>
+      <div class="a" style="left:0;top:366px;width:360px;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent)"></div>
+      <div class="a" style="left:40px;top:478px;width:280px">${names("center", 20, meta("center"))}</div>`)),
+  col("<b>B · Record</b>A record slides out of the sleeve to the right, printed with the cover, like the disc in the sideways Details page.",
+    story("Record", `<div class="a" style="left:142px;top:180px;width:212px;height:212px;border-radius:50%;
+        background:radial-gradient(circle,transparent 0 33%,#0c0c0e 34%),
+        repeating-radial-gradient(circle,#1b1b1e 0 1.2px,#0d0d0f 1.2px 2.6px);box-shadow:0 14px 30px rgba(0,0,0,.55)"></div>
+      <div class="a art" style="left:213px;top:251px;width:70px;height:70px;border-radius:50%;
+        -webkit-mask-image:radial-gradient(circle,transparent 0 8%,#000 9%);mask-image:radial-gradient(circle,transparent 0 8%,#000 9%)"></div>
+      <div class="a art" style="left:28px;top:176px;width:218px;height:218px;border-radius:3px;box-shadow:0 18px 36px rgba(0,0,0,.6)"></div>
+      <div class="a" style="left:36px;top:426px;width:288px">${names("left", 22, meta("left"))}</div>`)),
+  col("<b>C · Gallery print</b>The cover is framed like a print on a wall: a warm mat and a thin dark frame, with a small label under it.",
+    story("Gallery print", `<div class="a" style="left:52px;top:112px;width:256px;height:256px;background:#efe8dc;box-shadow:0 0 0 3px #1b1b1d,0 20px 40px rgba(0,0,0,.55)"></div>
+      <div class="a art" style="left:76px;top:136px;width:208px;height:208px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)"></div>
+      <div class="a" style="left:52px;top:404px;width:256px">
+        <div style="font:600 17px/21px ${F}">${A.album}</div>
+        <div style="font:400 13px/18px ${F};color:rgba(255,255,255,.72)">${A.artist}</div>
+        <div class="tn" style="font:400 11px/16px ${F};color:rgba(255,255,255,.5);margin-top:6px">${A.meta}</div>${mark(false)}</div>`)),
+].join("");
+
+const fullBg = (h, fade) => `<div class="a art" style="left:0;top:0;width:360px;height:${h}px;
+  -webkit-mask-image:linear-gradient(#000 0 ${fade}%,transparent);mask-image:linear-gradient(#000 0 ${fade}%,transparent)"></div>`;
+root.querySelector("#al-full").innerHTML = [
+  col('<b>Now <span class="now">built</span></b>The cover fills the top and fades into the glow. The names sit small under it.',
+    story("Full cover now", `${fullBg(420, 60)}<div class="a" style="left:32px;top:432px;width:296px">${names("left", 22)}</div>`)),
+  col('<b>A · Poster <span class="rec">pick</span></b>The cover fills the whole picture. A dark fade at the bottom holds a big title, like a film poster. Crops the cover\'s sides.',
+    story("Poster", `<div class="a art" style="left:-140px;top:0;width:640px;height:640px"></div>
+      <div class="a" style="inset:0;background:linear-gradient(transparent 38%,rgba(6,8,12,.55) 62%,rgba(6,8,12,.92) 100%)"></div>
+      <div class="a" style="left:28px;top:446px;width:304px">
+        <div style="font:800 46px/46px ${F};letter-spacing:-.035em">${A.album}</div>
+        <div style="font:500 17px/22px ${F};color:${gold};margin-top:8px">${A.artist}</div>
+        <div class="tn" style="font:400 12px/16px ${F};color:rgba(255,255,255,.62);margin-top:4px">${A.meta}</div>${mark(false)}</div>`)),
+  col("<b>B · Liner notes</b>The whole cover on top, then the first songs and their lengths, like the back of a sleeve.",
+    story("Liner notes", `<div class="a art" style="left:0;top:0;width:360px;height:332px"></div>
+      <div class="a" style="left:0;top:332px;width:360px;height:308px;background:linear-gradient(rgba(10,14,20,.55),rgba(10,14,20,.8))"></div>
+      <div class="a" style="left:28px;top:352px;width:304px">
+        <div style="font:700 21px/25px ${F}">${A.album}</div>
+        <div style="font:400 14px/19px ${F};color:${gold}">${A.artist}</div>
+        <div style="margin-top:12px">${tracks.map(([t, d], i) => `<div class="tn" style="display:flex;gap:10px;font:400 12.5px/25px ${F};border-top:1px solid rgba(255,255,255,.08)">
+          <span style="width:14px;color:rgba(255,255,255,.45)">${i + 1}</span><span style="flex:1">${t}</span><span style="color:rgba(255,255,255,.55)">${d}</span></div>`).join("")}
+          <div class="tn" style="font:400 11px/22px ${F};color:rgba(255,255,255,.5);border-top:1px solid rgba(255,255,255,.08)">+4 more · 38 min</div></div>
+        ${mark(false)}</div>`)),
+  col("<b>C · Big type</b>The cover fades out, and the album's name, set very large, runs over the edge of the fade. The artist takes the cover's colour.",
+    story("Big type", `${fullBg(430, 52)}
+      <div class="a" style="left:22px;top:300px;width:330px">
+        <div style="font:800 68px/62px ${F};letter-spacing:-.04em;text-shadow:0 2px 18px rgba(0,0,0,.35)">Glass<br>Harbor</div>
+        <div style="font:500 18px/24px ${F};color:${gold};margin-top:14px">${A.artist}</div>
+        <div class="tn" style="font:400 12px/16px ${F};color:rgba(255,255,255,.55);margin-top:2px">${A.meta}</div>${mark(false)}</div>`)),
+].join("");
+})();
+</script>
+</div>
+</body></html>
