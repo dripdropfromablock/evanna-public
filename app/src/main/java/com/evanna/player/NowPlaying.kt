@@ -228,6 +228,19 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
             if (it == PlayerPage.LYRICS) lyricsTrack = state.id
             page = it
         }
+        // Upright Lyrics, as in Apple Music: left alone for 5 s, the controls slide away and the words take their room.
+        // Any touch or key brings them back. They stay with TalkBack on, under a sheet or dialog, and while there is a problem.
+        val context = LocalContext.current
+        val talkBack = remember(context) { context.getSystemService(AccessibilityManager::class.java)?.isTouchExplorationEnabled == true }
+        val canHideControls = page == PlayerPage.LYRICS && wantedOpen && !flying && state.hasSong && !sidewaysPhone() &&
+            lyrics is LyricsLoad.Ready && !outputSheetOpen && !showSignal && !showSleep && !talkBack &&
+            state.error == null && actionError == null
+        val lyricsIdle = rememberIdleWatch(canHideControls)
+        val hideControls = lyricsIdle.idle && canHideControls
+        val controlsHidden by animateFloatAsState(if (hideControls) 1f else 0f,
+            tween(if (hideControls) 420 else 260, easing = FastOutSlowInEasing), label = "lyrics controls hide")
+        // Read each frame only while laying out and drawing; the page itself hears only when the controls start or finish moving.
+        val controlsMoved by remember { derivedStateOf { controlsHidden > 0f } }
         CompositionLocalProvider(LocalContentColor provides Pv1) {
             if (sidewaysPhone() && state.hasSong && sidewaysStyle == SidewaysStyle.DETAILS) {
                 val info by key(state.id) {
@@ -244,7 +257,7 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
                         onPlayPause, onPrevious, onNext, onUsbVolume, onUsbVolumeSet, onSleep, onOutput, outputSheetOpen, sideways = true)
                 },
                 queue = { QueuePage(state, onShuffle, onRepeat, onSelect, onMove, onRemove, onLibrary, loadArtwork, it) })
-            else Column(Modifier.fillMaxSize().graphicsLayer { alpha = contentAlpha() }
+            else Column(Modifier.fillMaxSize().graphicsLayer { alpha = contentAlpha() }.wakesControls(lyricsIdle)
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
                 Grabber(page.heading, onBack)
                 if (!state.hasSong) NoSong(state, onLibrary, Modifier.weight(1f))
@@ -271,7 +284,7 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
                                     PlayerPage.LYRICS -> Column(Modifier.fillMaxSize()) {
                                         CompactHeader(state, cover, more,
                                             Modifier.dockingCover(motion, flying, report = shown == page).then(sharedCover)) { page = PlayerPage.SONG }
-                                        LyricsPage(lyrics, state, onSeek, Modifier.weight(1f).padding(top = 24.dp).graphicsLayer {
+                                        LyricsPage(lyrics, state, onSeek, holdLine = controlsMoved, modifier = Modifier.weight(1f).padding(top = 24.dp).graphicsLayer {
                                             val expanded = ((motion.progress - 0.35f) / 0.65f).coerceIn(0f, 1f)
                                             alpha = expanded
                                             scaleX = 0.65f + 0.35f * expanded
@@ -288,8 +301,17 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
                             }
                         }
                     }
-                    PlayerControls(state, actionError, page, openPage, lyrics, onSeek, { signalOrigin = it; showSignal = true }, onPlayPause, onPrevious, onNext, onUsbVolume, onUsbVolumeSet, onSleep,
-                        onOutput, outputSheetOpen)
+                    // Hidden, the controls keep only the room above the home bar and slide down by their full height.
+                    val navigationBars = WindowInsets.navigationBars
+                    Box(Modifier.layout { measurable, constraints ->
+                        val bar = measurable.measure(constraints)
+                        val rest = navigationBars.getBottom(this) + 6.dp.roundToPx()
+                        val height = bar.height - ((bar.height - rest).coerceAtLeast(0) * controlsHidden).roundToInt()
+                        layout(bar.width, height) { bar.place(0, (rest * controlsHidden).roundToInt()) }
+                    }.graphicsLayer { alpha = 1f - controlsHidden }.then(if (hideControls) Modifier.clearAndSetSemantics {} else Modifier)) {
+                        PlayerControls(state, actionError, page, openPage, lyrics, onSeek, { signalOrigin = it; showSignal = true }, onPlayPause, onPrevious, onNext, onUsbVolume, onUsbVolumeSet, onSleep,
+                            onOutput, outputSheetOpen)
+                    }
                 }
             }
         }
@@ -844,7 +866,7 @@ internal fun lyricFramePosition(previous: Long, elapsedMs: Long, target: Long): 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LyricsPage(load: LyricsLoad, state: PlayerPresentation, onSeek: (String?, Long) -> Unit, modifier: Modifier,
-    small: Boolean = false, accent: Color = Pv1) {
+    small: Boolean = false, accent: Color = Pv1, holdLine: Boolean = false) {
     BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         if (load !is LyricsLoad.Ready) {
             Text(when (load) { LyricsLoad.Loading -> "Loading lyrics…"; LyricsLoad.None -> "This song has no lyrics."; else -> "Lyrics could not be read." },
@@ -852,7 +874,12 @@ private fun LyricsPage(load: LyricsLoad, state: PlayerPresentation, onSeek: (Str
             return@BoxWithConstraints
         }
         val lyrics = load.lyrics
-        val viewport = maxHeight
+        // [holdLine]: the controls under the page are moving or away. The page grows into their room, but the current
+        // line keeps its spot, so more lines show below it.
+        var steady by remember { mutableStateOf(maxHeight) }
+        val height = maxHeight
+        SideEffect { if (!holdLine) steady = height }
+        val viewport = if (holdLine) steady else maxHeight
         val reducedMotion = rememberCoroutineScope().coroutineContext[MotionDurationScale]?.scaleFactor == 0f
         // Keep overscroll in the lyrics. The header and surrounding player still accept a dismiss swipe.
         val lyricScroll = remember {
@@ -1385,7 +1412,7 @@ private val SideSmallTitle = playerText(15, 19, FontWeight.SemiBold)
  * out of it, turning while music plays, and beside them the song's name, its artist, the album line, the quality as the
  * theme's badges and the next two songs. Lyrics and Queue: the disc rolls back into the cover, the song's name moves under
  * it and the page comes in on the right. A glass bar along the bottom holds the transport, the seek bar and the page buttons.
- * The codec, channel, Hi-Res and disc pictures are the theme's own (MIT, assets/licenses/Georgia-ReBORN-MIT.txt).
+ * The codec, channel and disc pictures are the theme's own (MIT, assets/licenses/Georgia-ReBORN-MIT.txt).
  */
 @Composable
 private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: LibrarySong?, page: PlayerPage, onPage: (PlayerPage) -> Unit,
@@ -1549,8 +1576,54 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
     }
 }
 
-/** How long the sideways Details bar waits, with nothing touched, before it slides away. */
+/** How long the sideways Details bar, or the upright Lyrics controls, wait with nothing touched before they slide away. */
 private const val BAR_IDLE_MS = 5_000L
+
+/** The idle count for the upright Lyrics controls: [idle] turns true after [BAR_IDLE_MS] with no touch or key. */
+private class IdleWatch {
+    var idle by mutableStateOf(false)
+    var touching by mutableStateOf(false)
+    var lastTouch = SystemClock.uptimeMillis()
+
+    fun wake() {
+        lastTouch = SystemClock.uptimeMillis()
+        if (idle) idle = false
+    }
+}
+
+/** Counts while [armed]; disarmed, it is never idle. A finger held down keeps it awake. */
+@Composable
+private fun rememberIdleWatch(armed: Boolean): IdleWatch {
+    val watch = remember { IdleWatch() }
+    LaunchedEffect(armed) {
+        watch.idle = false
+        if (!armed) return@LaunchedEffect
+        watch.lastTouch = SystemClock.uptimeMillis()
+        while (true) {
+            val wait = watch.lastTouch + BAR_IDLE_MS - SystemClock.uptimeMillis()
+            when {
+                wait > 0 -> delay(wait)
+                watch.touching -> snapshotFlow { watch.touching }.first { !it }
+                else -> {
+                    watch.idle = true
+                    snapshotFlow { watch.idle }.first { !it }
+                }
+            }
+        }
+    }
+    return watch
+}
+
+/** Every touch and key under this wakes [watch]. It looks before anything below acts and consumes nothing. */
+private fun Modifier.wakesControls(watch: IdleWatch): Modifier = pointerInput(watch) {
+    awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            watch.touching = event.changes.any { it.pressed }
+            watch.wake()
+        }
+    }
+}.onPreviewKeyEvent { watch.wake(); false }
 
 /** The cover's place in the Details page, in the page's pixels; set while laying out, read by the swipe. */
 private class CoverZone { var rect = Rect.Zero }
@@ -1657,10 +1730,6 @@ private fun SongDetails(state: PlayerPresentation, info: LibrarySong?, accent: C
                         val quality = listOfNotNull(bits?.let { "$it-bit" },
                             rate?.let { shortSourceQuality("${codec ?: "?"} · $it Hz").split(" · ").getOrNull(1) }).joinToString(" · ")
                         if (quality.isNotEmpty()) pill { Text(quality, style = SideBadge, color = Pv1, maxLines = 1) }
-                        if ((bits ?: 0) >= 24 || (rate ?: 0) > 48_000) Box(Modifier.height(26.dp), contentAlignment = Alignment.Center) {
-                            Image(painterResource(R.drawable.georgia_hires), contentDescription = "Hi-Res", modifier = Modifier.height(22.dp),
-                                contentScale = ContentScale.Fit)
-                        }
                         channels?.let { n ->
                             pill { ThemeBadge(channelBadge(n), if (n == 1) "Mono" else if (n == 2) "Stereo" else "$n channels", Modifier.height(18.dp)) }
                         }
