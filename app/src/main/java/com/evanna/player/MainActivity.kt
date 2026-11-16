@@ -133,6 +133,7 @@ import com.truesample.usbaudio.UsbAudioOutput
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -352,15 +353,18 @@ class MainActivity : ComponentActivity() {
             val controller = mediaController
             val songId = playerUi.id?.takeIf { playerUi.hasSong }
             val scansFinished = LocalLibrary.scansFinished
-            // Clear the old palette with the old cover as soon as the selected song changes.
-            var artwork by remember(controller, songId, scansFinished) { mutableStateOf<Pair<Bitmap, Color?>?>(null) }
+            // On a song change the old cover and palette stay until the new cover is ready, so the player never flashes
+            // the empty note card. A song with no cover clears them, and so does a cover still loading after 0.6 s.
+            var artwork by remember(controller) { mutableStateOf<Pair<Bitmap, Color?>?>(null) }
             LaunchedEffect(controller, songId, scansFinished) {
-                if (controller == null || songId == null) return@LaunchedEffect
+                if (controller == null || songId == null) { artwork = null; return@LaunchedEffect }
+                val slow = launch { delay(600); artwork = null }
                 val decoded = try { currentArtwork(controller, songId) }
                     catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { null } ?: return@LaunchedEffect
-                val accent = withContext(Dispatchers.Default) { sampleArtworkAccent(decoded) }
-                artwork = decoded to accent
+                    catch (_: Exception) { null }
+                val loaded = decoded?.let { it to withContext(Dispatchers.Default) { sampleArtworkAccent(it) } }
+                slow.cancel()
+                artwork = loaded
             }
             val cover = artwork?.first
             val accent = artwork?.second
