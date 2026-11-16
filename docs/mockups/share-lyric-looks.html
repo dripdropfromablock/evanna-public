@@ -1,0 +1,132 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Lyric share card: new looks, and a picker for all of them</title></head>
+<body style="margin:0">
+<div id="ly">
+<style>
+#ly{font:14px/1.35 Roboto,"Segoe UI",sans-serif;color:var(--text,#eee);background:var(--bg,#151517);padding:12px}
+#ly h3{margin:18px 0 2px;font-size:15px}
+#ly p{margin:0 0 10px;font-size:12.5px;color:var(--muted,#9a9aa0);max-width:72ch}
+#ly .rec{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:var(--accent-subtle,#24382a);color:var(--accent,#93d394);margin-left:6px}
+#ly .now{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:#2a2a2e;color:#9a9aa0;margin-left:6px}
+#ly .set{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+#ly .col{width:150px}
+#ly .col.wide{width:206px}
+#ly .cap{font-size:12px;line-height:1.4;color:var(--muted,#9a9aa0);margin-top:6px}
+#ly .cap b{display:block;color:var(--text,#eee);font-size:13px;margin-bottom:1px}
+/* A story picture is 1080 × 1920; drawn at 360 × 640, shown smaller. */
+#ly .story{width:150px;height:267px;border-radius:10px;overflow:hidden;position:relative;background:#000;box-shadow:0 0 0 1px var(--border,#333)}
+#ly .scr{position:absolute;left:0;top:0;width:360px;height:640px;transform:scale(.4167);transform-origin:0 0;color:#fff;overflow:hidden}
+#ly .ph{width:206px;height:446px;border-radius:20px;overflow:hidden;position:relative;background:#000;box-shadow:0 0 0 1px var(--border,#333)}
+#ly .ph .scr{width:411px;height:891px;transform:scale(.5)}
+#ly .a{position:absolute}
+#ly .glow{inset:0;background:radial-gradient(70% 45% at 22% 32%,#5a3a16 0,transparent 70%),radial-gradient(60% 40% at 85% 78%,#4a2a14 0,transparent 70%),
+  radial-gradient(80% 50% at 70% 20%,#123238 0,transparent 70%),linear-gradient(#171d1f,#0e1213)}
+#ly .art{background:
+  radial-gradient(3% 3% at 30% 52%,#ffd27a 0 70%,transparent 80%),radial-gradient(3% 3% at 46% 50%,#ffd27a 0 70%,transparent 80%),
+  radial-gradient(3% 3% at 64% 53%,#ffe2a0 0 70%,transparent 80%),radial-gradient(2.5% 2.5% at 78% 51%,#ffd27a 0 70%,transparent 80%),
+  radial-gradient(40% 14% at 50% 62%,rgba(255,190,90,.35) 0,transparent 70%),
+  radial-gradient(14% 14% at 76% 22%,#f3e9d2 0 60%,transparent 64%),
+  linear-gradient(#152a4a 0 50%,#0d1b30 50% 56%,#0a1424 56% 100%)}
+#ly .glass{background:rgba(18,18,20,.58);box-shadow:0 0 0 1px rgba(255,255,255,.06)}
+#ly .mark{font:500 10.5px Roboto,sans-serif;display:flex;align-items:center;gap:4px}
+#ly .serif{font-family:"Noto Serif",Georgia,"Times New Roman",serif}
+</style>
+<h3>Lyric looks you have now <span class="now">kept</span></h3>
+<p>These three stay. Card stays the default.</p>
+<div class="set" id="ly-now"></div>
+<h3>New lyric looks</h3>
+<p>Each is added as one more choice. Lyrics are fictional sample lines.</p>
+<div class="set" id="ly-new"></div>
+<h3>Picking a look</h3>
+<p>Nine album looks and seven lyric looks no longer fit a three-part switch. The sheet shows a row of small previews you swipe through, like photo filters; the one you used last comes first.</p>
+<div class="set" id="ly-sheet"></div>
+<script>
+(() => {
+const root = document.getElementById("ly");
+const F = "Roboto,'Segoe UI',sans-serif";
+const S = "'Noto Serif',Georgia,'Times New Roman',serif";
+const song = { title: "Glass Harbor", artist: "Mira Vale" };
+const gold = "#f0c27a";
+const lines = ["Lights on in the harbor,", "the tide keeps the time,", "and I count every boat home."];
+const context = { before: "Night falls on the water,", after: "Hold the light for me." };
+const note = '<svg width="11" height="11" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12" stroke="currentColor" stroke-width="2.4" fill="none"/><circle cx="6.5" cy="18" r="2.8" fill="currentColor"/><circle cx="17.5" cy="16" r="2.8" fill="currentColor"/></svg>';
+const mark = (ink = "rgba(255,255,255,.55)") => `<span class="mark" style="color:${ink}">${note}Evanna</span>`;
+const words = (size, gap, extra = "") => lines.map(l => `<div style="font:700 ${size}px/${Math.round(size * 1.2)}px ${F};margin-bottom:${gap}px;${extra}">${l}</div>`).join("");
+const songRow = (cover, ink = "#fff", sub = "rgba(255,255,255,.7)", markInk) => `<div style="display:flex;gap:12px;align-items:center">
+  <div class="art" style="width:${cover}px;height:${cover}px;border-radius:6px;flex:none"></div>
+  <div><div style="font:600 14px/18px ${F};color:${ink}">${song.title}</div><div style="font:400 13px/17px ${F};color:${sub}">${song.artist}</div>
+  <div style="margin-top:3px">${mark(markInk)}</div></div></div>`;
+const story = (label, body, bg = '<div class="a glow"></div>') => `<div class="story" role="img" aria-label="${label}"><div class="scr">${bg}${body}</div></div>`;
+const col = (cap, body, wide) => `<div class="col${wide ? " wide" : ""}">${body}<div class="cap">${cap}</div></div>`;
+
+const looks = {
+  card: `<div class="a glass" style="left:40px;top:196px;width:236px;padding:22px;border-radius:20px">${words(19, 8)}<div style="margin-top:18px">${songRow(46)}</div></div>`,
+  big: `<div class="a" style="left:32px;top:190px;width:296px">${words(30, 10)}</div><div class="a" style="left:32px;top:530px;width:296px">${songRow(40)}</div>`,
+  cover: `<div class="a art" style="left:40px;top:88px;width:280px;height:280px;border-radius:12px;box-shadow:0 14px 30px rgba(0,0,0,.5)"></div>
+    <div class="a" style="left:40px;top:392px;width:280px">${words(18, 6)}<div style="margin-top:14px;font:600 13px ${F}">${song.title}
+    <span style="font-weight:400;color:rgba(255,255,255,.7)">· ${song.artist}</span></div><div style="margin-top:6px">${mark()}</div></div>`,
+  // The cover is the whole picture; a dark fade from the bottom carries the words, as in the album Poster.
+  poster: `<div class="a" style="inset:0;background:linear-gradient(transparent 22%,rgba(6,8,12,.5) 46%,rgba(6,8,12,.94) 78%)"></div>
+    <div class="a" style="left:28px;top:330px;width:304px">${words(25, 8, "letter-spacing:-.01em")}
+    <div style="margin-top:16px;font:600 14px ${F}">${song.title} <span style="font-weight:400;color:${gold}">· ${song.artist}</span></div>
+    <div style="margin-top:6px">${mark()}</div></div>`,
+  // A quotation: serif italic words under a large opening mark in the cover's colour.
+  quote: `<div class="a" style="left:34px;top:120px;font:700 150px/1 ${S};color:${gold};opacity:.9">“</div>
+    <div class="a" style="left:36px;top:250px;width:290px">${lines.map(l => `<div style="font:italic 400 27px/35px ${S};margin-bottom:2px">${l}</div>`).join("")}
+    <div style="width:40px;height:2px;background:${gold};margin:26px 0 18px"></div>
+    <div style="font:600 13px/18px ${F};letter-spacing:.02em">${song.title}</div><div style="font:400 13px/18px ${F};color:rgba(255,255,255,.7)">${song.artist}</div>
+    <div style="margin-top:6px">${mark()}</div></div>`,
+  // A solid block in the cover's colour, like a page torn out: dark words, the cover small at the top.
+  colour: `<div class="a" style="left:30px;top:150px;width:300px;height:340px;border-radius:18px;background:${gold};box-shadow:0 18px 40px rgba(0,0,0,.45)"></div>
+    <div class="a" style="left:54px;top:174px;width:252px">
+      <div style="display:flex;gap:10px;align-items:center"><div class="art" style="width:38px;height:38px;border-radius:5px"></div>
+        <div><div style="font:700 13px/17px ${F};color:#2a1d08">${song.title}</div><div style="font:400 12px/16px ${F};color:rgba(42,29,8,.72)">${song.artist}</div></div></div>
+      <div style="margin-top:22px">${lines.map(l => `<div style="font:800 23px/28px ${F};color:#1d1405;letter-spacing:-.01em;margin-bottom:6px">${l}</div>`).join("")}</div>
+      <div style="margin-top:16px">${mark("rgba(42,29,8,.6)")}</div></div>`,
+  // As on the Lyrics page: the picked lines bright, the lines either side faint and blurred, the song small on top.
+  page: `<div class="a" style="left:28px;top:70px">${songRow(42)}</div>
+    <div class="a" style="left:28px;top:170px;width:310px">
+      <div style="font:700 26px/31px ${F};color:rgba(255,255,255,.3);filter:blur(1.6px);margin-bottom:16px">${context.before}</div>
+      ${words(30, 16)}
+      <div style="font:700 26px/31px ${F};color:rgba(255,255,255,.3);filter:blur(1.6px)">${context.after}</div></div>`,
+};
+root.querySelector("#ly-now").innerHTML = [
+  col("<b>Card</b>Words in a glass card.", story("Card", looks.card)),
+  col("<b>Big words</b>Large words on the glow.", story("Big words", looks.big)),
+  col("<b>Cover</b>The cover, then the words.", story("Cover", looks.cover)),
+].join("");
+root.querySelector("#ly-new").innerHTML = [
+  col('<b>Lyrics page <span class="rec">pick</span></b>Looks like Evanna\'s own Lyrics page: the lines either side stay faint and blurred.', story("Lyrics page", looks.page)),
+  col("<b>Poster</b>The cover fills the picture; the words sit on a dark fade, like the album Poster.", story("Poster", looks.poster, '<div class="a art" style="left:-140px;top:0;width:640px;height:640px"></div>')),
+  col("<b>Quote</b>Serif italic words under a big quote mark in the cover's colour.", story("Quote", looks.quote)),
+  col("<b>Colour</b>A block in the cover's colour with dark words, the cover small on top. Text turns light on dark covers.", story("Colour", looks.colour)),
+].join("");
+
+// The share sheet with a strip of previews in place of the switch.
+const thumb = (name, body, on, bg) => `<div style="flex:none;width:66px;text-align:center">
+  <div style="width:66px;height:117px;border-radius:9px;overflow:hidden;position:relative;${on ? "box-shadow:0 0 0 3px #fff" : "box-shadow:0 0 0 1px rgba(255,255,255,.12)"}">
+    <div style="position:absolute;left:0;top:0;width:360px;height:640px;transform:scale(.1833);transform-origin:0 0">${bg ?? '<div class="a glow"></div>'}${body}</div></div>
+  <div style="font:500 11.5px/15px ${F};margin-top:7px;color:${on ? "#fff" : "rgba(255,255,255,.6)"}">${name}</div></div>`;
+const strip = [["Card", looks.card], ["Lyrics page", looks.page, true], ["Poster", looks.poster, false, '<div class="a art" style="left:-140px;top:0;width:640px;height:640px"></div>'],
+  ["Quote", looks.quote], ["Colour", looks.colour], ["Big words", looks.big], ["Cover", looks.cover]];
+const save = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14"/></svg>';
+const more = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M8 8l4-4 4 4M6 12v7h12v-7"/></svg>';
+const ring = '<svg width="28" height="28" viewBox="0 0 30 30"><defs><linearGradient id="ly-ig" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#f9a23a"/><stop offset=".5" stop-color="#e1306c"/><stop offset="1" stop-color="#7b3fe4"/></linearGradient></defs><circle cx="15" cy="15" r="11" fill="none" stroke="url(#ly-ig)" stroke-width="3" stroke-dasharray="5 2.2"/><path d="M15 10v10M10 15h10" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>';
+const button = (icon, label) => `<div style="width:84px;text-align:center"><div style="width:56px;height:56px;border-radius:50%;background:#2c2c2e;margin:0 auto;display:flex;align-items:center;justify-content:center">${icon}</div>
+  <div style="font:500 12px ${F};margin-top:6px">${label}</div></div>`;
+const sheet = `<div class="a glow"></div><div class="a" style="inset:0;background:rgba(0,0,0,.45)"></div>
+  <div class="a" style="left:0;top:70px;width:411px;height:821px;border-radius:28px 28px 0 0;background:#1c1c1e">
+    <div class="a" style="left:0;top:22px;width:411px;text-align:center;font:600 17px ${F}">Share lyrics</div>
+    <div class="a" style="left:120px;top:64px;width:171px;height:304px;border-radius:13px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.5)">
+      <div style="position:absolute;left:0;top:0;width:360px;height:640px;transform:scale(.475);transform-origin:0 0"><div class="a glow"></div>${looks.page}</div></div>
+    <div class="a" style="left:0;top:392px;width:411px;overflow:hidden">
+      <div style="display:flex;gap:12px;padding:4px 18px;width:max-content">${strip.map(([n, b, on, bg]) => thumb(n, b, on, bg)).join("")}</div></div>
+    <div class="a" style="left:0;top:574px;width:411px;display:flex;justify-content:center;gap:12px">${button(ring, "Instagram Stories")}${button(save, "Save to Photos")}${button(more, "More apps")}</div>
+    <div class="a" style="left:150px;top:806px;width:111px;height:4px;border-radius:2px;background:#fff"></div></div>`;
+root.querySelector("#ly-sheet").innerHTML =
+  col("<b>Share sheet</b>Swipe the previews; tap one to use it. Each preview is the real picture, drawn small.",
+    `<div class="ph" role="img" aria-label="Share sheet with look previews"><div class="scr">${sheet}</div></div>`, true);
+})();
+</script>
+</div>
+</body></html>
