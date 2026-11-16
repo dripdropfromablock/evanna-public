@@ -100,7 +100,13 @@ import com.evanna.player.library.LibraryScreen
 import com.evanna.player.library.MusicFoldersDialog
 import com.evanna.player.library.ArtworkSize
 import com.evanna.player.library.LocalLibrary
+import com.evanna.player.library.FoundLyrics
+import com.evanna.player.library.LrcLib
 import com.evanna.player.library.Lyrics
+import com.evanna.player.library.LyricsQuery
+import com.evanna.player.library.lrcLibText
+import com.evanna.player.library.lrcLibTier
+import com.evanna.player.library.parseLyrics
 import com.evanna.player.library.musicNote
 import com.evanna.player.usb.UsbPermissionSession
 import com.evanna.player.usb.DacIdentity
@@ -166,6 +172,26 @@ class MainActivity : ComponentActivity() {
     private var coverStyle by mutableStateOf(CoverStyle.CARD)
     /** On its side, Now Playing and Carousel hide the phone's status and navigation bars. */
     private var fullScreenSideways by mutableStateOf(true)
+    /** Songs with no lyrics of their own are looked up on LRCLIB when Now Playing shows them (off until the user turns it on). */
+    private var autoFindLyrics by mutableStateOf(false)
+    /** Songs already looked up on their own this run, so one with no lyrics online is not asked about again. */
+    private val autoLyricsTried = HashSet<String>()
+    /** The folder-access request for saving lyrics beside songs: its music folder and who waits for the answer. */
+    private var lyricsGrantRoot: String? = null
+    private var lyricsGrant: kotlinx.coroutines.CompletableDeferred<String?>? = null
+    private val folderWritePicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val root = lyricsGrantRoot
+        lyricsGrantRoot = null
+        val picked = result.data?.data
+        // Null answers "allowed"; otherwise the note Now Playing shows under the lyrics.
+        val answer = when {
+            result.resultCode != RESULT_OK || picked == null || root == null -> "The lyrics stay saved in Evanna."
+            takeFolderWrite(picked, root, result.data?.flags ?: 0) -> null
+            else -> "Choose the music folder itself to save lyrics beside its songs."
+        }
+        lyricsGrant?.complete(answer)
+        lyricsGrant = null
+    }
     private var foreground by mutableStateOf(false)
     private var startPage by mutableStateOf(PlayerScreen.LIBRARY)
     private val motionScale = AppMotionScale()
@@ -330,6 +356,7 @@ class MainActivity : ComponentActivity() {
         sidewaysStyle = SidewaysStyle.stored(uiPreferences[SIDEWAYS_STYLE_PREFERENCE])
         coverStyle = CoverStyle.stored(uiPreferences[COVER_STYLE_PREFERENCE])
         fullScreenSideways = uiPreferences[FULL_SCREEN_SIDEWAYS_PREFERENCE] as? Boolean ?: true
+        autoFindLyrics = uiPreferences[FIND_LYRICS_ONLINE_PREFERENCE] as? Boolean ?: false
         motionScale.speed = storedAnimationSpeed(uiPreferences[ANIMATION_SPEED_PREFERENCE])
         fun readSystemMotionScale() = AndroidSettings.Global.getFloat(
             contentResolver, AndroidSettings.Global.ANIMATOR_DURATION_SCALE, 1f)
@@ -635,7 +662,8 @@ class MainActivity : ComponentActivity() {
                                     onSavePlaylist = { openPlaylists(saveQueue = true) }, loadArtwork = ::queueArtwork,
                                     motion = motion, flying = flying, wantedOpen = wantedOpen,
                                     outputSheetOpen = showOutput, sidewaysStyle = sidewaysStyle, loadSongInfo = ::currentSongInfo,
-                                    coverStyle = coverStyle,
+                                    coverStyle = coverStyle, findLyrics = ::findLyricsOnline, allowLyricsBeside = ::allowLyricsBeside,
+                                    autoFindLyrics = autoFindLyrics,
                                     onConvert = if (outputRoute == "DIRECT_USB" && usbPolicy == UsbPlaybackPolicy.STRICT &&
                                         playerUi.canPlayPause && !playing) ::playConvertedOnce else null)
                             } }
@@ -806,6 +834,78 @@ class MainActivity : ComponentActivity() {
         val lyrics = LocalLibrary.lyrics(applicationContext)
         return source.getString(PlaybackService.LIBRARY_ID)?.let { lyrics.song(applicationContext, it) }
             ?: source.getString(PlaybackService.FILE_URI)?.let { lyrics.file(applicationContext, id, it) }
+    }
+
+    /**
+     * Looks the song up on LRCLIB and keeps what it finds: a .lrc beside the song when its folder allows, else in Evanna.
+     * [auto] (the setting) asks once per song while the app runs. Throws when LRCLIB cannot be reached.
+     */
+    private suspend fun findLyricsOnline(id: String, query: LyricsQuery, auto: Boolean): FoundLyrics {
+        if (auto && !autoLyricsTried.add(id)) return FoundLyrics.NotFound
+        val controller = mediaController ?: throw java.io.IOException("PLAYBACK_DISCONNECTED")
+        val source = sourceOf(controller, id) ?: throw java.io.IOException("LYRICS_SOURCE_UNAVAILABLE")
+        val library = source.getString(PlaybackService.LIBRARY_ID)
+        val file = if (library == null) source.getString(PlaybackService.FILE_URI) ?: throw java.io.IOException("LYRICS_SOURCE_UNAVAILABLE") else null
+        val client = "Evanna ${installedPackage.versionName.orEmpty()} (https://github.com/dripdropfromablock/evanna-public)"
+        val record = LrcLib.find(query, client) ?: return FoundLyrics.NotFound
+        if (lrcLibTier(record) == 0) return if (record.instrumental) FoundLyrics.Instrumental else FoundLyrics.NotFound
+        val text = lrcLibText(record, query) ?: return FoundLyrics.NotFound
+        val lyrics = parseLyrics(text) ?: return FoundLyrics.NotFound
+        val kept = LocalLibrary.lyrics(applicationContext).keep(applicationContext, library ?: id, file, text, lyrics)
+        // Found on its own, the lyrics just go where they can; Now Playing asks about the folder only when the user searched.
+        val folder = kept.askRoot?.takeUnless { auto }?.let { root ->
+            withContext(Dispatchers.IO) { LocalLibrary.database(applicationContext).roots().firstOrNull { it.uri == root }?.name } ?: "this folder"
+        }
+        return FoundLyrics.Found(lyrics, kept.place, folder)
+    }
+
+    /**
+     * Asks Android to let Evanna add files to the music folder holding the song, then moves its lyrics kept in Evanna to a
+     * .lrc beside it. Null when that worked; otherwise a short note for Now Playing.
+     */
+    private suspend fun allowLyricsBeside(id: String): String? {
+        val library = mediaController?.let { sourceOf(it, id) }?.getString(PlaybackService.LIBRARY_ID) ?: return "The lyrics stay saved in Evanna."
+        val place = withContext(Dispatchers.IO) { LocalLibrary.database(applicationContext).songPlace(library) } ?: return "The lyrics stay saved in Evanna."
+        val tree = Uri.parse(place.root)
+        lyricsGrant?.cancel()
+        val answer = kotlinx.coroutines.CompletableDeferred<String?>()
+        lyricsGrant = answer
+        lyricsGrantRoot = place.root
+        try {
+            folderWritePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI,
+                    android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, android.provider.DocumentsContract.getTreeDocumentId(tree)))
+                putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+            })
+        } catch (_: android.content.ActivityNotFoundException) {
+            lyricsGrant = null
+            return "This phone cannot ask for folder access."
+        }
+        answer.await()?.let { return it }
+        return if (LocalLibrary.lyrics(applicationContext).moveBeside(applicationContext, library)) null
+            else "Evanna can write in the folder now, but this .lrc could not be saved. The lyrics stay saved in Evanna."
+    }
+
+    /**
+     * Keeps write access when the user picked the very music folder [root]; a different folder is let go. Read access is
+     * already kept for every music folder, so it stays either way.
+     */
+    private fun takeFolderWrite(picked: Uri, root: String, flags: Int): Boolean {
+        val tree = Uri.parse(root)
+        val same = picked.authority == tree.authority && android.provider.DocumentsContract.isTreeUri(picked) &&
+            android.provider.DocumentsContract.getTreeDocumentId(picked) == android.provider.DocumentsContract.getTreeDocumentId(tree)
+        if (!same || flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION == 0) return false
+        return try {
+            contentResolver.takePersistableUriPermission(picked, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            com.evanna.player.library.LyricsFiles.canWrite(this, root).also { kept ->
+                // The same folder written another way would leave a second grant nothing uses.
+                if (!kept && picked.toString() != root) runCatching {
+                    contentResolver.releasePersistableUriPermission(picked, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                }
+            }
+        } catch (_: SecurityException) { false }
     }
 
     override fun onResume() {
@@ -1510,6 +1610,17 @@ class MainActivity : ComponentActivity() {
                             addCategory(Intent.CATEGORY_OPENABLE); type = "audio/*"; putExtra(Intent.EXTRA_LOCAL_ONLY, true)
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                         })
+                    } }
+                }
+            }
+            if (page == PlayerScreen.LIBRARY_SETTINGS) item(key = "lyrics") {
+                SettingsSection("Lyrics", footer = "Songs with no lyrics of their own, and no .lrc file beside them, are looked up on " +
+                    "LRCLIB (lrclib.net) when Now Playing shows them. Evanna sends the title, artist, album and length. Lyrics it " +
+                    "finds are saved as a .lrc file beside the song, so the next time needs no internet. Without this, the " +
+                    "Lyrics page still has a Find lyrics online button.") {
+                    row { SwitchRow("Find missing lyrics online", checked = autoFindLyrics) { on ->
+                        autoFindLyrics = on
+                        getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putBoolean(FIND_LYRICS_ONLINE_PREFERENCE, on).apply()
                     } }
                 }
             }

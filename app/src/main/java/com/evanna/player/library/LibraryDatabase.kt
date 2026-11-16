@@ -303,6 +303,14 @@ internal class LibraryDatabase(context: Context, name: String = "library.db",pri
             ArtworkSource(uri, artworkKey(id, uri, size, modified, versions.sorted().joinToString("")), available)
         }
     }
+    /** The song's own file in a readable folder, for the .lrc beside it; null for a CUE track, whose file holds other songs too. */
+    fun songPlace(id: String): SongPlace? {
+        if (!id.matches(Regex("[0-9a-f]{64}"))) return null
+        return readableDatabase.rawQuery("SELECT f.root,f.document_id,f.name FROM files f JOIN tracks t ON t.id=f.id JOIN roots r ON r.uri=f.root " +
+            "WHERE f.id=? AND t.start_frame IS NULL AND f.present=1 AND f.readable=1 AND r.state!='UNAVAILABLE' ORDER BY f.root LIMIT 1", arrayOf(id)).use { c ->
+            if (c.moveToFirst()) SongPlace(c.getString(0), c.getString(1), c.getString(2)) else null
+        }
+    }
     fun albumArtworkSongs(album: AlbumIdentity): List<String> {
         val (where, arguments) = matching(LibraryFilter(kind = LibraryGroupKind.ALBUM, value = album.title, albumArtist = album.albumArtist))
         return readableDatabase.rawQuery("SELECT t.id FROM tracks t WHERE $where AND EXISTS(SELECT 1 FROM files f JOIN roots r ON r.uri=f.root WHERE f.id=t.id AND f.present=1 AND f.readable=1 AND r.state!='UNAVAILABLE') ORDER BY $albumOrder LIMIT 4",

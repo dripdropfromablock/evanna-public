@@ -112,10 +112,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.evanna.player.library.ArtworkImage
+import com.evanna.player.library.FoundLyrics
 import com.evanna.player.library.LibraryArtwork
 import com.evanna.player.library.LibrarySong
+import com.evanna.player.library.LrcLibBusy
 import com.evanna.player.library.LyricLine
 import com.evanna.player.library.Lyrics
+import com.evanna.player.library.LyricsPlace
+import com.evanna.player.library.LyricsQuery
 import com.evanna.player.playback.SleepMode
 import com.evanna.player.playback.nearest
 import kotlinx.coroutines.CancellationException
@@ -175,7 +179,9 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
     onSavePlaylist: () -> Unit, loadArtwork: suspend (String) -> Bitmap?, motion: PlayerSheetMotion, flying: Boolean,
     wantedOpen: Boolean, onConvert: (() -> Unit)? = null,
     outputSheetOpen: Boolean = false, sidewaysStyle: SidewaysStyle = SidewaysStyle.DETAILS,
-    loadSongInfo: suspend (String) -> LibrarySong? = { null }, coverStyle: CoverStyle = CoverStyle.CARD) {
+    loadSongInfo: suspend (String) -> LibrarySong? = { null }, coverStyle: CoverStyle = CoverStyle.CARD,
+    findLyrics: suspend (String, LyricsQuery, Boolean) -> FoundLyrics = { _, _, _ -> FoundLyrics.NotFound },
+    allowLyricsBeside: suspend (String) -> String? = { null }, autoFindLyrics: Boolean = false) {
     var page by rememberSaveable { mutableStateOf(PlayerPage.SONG) }
     var lyricsTrack by rememberSaveable { mutableStateOf<String?>(null) }
     var showSignal by rememberSaveable { mutableStateOf(false) }
@@ -185,7 +191,7 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
     if (showSignal) SoundPathSheet(state.soundPath, { showSignal = false; onOutput(null) }, { showSignal = false }, signalOrigin)
     BackHandler { if (wantedOpen && page != PlayerPage.SONG) page = PlayerPage.SONG else onBack() }
     // The preview and full view share one load, and never show the preceding track's words.
-    val lyrics by key(state.id) {
+    val loaded by key(state.id) {
         produceState<LyricsLoad>(LyricsLoad.Loading) {
             val id = state.id ?: return@produceState
             value = try { loadLyrics(id)?.let { LyricsLoad.Ready(it) } ?: LyricsLoad.None }
@@ -193,6 +199,57 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
                 catch (_: Exception) { LyricsLoad.Failed }
         }
     }
+    // A song with no lyrics can look them up on LRCLIB: by hand from the Lyrics page, or by itself with the setting on.
+    var online by remember(state.id) { mutableStateOf<OnlineLyrics>(OnlineLyrics.Idle) }
+    var searchAsked by remember(state.id) { mutableStateOf<Boolean?>(null) }  // true by itself, false by hand
+    var lyricsNote by remember(state.id) { mutableStateOf<String?>(null) }
+    var askFolder by remember(state.id) { mutableStateOf<String?>(null) }
+    val lyrics = (online as? OnlineLyrics.Found)?.let { LyricsLoad.Ready(it.lyrics) } ?: loaded
+    LaunchedEffect(loaded, autoFindLyrics, wantedOpen) {
+        if (autoFindLyrics && wantedOpen && loaded == LyricsLoad.None && online == OnlineLyrics.Idle && searchAsked == null) searchAsked = true
+    }
+    LaunchedEffect(state.id, searchAsked) {
+        val auto = searchAsked ?: return@LaunchedEffect
+        val id = state.id ?: return@LaunchedEffect
+        val title = state.title.trim()
+        online = if (title.isEmpty()) OnlineLyrics.Failed("This song has no title to search for.") else {
+            online = OnlineLyrics.Searching
+            try {
+                when (val found = findLyrics(id, LyricsQuery(title, state.artist, state.album, state.durationMs), auto)) {
+                    is FoundLyrics.Found -> {
+                        askFolder = found.askFolder
+                        if (found.askFolder == null) lyricsNote =
+                            if (found.place == LyricsPlace.BESIDE_SONG) "Lyrics from LRCLIB, saved beside the song." else "Lyrics from LRCLIB, saved in Evanna."
+                        OnlineLyrics.Found(found.lyrics)
+                    }
+                    FoundLyrics.NotFound -> OnlineLyrics.NotFound
+                    FoundLyrics.Instrumental -> OnlineLyrics.Instrumental
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: LrcLibBusy) { OnlineLyrics.Failed("LRCLIB is busy. Try again in a minute.") }
+            catch (_: Exception) { OnlineLyrics.Failed("Couldn't reach LRCLIB. Check the internet connection.") }
+        }
+        searchAsked = null
+    }
+    LaunchedEffect(lyricsNote) { if (lyricsNote != null) { delay(4_000); lyricsNote = null } }
+    val scope = rememberCoroutineScope()
+    askFolder?.let { folder ->
+        AlertDialog(onDismissRequest = { askFolder = null; lyricsNote = "Lyrics from LRCLIB, saved in Evanna." },
+            title = { Text("Save beside the song?") },
+            text = { Text("The lyrics are saved in Evanna for now. To save them as a .lrc file next to the song, Android will ask " +
+                "you to let Evanna add files to “$folder”. Evanna never changes the songs themselves.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    askFolder = null
+                    val id = state.id
+                    if (id != null) scope.launch { lyricsNote = allowLyricsBeside(id) ?: "Saved beside the song." }
+                }) { Text("Choose folder") }
+            },
+            dismissButton = {
+                TextButton(onClick = { askFolder = null; lyricsNote = "Lyrics from LRCLIB, saved in Evanna." }) { Text("Keep in Evanna") }
+            })
+    }
+    val lyricsSearch = LyricsSearch(online, lyricsNote) { if (online != OnlineLyrics.Searching) searchAsked = false }
     LaunchedEffect(wantedOpen) {
         if (wantedOpen && page == PlayerPage.LYRICS && lyricsTrack != state.id) page = PlayerPage.SONG
     }
@@ -258,10 +315,10 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
                 }
                 DetailsPlayer(state, cover, info, page, openPage, lyrics, more, contentAlpha, motion, flying, onBack, onFavorite, onSeek,
                     onPlayPause, onPrevious, onNext, { signalOrigin = it; showSignal = true }, onOutput, outputSheetOpen, onSelect,
-                    queue = { QueuePage(state, onShuffle, onRepeat, onSelect, onMove, onRemove, onLibrary, loadArtwork, it) })
+                    queue = { QueuePage(state, onShuffle, onRepeat, onSelect, onMove, onRemove, onLibrary, loadArtwork, it) }, search = lyricsSearch)
             }
             else if (sidewaysPhone() && state.hasSong) SidewaysPlayer(state, cover, page, openPage, lyrics, more, contentAlpha, motion, flying,
-                onBack, onFavorite, onSeek, onPlayPause, onPrevious, onNext,
+                onBack, onFavorite, onSeek, onPlayPause, onPrevious, onNext, search = lyricsSearch,
                 controls = {
                     PlayerControls(state, actionError, page, openPage, lyrics, onSeek, { signalOrigin = it; showSignal = true },
                         onPlayPause, onPrevious, onNext, onUsbVolume, onUsbVolumeSet, onSleep, onOutput, outputSheetOpen, sideways = true)
@@ -294,7 +351,7 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
                                     PlayerPage.LYRICS -> Column(Modifier.fillMaxSize()) {
                                         CompactHeader(state, cover, more,
                                             Modifier.dockingCover(motion, flying, report = shown == page).then(sharedCover)) { page = PlayerPage.SONG }
-                                        LyricsPage(lyrics, state, onSeek, holdLine = controlsMoved, modifier = Modifier.weight(1f).padding(top = 24.dp).graphicsLayer {
+                                        LyricsPage(lyrics, state, onSeek, holdLine = controlsMoved, search = lyricsSearch, modifier = Modifier.weight(1f).padding(top = 24.dp).graphicsLayer {
                                             val expanded = ((motion.progress - 0.35f) / 0.65f).coerceIn(0f, 1f)
                                             alpha = expanded
                                             scaleX = 0.65f + 0.35f * expanded
@@ -320,7 +377,7 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
                         layout(bar.width, height) { bar.place(0, (rest * controlsHidden).roundToInt()) }
                     }.graphicsLayer { alpha = 1f - controlsHidden }.then(if (hideControls) Modifier.clearAndSetSemantics {} else Modifier)) {
                         PlayerControls(state, actionError, page, openPage, lyrics, onSeek, { signalOrigin = it; showSignal = true }, onPlayPause, onPrevious, onNext, onUsbVolume, onUsbVolumeSet, onSleep,
-                            onOutput, outputSheetOpen)
+                            onOutput, outputSheetOpen, lyricsSearching = online == OnlineLyrics.Searching)
                     }
                 }
             }
@@ -496,7 +553,7 @@ internal fun sidewaysPhone(): Boolean {
 private fun SidewaysPlayer(state: PlayerPresentation, cover: Bitmap?, page: PlayerPage, onPage: (PlayerPage) -> Unit,
     lyrics: LyricsLoad, more: @Composable () -> Unit, contentAlpha: () -> Float, motion: PlayerSheetMotion, flying: Boolean,
     onBack: () -> Unit, onFavorite: (String, Boolean) -> Unit, onSeek: (String?, Long) -> Unit,
-    onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit,
+    onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, search: LyricsSearch,
     controls: @Composable () -> Unit, queue: @Composable (Modifier) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val panel = (maxWidth * 0.46f).coerceIn(320.dp, 460.dp)
@@ -535,7 +592,7 @@ private fun SidewaysPlayer(state: PlayerPresentation, cover: Bitmap?, page: Play
                             controls()
                         }
                         PlayerPage.LYRICS -> {
-                            LyricsPage(lyrics, state, onSeek, Modifier.weight(1f))
+                            LyricsPage(lyrics, state, onSeek, Modifier.weight(1f), search = search)
                             SidewaysPlayRow(state, page, onPage, lyrics, onPlayPause, onPrevious, onNext)
                         }
                         PlayerPage.QUEUE -> {
@@ -562,7 +619,7 @@ private fun SidewaysPlayRow(state: PlayerPresentation, page: PlayerPage, onPage:
         TransportButton(PlayerIcons.Next, 28.dp, "Next", state.connected && state.canNext, onClick = onNext)
         Spacer(Modifier.weight(1f))
         StripButton(PlayerIcons.Lyrics, lyricsOn, if (lyricsOn) "Close lyrics" else "Open lyrics",
-            enabled = lyricsOn || lyrics is LyricsLoad.Ready) { onPage(if (lyricsOn) PlayerPage.SONG else PlayerPage.LYRICS) }
+            enabled = lyricsOn || lyrics.opens) { onPage(if (lyricsOn) PlayerPage.SONG else PlayerPage.LYRICS) }
         StripButton(PlayerIcons.QueueList, queueOn, "Queue · ${counted(state.queue.size, "songs")}") {
             onPage(if (queueOn) PlayerPage.SONG else PlayerPage.QUEUE)
         }
@@ -590,7 +647,7 @@ private fun CompactHeader(state: PlayerPresentation, cover: Bitmap?, more: @Comp
 private fun PlayerControls(state: PlayerPresentation, actionError: String?, page: PlayerPage, onPage: (PlayerPage) -> Unit,
     lyrics: LyricsLoad, onSeek: (String?, Long) -> Unit, onSignal: (Rect?) -> Unit, onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit,
     onUsbVolume: (Int) -> Unit, onUsbVolumeSet: (Float, Long) -> Unit, onSleep: (SleepMode, Int) -> Unit,
-    onOutput: (Rect?) -> Unit, outputSheetOpen: Boolean, sideways: Boolean = false) {
+    onOutput: (Rect?) -> Unit, outputSheetOpen: Boolean, sideways: Boolean = false, lyricsSearching: Boolean = false) {
     val lyricsOn = page == PlayerPage.LYRICS
     val toggleLyrics = { onPage(if (lyricsOn) PlayerPage.SONG else PlayerPage.LYRICS) }
     val directUsb = state.route == "DIRECT_USB"
@@ -599,7 +656,7 @@ private fun PlayerControls(state: PlayerPresentation, actionError: String?, page
     val volumeEnabled = androidVolume && state.connected && !outputSheetOpen
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 32.dp, end = 32.dp, top = 8.dp, bottom = 10.dp)) {
         // Sideways, the panel has no room for the line of lyrics; the lyrics button opens them in the panel.
-        if (!lyricsOn && !sideways) LyricsPreview(lyrics, state.positionMs, toggleLyrics)
+        if (!lyricsOn && !sideways) LyricsPreview(lyrics, state.positionMs, lyricsSearching, toggleLyrics)
         SeekBar(state, onSeek, onSignal)
         Row(Modifier.fillMaxWidth().padding(top = 12.dp).height(68.dp), horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically) {
@@ -631,7 +688,7 @@ private fun PlayerControls(state: PlayerPresentation, actionError: String?, page
         }
         Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             StripButton(PlayerIcons.Lyrics, lyricsOn, if (lyricsOn) "Close lyrics" else "Open lyrics",
-                enabled = lyricsOn || lyrics is LyricsLoad.Ready, onClick = toggleLyrics)
+                enabled = lyricsOn || lyrics.opens, onClick = toggleLyrics)
             // Audio output grows out of this button. On a short screen it sits after the volume.
             var outputBox by remember { mutableStateOf<Rect?>(null) }
             val output = @Composable {
@@ -656,17 +713,18 @@ private fun PlayerControls(state: PlayerPresentation, actionError: String?, page
 }
 
 @Composable
-private fun LyricsPreview(load: LyricsLoad, positionMs: Long, onClick: () -> Unit) {
+private fun LyricsPreview(load: LyricsLoad, positionMs: Long, searching: Boolean, onClick: () -> Unit) {
     val lyrics = (load as? LyricsLoad.Ready)?.lyrics
     val current = lyrics?.lines?.getOrNull(lyrics.lineAt(positionMs))?.text?.takeIf(String::isNotBlank)
     val label = when (load) {
         LyricsLoad.Loading -> "Loading lyrics…"
-        LyricsLoad.None -> "No lyrics"
+        LyricsLoad.None -> if (searching) "Looking for lyrics online…" else "No lyrics"
         LyricsLoad.Failed -> "Lyrics unavailable"
         is LyricsLoad.Ready -> current ?: "Lyrics"
     }
-    val action = "Show lyrics"
-    val available = lyrics != null
+    // With no lyrics it still opens the Lyrics page, which can find them online.
+    val action = if (load == LyricsLoad.None) "Find lyrics online" else "Show lyrics"
+    val available = load.opens
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Row(
@@ -681,7 +739,7 @@ private fun LyricsPreview(load: LyricsLoad, positionMs: Long, onClick: () -> Uni
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.Bottom,
     ) {
-        Text(label, style = Route, color = if (pressed) EvannaDesign.colorScheme.primary else if (available) Pv1 else Pv2,
+        Text(label, style = Route, color = if (pressed) EvannaDesign.colorScheme.primary else if (lyrics != null) Pv1 else Pv2,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
         if (available) Text(" ›", style = Route, color = Pv2)
     }
@@ -858,6 +916,50 @@ private sealed interface LyricsLoad {
     data class Ready(val lyrics: Lyrics) : LyricsLoad
 }
 
+/** The Lyrics page has something to show: the words, or with none, the button that finds them online. */
+private val LyricsLoad.opens get() = this is LyricsLoad.Ready || this == LyricsLoad.None
+
+/** Where the LRCLIB search for a song with no lyrics stands. */
+private sealed interface OnlineLyrics {
+    data object Idle : OnlineLyrics
+    data object Searching : OnlineLyrics
+    data object NotFound : OnlineLyrics
+    data object Instrumental : OnlineLyrics
+    data class Failed(val message: String) : OnlineLyrics
+    data class Found(val lyrics: Lyrics) : OnlineLyrics
+}
+
+/** The search as the Lyrics page sees it: its state, a short note to show for a moment, and how to start it. */
+private class LyricsSearch(val state: OnlineLyrics, val note: String?, val start: () -> Unit)
+
+/** A song with no lyrics: one button looks them up on LRCLIB, and the page says how it went. */
+@Composable
+private fun FindLyrics(search: LyricsSearch) {
+    val state = search.state
+    Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(when (state) {
+            OnlineLyrics.Searching -> "Looking on LRCLIB…"
+            OnlineLyrics.NotFound -> "LRCLIB has no lyrics for this song."
+            OnlineLyrics.Instrumental -> "LRCLIB lists this song as instrumental."
+            is OnlineLyrics.Failed -> state.message
+            else -> "This song has no lyrics."
+        }, style = HeaderArtist, color = Pv2, textAlign = TextAlign.Center,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        if (state != OnlineLyrics.Instrumental) {
+            FilledTonalButton(onClick = search.start, enabled = state != OnlineLyrics.Searching,
+                modifier = Modifier.padding(top = 16.dp).heightIn(min = 48.dp)) {
+                Text(when (state) {
+                    OnlineLyrics.Searching -> "Searching…"
+                    OnlineLyrics.NotFound, is OnlineLyrics.Failed -> "Search again"
+                    else -> "Find lyrics online"
+                })
+            }
+        }
+        if (state == OnlineLyrics.Idle) Text("Sends the song's title, artist, album and length to lrclib.net.", style = Status, color = Pv2,
+            textAlign = TextAlign.Center, modifier = Modifier.padding(top = 10.dp))
+    }
+}
+
 
 /** A break of at least seven seconds shows three dots that fill while it lasts; shorter breaks show nothing. */
 private const val DOTS_BREAK_MS = 7_000L
@@ -880,8 +982,14 @@ internal fun lyricFramePosition(previous: Long, elapsedMs: Long, target: Long): 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LyricsPage(load: LyricsLoad, state: PlayerPresentation, onSeek: (String?, Long) -> Unit, modifier: Modifier,
-    small: Boolean = false, accent: Color = Pv1, holdLine: Boolean = false) {
+    small: Boolean = false, accent: Color = Pv1, holdLine: Boolean = false, search: LyricsSearch? = null) {
     BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        search?.note?.let { note ->
+            Text(note, style = Status, color = Pv1, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.BottomCenter).zIndex(1f)
+                .padding(horizontal = 24.dp, vertical = 8.dp).clip(RoundedCornerShape(50)).background(Pv4).padding(horizontal = 14.dp, vertical = 8.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite })
+        }
+        if (load == LyricsLoad.None && search != null) { FindLyrics(search); return@BoxWithConstraints }
         if (load !is LyricsLoad.Ready) {
             Text(when (load) { LyricsLoad.Loading -> "Loading lyrics…"; LyricsLoad.None -> "This song has no lyrics."; else -> "Lyrics could not be read." },
                 style = HeaderArtist, color = Pv2, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
@@ -1408,6 +1516,8 @@ internal enum class CoverStyle(val label: String) {
     companion object { fun stored(value: Any?) = entries.firstOrNull { it.name == value } ?: CARD }
 }
 internal const val COVER_STYLE_PREFERENCE = "now-playing-cover"
+/** UI_SETTINGS key: songs with no lyrics are looked up on LRCLIB by themselves (default off). */
+internal const val FIND_LYRICS_ONLINE_PREFERENCE = "find-lyrics-online"
 /** UI_SETTINGS key: on its side, Now Playing and Carousel hide the phone's status and navigation bars (default on). */
 internal const val FULL_SCREEN_SIDEWAYS_PREFERENCE = "sideways-full-screen"
 
@@ -1433,14 +1543,14 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
     lyrics: LyricsLoad, more: @Composable () -> Unit, contentAlpha: () -> Float, motion: PlayerSheetMotion, flying: Boolean,
     onBack: () -> Unit, onFavorite: (String, Boolean) -> Unit, onSeek: (String?, Long) -> Unit,
     onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onSignal: (Rect?) -> Unit, onOutput: (Rect?) -> Unit,
-    outputSheetOpen: Boolean, onSelect: (String) -> Unit, queue: @Composable (Modifier) -> Unit) {
+    outputSheetOpen: Boolean, onSelect: (String) -> Unit, queue: @Composable (Modifier) -> Unit, search: LyricsSearch) {
     val accent = EvannaDesign.colorScheme.primary
     // The page on the right while Details shows stays the last one opened, so it can fade out as the disc comes back.
     var lastPane by remember { mutableStateOf(PlayerPage.LYRICS) }
     val pane = if (page == PlayerPage.SONG) lastPane else page
     SideEffect { lastPane = pane }
-    // A swipe sideways moves one page: Details, Lyrics (when the song has them), Queue.
-    val pages = listOfNotNull(PlayerPage.SONG, PlayerPage.LYRICS.takeIf { page == it || lyrics is LyricsLoad.Ready }, PlayerPage.QUEUE)
+    // A swipe sideways moves one page: Details, Lyrics (when the song has them, or can look them up), Queue.
+    val pages = listOfNotNull(PlayerPage.SONG, PlayerPage.LYRICS.takeIf { page == it || lyrics.opens }, PlayerPage.QUEUE)
     val turn by rememberUpdatedState({ step: Int -> pages.getOrNull(pages.indexOf(page) + step)?.let(onPage) })
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val shift by animateFloatAsState(if (page == PlayerPage.SONG) 0f else 1f, tween(420, easing = FastOutSlowInEasing), label = "details shift")
@@ -1574,7 +1684,7 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
                     }
                 }, label = "details pane") { shown ->
                     if (shown == PlayerPage.QUEUE) queue(Modifier.fillMaxSize())
-                    else LyricsPage(lyrics, state, onSeek, Modifier.fillMaxSize(), small = true, accent = accent)
+                    else LyricsPage(lyrics, state, onSeek, Modifier.fillMaxSize(), small = true, accent = accent, search = search)
                 }
             }
         }
@@ -1839,7 +1949,7 @@ private fun DetailsBar(state: PlayerPresentation, page: PlayerPage, onPage: (Pla
                 maxLines = 1, modifier = Modifier.padding(start = 12.dp, end = 6.dp))
         }
         StripButton(PlayerIcons.Lyrics, lyricsOn, if (lyricsOn) "Close lyrics" else "Open lyrics",
-            enabled = lyricsOn || lyrics is LyricsLoad.Ready, onTint = accent) {
+            enabled = lyricsOn || lyrics.opens, onTint = accent) {
             onPage(if (lyricsOn) PlayerPage.SONG else PlayerPage.LYRICS)
         }
         var outputBox by remember { mutableStateOf<Rect?>(null) }

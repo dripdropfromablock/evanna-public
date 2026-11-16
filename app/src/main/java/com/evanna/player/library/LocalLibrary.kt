@@ -192,7 +192,9 @@ internal object LocalLibrary {
             val uri=Uri.parse(root)
             if(!isLocalTree(context,uri)){complete=false;continue}
             try {
-                if(hasTreeReadGrant(context,uri))context.contentResolver.releasePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                // Write access is there only after the user let Evanna save lyrics beside the songs; it goes too.
+                if(hasTreeReadGrant(context,uri))context.contentResolver.releasePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    (if(LyricsFiles.canWrite(context,root))Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0))
                 check(!hasTreeReadGrant(context,uri));store.acknowledgeGrantRelease(root)
             }catch(_:Exception){complete=false}
         }
