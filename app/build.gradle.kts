@@ -16,8 +16,8 @@ android {
         applicationId = "com.evanna.player"
         minSdk = 28
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.1.4"
+        versionCode = 6
+        versionName = "1.5"
         testInstrumentationRunner = "com.evanna.player.playback.UsbAdapterProbe"
         if (!splitApks) ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_shared" } }

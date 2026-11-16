@@ -403,12 +403,26 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                         onShuffle = { onSelect(LibraryContextRequest(filter, null, LibraryContextAction.SHUFFLE)) { selectionFailed = !it } })
                     TextButton(onClick = { onPlaylistAlbum(filter) }, enabled = !busy && !loading && (shown?.total ?: 0) > 0,
                         modifier = Modifier.heightIn(min = 48.dp)) { Text("Add album to playlist") }
-                    // An album card for a story: the cover, the album's name and the artist (docs/mockups/share-cards.html).
-                    var sharing by remember { mutableStateOf(false) }
-                    TextButton(onClick = { sharing = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Share album") }
-                    if (sharing) ShareSheet(ShareCard.AlbumCard(groupName.ifBlank { "Unknown album" },
-                        shown?.albumSummary?.displayArtist?.takeIf { it.isNotBlank() } ?: "Unknown artist"),
-                        { artwork.album(selectedAlbum, ArtworkSize.LARGE) }) { sharing = false }
+                    var sharing by remember(selectedAlbum) { mutableStateOf<ShareCard.AlbumCard?>(null) }
+                    var preparingShare by remember(selectedAlbum) { mutableStateOf(false) }
+                    TextButton(onClick = {
+                        val shareName = groupName
+                        preparingShare = true
+                        personalScope.launch {
+                            try {
+                                sharing = withContext(Dispatchers.IO) {
+                                    val shareFilter = LibraryFilter(kind = LibraryGroupKind.ALBUM,
+                                        value = selectedAlbum.title, albumArtist = selectedAlbum.albumArtist)
+                                    // shortcut: duration is omitted above 1,000 tracks; use an aggregate if large albums need it.
+                                    albumShareCard(shareName, database.albumSummary(selectedAlbum), database.page(limit = 1000, filter = shareFilter))
+                                }
+                            } catch (cancelled: CancellationException) { throw cancelled }
+                            catch (_: Exception) { LocalLibrary.status = "The album could not be prepared. Try sharing again." }
+                            finally { preparingShare = false }
+                        }
+                    }, enabled = !preparingShare, modifier = Modifier.heightIn(min = 48.dp)) { Text("Share album") }
+                    sharing?.let { card -> ShareSheet(card,
+                        { artwork.album(selectedAlbum, ArtworkSize.LARGE) }) { sharing = null } }
                 }
             }
         } else line {

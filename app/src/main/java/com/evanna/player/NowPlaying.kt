@@ -198,9 +198,9 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
     val latest by rememberUpdatedState(state)
     val latestCover by rememberUpdatedState(cover)
     val lyricShare = remember(state.id) {
-        LyricShare { lines ->
+        LyricShare { lines, before, after ->
             shareCard = ShareCard.LyricCard(lines, latest.title.ifBlank { "Local audio file" },
-                latest.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist")
+                latest.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist", before, after)
         }
     }
     LaunchedEffect(page) { if (page != PlayerPage.LYRICS) lyricShare.picked = null }
@@ -1131,8 +1131,10 @@ private fun LyricsPage(load: LyricsLoad, state: PlayerPresentation, onSeek: (Str
                 }
             }
             if (share != null && picked != null) PickBar(picked.size, share.refused, onCancel = { share.picked = null }, onShare = {
-                val words = pickedWords(lyrics.lines.map { it.text }, picked)
-                if (words.isNotEmpty()) { share.onShare(words); share.picked = null }
+                val lines = lyrics.lines.map { it.text }
+                val words = pickedWords(lines, picked)
+                val (before, after) = contextAround(lines, picked)
+                if (words.isNotEmpty()) { share.onShare(words, before, after); share.picked = null }
             }, modifier = Modifier.align(Alignment.BottomCenter))
         }
     }
@@ -1231,7 +1233,7 @@ private fun firstShareLine(lyrics: Lyrics, positionMs: Long): Int? =
         ?: lyrics.lines.indexOfFirst { it.text.isNotBlank() }.takeIf { it >= 0 }
 
 /** Ticking lyric lines for a share card: [picked] is null when not picking, else the ticked lines (their indexes). */
-private class LyricShare(val onShare: (List<String>) -> Unit) {
+private class LyricShare(val onShare: (List<String>, String?, String?) -> Unit) {
     var picked by mutableStateOf<Set<Int>?>(null)
     /** Counts refused ticks (a fifth line), so the bar can say why. */
     var refused by mutableIntStateOf(0)

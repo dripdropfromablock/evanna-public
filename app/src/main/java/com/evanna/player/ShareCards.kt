@@ -30,9 +30,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas as ComposeCanvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -86,28 +90,73 @@ internal fun toggledPick(picked: Set<Int>, index: Int): Set<Int>? = when {
 internal fun pickedWords(lines: List<String>, picked: Set<Int>): List<String> =
     picked.sorted().mapNotNull { lines.getOrNull(it)?.trim()?.takeIf(String::isNotEmpty) }.take(SHARE_MAX_LINES)
 
-/** What a share card shows (docs/mockups/share-cards.html, A for both). */
+/** The lines just before and after the ticked ones, for the Lyrics page look; blank lines are skipped. */
+internal fun contextAround(lines: List<String>, picked: Set<Int>): Pair<String?, String?> {
+    if (picked.isEmpty()) return null to null
+    val before = (picked.min() - 1 downTo 0).firstNotNullOfOrNull { lines.getOrNull(it)?.trim()?.takeIf(String::isNotEmpty) }
+    val after = (picked.max() + 1..lines.lastIndex).firstNotNullOfOrNull { lines.getOrNull(it)?.trim()?.takeIf(String::isNotEmpty) }
+    return before to after
+}
+
+/** One song on an album card's Liner notes: its title and length ("3:41"). */
+internal data class ShareTrack(val title: String, val length: String)
+
+/** At most this many songs are listed on the Liner notes look. */
+internal const val SHARE_LINER_TRACKS = 6
+
+/** What a share card shows (docs/mockups/share-cards.html, share-lyric-looks.html, share-album-looks.html). */
 internal sealed interface ShareCard {
     val sheetTitle: String
-    data class LyricCard(val lines: List<String>, val song: String, val artist: String) : ShareCard {
+    /** [before] and [after] are the lines either side of the ticked ones, shown faint by the Lyrics page look. */
+    data class LyricCard(val lines: List<String>, val song: String, val artist: String,
+        val before: String? = null, val after: String? = null) : ShareCard {
         override val sheetTitle get() = "Share lyrics"
     }
-    data class AlbumCard(val album: String, val artist: String) : ShareCard {
+    /** [meta] is "2026 · 10 songs · 38 min"; [tracks] and [more] ("+4 more · 38 min") feed Liner notes, known on the album page. */
+    data class AlbumCard(val album: String, val artist: String, val meta: String? = null,
+        val tracks: List<ShareTrack> = emptyList(), val more: String? = null) : ShareCard {
         override val sheetTitle get() = "Share album"
     }
 }
 
 /**
- * The card's look (docs/mockups/share-cards.html). [GLASS] (A) is a glass card; [BOLD] is B (big words / a floating
- * cover) and [COVER] is C (the cover on top / the full cover).
+ * Every look a card can take, in the order the share sheet lists them: the first ones shipped first (Card stays the
+ * default), then the newer ones from the mockups.
  */
-internal enum class ShareStyle { GLASS, BOLD, COVER;
-    fun label(card: ShareCard) = when (this) {
-        GLASS -> "Card"
-        BOLD -> if (card is ShareCard.LyricCard) "Big words" else "Floating"
-        COVER -> if (card is ShareCard.LyricCard) "Cover" else "Full cover"
+internal enum class ShareLook(val label: String, val forLyrics: Boolean) {
+    LYRIC_CARD("Card", true), LYRIC_BIG("Big words", true), LYRIC_COVER("Cover", true), LYRIC_PAGE("Lyrics page", true),
+    LYRIC_POSTER("Poster", true), LYRIC_QUOTE("Quote", true), LYRIC_COLOUR("Colour", true),
+    ALBUM_CARD("Card", false), ALBUM_FLOATING("Floating", false), ALBUM_FULL("Full cover", false), ALBUM_FLOW("Cover Flow", false),
+    ALBUM_RECORD("Record", false), ALBUM_PRINT("Gallery print", false), ALBUM_POSTER("Poster", false),
+    ALBUM_LINER("Liner notes", false), ALBUM_TYPE("Big type", false);
+
+    /** The glass card, the one look Instagram gets as a sticker to move. */
+    val glass get() = this == LYRIC_CARD || this == ALBUM_CARD
+
+    companion object {
+        /** The looks this card can take: Liner notes needs the album's songs. */
+        fun available(card: ShareCard): List<ShareLook> = entries.filter {
+            it.forLyrics == (card is ShareCard.LyricCard) && (it != ALBUM_LINER || (card as ShareCard.AlbumCard).tracks.isNotEmpty())
+        }
+
+        /** The saved look, also from before there were names for each (GLASS, BOLD, COVER); else the first one. */
+        fun stored(card: ShareCard, value: String?): ShareLook {
+            val lyric = card is ShareCard.LyricCard
+            val found = when (value) {
+                "GLASS" -> if (lyric) LYRIC_CARD else ALBUM_CARD
+                "BOLD" -> if (lyric) LYRIC_BIG else ALBUM_FLOATING
+                "COVER" -> if (lyric) LYRIC_COVER else ALBUM_FULL
+                else -> entries.firstOrNull { it.name == value }
+            }
+            val choices = available(card)
+            return found?.takeIf { it in choices } ?: choices.first()
+        }
+
+        fun ordered(card: ShareCard, value: String?): List<ShareLook> {
+            val last = stored(card, value)
+            return listOf(last) + (available(card) - last)
+        }
     }
-    companion object { fun stored(value: Any?) = entries.firstOrNull { it.name == value } ?: GLASS }
 }
 
 /** UI_SETTINGS keys: the look last picked for each kind of card. */
@@ -122,36 +171,102 @@ internal class SharePictures(val story: Bitmap, val background: Bitmap, val stic
 private const val STORY_WIDTH = 1080
 private const val STORY_HEIGHT = 1920
 private const val CARD_WIDTH = 840
+/** Previews in the sheet's strip are drawn at this share of full size. */
+private const val THUMB_SCALE = 0.2f
+private const val FALLBACK_ACCENT = 0xFFF0C27A.toInt()
 
-/** Draws the card over the cover's glow, the same glow as behind Now Playing. Takes a moment; call off the main thread. */
-internal fun drawSharePictures(card: ShareCard, cover: Bitmap?, style: ShareStyle = ShareStyle.GLASS): SharePictures {
-    val background = cover?.let { backdropPicture(it, STORY_WIDTH, STORY_HEIGHT) } ?: plainGlow()
-    val story = background.copy(Bitmap.Config.ARGB_8888, true)
-    val canvas = Canvas(story)
-    if (style == ShareStyle.GLASS) {
-        val sticker = when (card) {
-            is ShareCard.LyricCard -> lyricSticker(card, cover)
-            is ShareCard.AlbumCard -> albumSticker(card, cover)
+/**
+ * Draws one card in any look, over the cover's glow (the same glow as behind Now Playing). The glow and the cover's colour
+ * are worked out once and shared by the full picture and the small previews. Slow; call off the main thread.
+ */
+internal class ShareRenderer(private val card: ShareCard, private val cover: Bitmap?) {
+    /** The cover's own colour, as Now Playing samples it, and a lighter one that reads as text on the dark glow. */
+    private val accent: Int = cover?.let { runCatching { sampleArtworkAccent(it) }.getOrNull() }
+        ?.let { android.graphics.Color.argb(255, (it.red * 255).roundToInt(), (it.green * 255).roundToInt(), (it.blue * 255).roundToInt()) }
+        ?: FALLBACK_ACCENT
+    private val textAccent: Int = readableOnDark(accent)
+    private val glow: Bitmap by lazy { cover?.let { backdropPicture(it, STORY_WIDTH, STORY_HEIGHT) } ?: plainGlow() }
+
+    fun pictures(look: ShareLook): SharePictures {
+        val sticker = if (look.glass) sticker() else null
+        return SharePictures(story(look, 1f, sticker), glow, sticker)
+    }
+
+    fun thumbnail(look: ShareLook): Bitmap = story(look, THUMB_SCALE, null)
+
+    private fun sticker(): Bitmap = when (card) {
+        is ShareCard.LyricCard -> lyricSticker(card, cover)
+        is ShareCard.AlbumCard -> albumSticker(card, cover)
+    }
+
+    private fun story(look: ShareLook, scale: Float, sticker: Bitmap?): Bitmap {
+        val picture = Bitmap.createBitmap((STORY_WIDTH * scale).roundToInt(), (STORY_HEIGHT * scale).roundToInt(), Bitmap.Config.ARGB_8888)
+        Canvas(picture).apply {
+            scale(scale, scale)
+            drawBitmap(glow, null, android.graphics.Rect(0, 0, STORY_WIDTH, STORY_HEIGHT), Paint(Paint.FILTER_BITMAP_FLAG))
+            if (look.glass) {
+                val card = sticker ?: sticker()
+                drawBitmap(card, (STORY_WIDTH - card.width) / 2f, (STORY_HEIGHT - card.height) / 2f, Paint(Paint.FILTER_BITMAP_FLAG))
+                return@apply
+            }
+            when (val shown = this@ShareRenderer.card) {
+                is ShareCard.LyricCard -> when (look) {
+                    ShareLook.LYRIC_BIG -> bigWords(shown, cover)
+                    ShareLook.LYRIC_COVER -> lyricsUnderCover(shown, cover)
+                    ShareLook.LYRIC_PAGE -> lyricsPage(shown, cover)
+                    ShareLook.LYRIC_POSTER -> lyricPoster(shown, cover, textAccent)
+                    ShareLook.LYRIC_QUOTE -> lyricQuote(shown, textAccent)
+                    else -> lyricColour(shown, cover, accent)
+                }
+                is ShareCard.AlbumCard -> when (look) {
+                    ShareLook.ALBUM_FLOATING -> floatingCover(shown, cover)
+                    ShareLook.ALBUM_FULL -> fullCover(shown, cover)
+                    ShareLook.ALBUM_FLOW -> coverFlow(shown, cover)
+                    ShareLook.ALBUM_RECORD -> record(shown, cover)
+                    ShareLook.ALBUM_PRINT -> galleryPrint(shown, cover)
+                    ShareLook.ALBUM_POSTER -> albumPoster(shown, cover, textAccent)
+                    ShareLook.ALBUM_LINER -> linerNotes(shown, cover, textAccent)
+                    else -> bigType(shown, cover, textAccent)
+                }
+            }
         }
-        canvas.drawBitmap(sticker, (STORY_WIDTH - sticker.width) / 2f, (STORY_HEIGHT - sticker.height) / 2f, null)
-        return SharePictures(story, background, sticker)
+        return picture
     }
-    when (card) {
-        is ShareCard.LyricCard -> if (style == ShareStyle.BOLD) canvas.bigWords(card, cover) else canvas.lyricsUnderCover(card, cover)
-        is ShareCard.AlbumCard -> if (style == ShareStyle.BOLD) canvas.floatingCover(card, cover) else canvas.fullCover(card, cover)
-    }
-    return SharePictures(story, background, null)
 }
 
-/** The picked lines as text blocks at [size], shrunk in 6 px steps (not below [smallest]) until they fit in [room]. */
-private fun fittedWords(lines: List<String>, width: Int, start: Float, smallest: Float, room: Float): Pair<List<StaticLayout>, Int> {
+/** [argb] lifted toward white until it reads as text on the dark glow (relative luminance at least 0.3). */
+internal fun readableOnDark(argb: Int): Int {
+    var color = argb or 0xFF000000.toInt()
+    repeat(10) {
+        if (relativeLuminance(color) >= 0.3) return color
+        color = blend(color, 0xFFFFFFFF.toInt(), 0.18f)
+    }
+    return color
+}
+
+private fun blend(from: Int, to: Int, amount: Float): Int {
+    fun channel(shift: Int) = ((from shr shift and 255) + ((to shr shift and 255) - (from shr shift and 255)) * amount).roundToInt().coerceIn(0, 255)
+    return (0xFF shl 24) or (channel(16) shl 16) or (channel(8) shl 8) or channel(0)
+}
+
+internal fun colourInk(argb: Int): Int =
+    if (contrastRatio(0xFFFFFFFF.toInt(), argb) >= 4.5) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+
+/**
+ * The lines as text blocks, from [start] px shrunk in 6 px steps (not below [smallest]) until they fit in [room]; returns the
+ * blocks and the gap between them.
+ */
+internal fun fittedWords(lines: List<String>, width: Int, start: Float, smallest: Float, room: Float, gapRatio: Float = 0.38f,
+    paint: (Float) -> TextPaint = { textPaint(it, 700) }): Pair<List<StaticLayout>, Int> {
     var size = start
+    var maxLines = 6
     while (true) {
-        val paint = textPaint(size, 700)
-        val words = lines.map { textBlock(it, paint, width, maxLines = 6) }
-        val gap = (size * 0.38f).roundToInt()
-        if (words.sumOf { it.height } + gap * (words.size - 1).coerceAtLeast(0) <= room || size <= smallest) return words to gap
-        size = maxOf(smallest, size - 6f)
+        val ink = paint(size)
+        val words = lines.map { textBlock(it, ink, width, maxLines) }
+        val gap = (size * gapRatio).roundToInt()
+        if (words.sumOf { it.height } + gap * (words.size - 1).coerceAtLeast(0) <= room || (size <= smallest && maxLines == 1))
+            return words to gap
+        if (size > smallest) size = maxOf(smallest, size - 6f) else maxLines--
     }
 }
 
@@ -258,22 +373,355 @@ private fun Canvas.drawShadowedCover(cover: Bitmap?, left: Float, top: Float, si
     drawCover(cover, left, top, side, radius)
 }
 
+/** The cover cropped to fill [width] × [height] at ([left], [top]), square-cornered; nothing when the song has none. */
+private fun Canvas.drawCoverFill(cover: Bitmap?, left: Float, top: Float, width: Float, height: Float, alpha: Int = 255) {
+    if (cover == null || cover.width <= 0 || cover.height <= 0) return
+    val scale = maxOf(width / cover.width, height / cover.height)
+    val w = cover.width * scale
+    val h = cover.height * scale
+    save()
+    clipRect(left, top, left + width, top + height)
+    drawBitmap(cover, null, android.graphics.RectF(left + (width - w) / 2, top + (height - h) / 2, left + (width + w) / 2, top + (height + h) / 2),
+        Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply { this.alpha = alpha })
+    restore()
+}
+
+/** The cover over the top [height] px, fading out from [fadeFrom] (a share of the height) to the bottom. */
+private fun Canvas.drawFadingCover(cover: Bitmap?, height: Int, fadeFrom: Float) {
+    if (cover == null || cover.width <= 0 || cover.height <= 0) return
+    val layer = Bitmap.createBitmap(STORY_WIDTH, height, Bitmap.Config.ARGB_8888)
+    Canvas(layer).apply {
+        drawCoverFill(cover, 0f, 0f, STORY_WIDTH.toFloat(), height.toFloat())
+        drawRect(0f, 0f, STORY_WIDTH.toFloat(), height.toFloat(), Paint().apply {
+            shader = LinearGradient(0f, height * fadeFrom, 0f, height.toFloat(), android.graphics.Color.BLACK, android.graphics.Color.TRANSPARENT,
+                Shader.TileMode.CLAMP)
+            xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN)
+        })
+    }
+    drawBitmap(layer, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+    layer.recycle()
+}
+
+/** A dark fade from the bottom, so words read over a full-picture cover: clear above [clear], [middle] dark at [at], near black at [dark]. */
+private fun Canvas.posterShade(clear: Float, at: Float, dark: Float, middle: Int, bottom: Int) {
+    drawRect(0f, 0f, STORY_WIDTH.toFloat(), STORY_HEIGHT.toFloat(), Paint().apply {
+        shader = LinearGradient(0f, 0f, 0f, STORY_HEIGHT.toFloat(),
+            intArrayOf(android.graphics.Color.argb(0, 6, 8, 12), android.graphics.Color.argb(0, 6, 8, 12),
+                android.graphics.Color.argb(middle, 6, 8, 12), android.graphics.Color.argb(bottom, 6, 8, 12)),
+            floatArrayOf(0f, clear, at, dark), Shader.TileMode.CLAMP)
+    })
+}
+
+/** The song small: cover, title, artist and the mark beside it, at ([left], [top]); returns the row's height. */
+private fun Canvas.songRow(card: ShareCard.LyricCard, cover: Bitmap?, left: Float, top: Float, width: Int, side: Float): Float {
+    val textLeft = side + 36f
+    val title = textBlock(card.song, textPaint(42f, 600), (width - textLeft).toInt(), 1)
+    val artist = textBlock(card.artist, textPaint(39f, 400, 179), (width - textLeft).toInt(), 1)
+    val column = title.height + artist.height + 8f + markHeight()
+    val row = maxOf(side, column)
+    drawCover(cover, left, top + (row - side) / 2, side, 15f)
+    var line = top + (row - column) / 2
+    drawBlock(title, left + textLeft, line); line += title.height
+    drawBlock(artist, left + textLeft, line); line += artist.height + 8f
+    drawMark(left + textLeft, line)
+    return row
+}
+
+/** Lyric: as on Evanna's Lyrics page, the ticked lines bright and the lines either side faint and soft, the song on top. */
+private fun Canvas.lyricsPage(card: ShareCard.LyricCard, cover: Bitmap?) {
+    val left = 84f
+    val width = STORY_WIDTH - 2 * 84
+    val row = songRow(card, cover, left, 210f, width, 126f)
+    val faint = textPaint(78f, 700, 77).apply { maskFilter = android.graphics.BlurMaskFilter(5f, android.graphics.BlurMaskFilter.Blur.NORMAL) }
+    val before = card.before?.let { textBlock(it, faint, width, 2) }
+    val after = card.after?.let { textBlock(it, faint, width, 2) }
+    val gap = 54f
+    val area = 210f + row + 120f
+    val contextHeight = (before?.let { it.height + gap } ?: 0f) + (after?.let { gap + it.height } ?: 0f)
+    val words = fittedWords(card.lines, width, 90f, 60f, STORY_HEIGHT - 200f - area - contextHeight, gapRatio = 0.5f)
+    val block = contextHeight + height(words)
+    var y = (area + (STORY_HEIGHT - 200f - area - block) / 2).coerceAtLeast(area)
+    before?.let { drawBlock(it, left, y); y += it.height + gap }
+    drawWords(words, left, y); y += height(words)
+    after?.let { drawBlock(it, left, y + gap) }
+}
+
+/** Lyric: the cover fills the picture and the words sit on a dark fade at the bottom, like the album Poster. */
+private fun Canvas.lyricPoster(card: ShareCard.LyricCard, cover: Bitmap?, accent: Int) {
+    drawCoverFill(cover, 0f, 0f, STORY_WIDTH.toFloat(), STORY_HEIGHT.toFloat())
+    posterShade(0.22f, 0.46f, 0.78f, 128, 240)
+    val left = 84f
+    val width = STORY_WIDTH - 2 * 84
+    val name = textBlock(songAndArtist(card.song, card.artist, accent), textPaint(42f, 400), width, 2)
+    val markTop = STORY_HEIGHT - 210f - markHeight()
+    val nameTop = markTop - 18f - name.height
+    val words = fittedWords(card.lines, width, 75f, 54f, 860f, paint = { textPaint(it, 700).apply { letterSpacing = -0.01f } })
+    drawWords(words, left, nameTop - 48f - height(words))
+    drawBlock(name, left, nameTop)
+    drawMark(left, markTop)
+}
+
+/** Lyric: serif italic words under a large opening quote mark in the cover's colour. */
+private fun Canvas.lyricQuote(card: ShareCard.LyricCard, accent: Int) {
+    val left = 108f
+    val width = STORY_WIDTH - left.toInt() - 96
+    val words = fittedWords(card.lines, width, 81f, 54f, 760f, gapRatio = 0.08f, paint = { textPaint(it, 400, serif = true, italic = true) })
+    val title = textBlock(card.song, textPaint(39f, 600).apply { letterSpacing = 0.02f }, width, 1)
+    val artist = textBlock(card.artist, textPaint(39f, 400, 179), width, 1)
+    val quoteRoom = 300f
+    val group = quoteRoom + height(words) + 78f + 6f + 54f + title.height + artist.height + 18f + markHeight()
+    val top = ((STORY_HEIGHT - group) / 2).coerceAtLeast(120f)
+    drawText("\u201C", left - 6f, top + 330f, textPaint(450f, 700, ink = accent, serif = true).apply { alpha = 230 })
+    var y = top + quoteRoom
+    drawWords(words, left, y); y += height(words) + 78f
+    drawRect(left, y, left + 120f, y + 6f, Paint().apply { color = accent }); y += 6f + 54f
+    drawBlock(title, left, y); y += title.height
+    drawBlock(artist, left, y); y += artist.height + 18f
+    drawMark(left, y)
+}
+
+/** Lyric: a block in the cover's colour with dark words (light ones on a dark cover colour) and the cover small on top. */
+private fun Canvas.lyricColour(card: ShareCard.LyricCard, cover: Bitmap?, accent: Int) {
+    val ink = colourInk(accent)
+    val left = 90f
+    val pad = 72f
+    val width = (STORY_WIDTH - 2 * left - 2 * pad).toInt()
+    val side = 114f
+    val title = textBlock(card.song, textPaint(39f, 700, ink = ink), (width - side - 30f).toInt(), 1)
+    val artist = textBlock(card.artist, textPaint(36f, 400, ink = ink), (width - side - 30f).toInt(), 1)
+    val header = maxOf(side, (title.height + artist.height).toFloat())
+    val words = fittedWords(card.lines, width, 69f, 48f, 900f, gapRatio = 0.26f,
+        paint = { textPaint(it, 800, ink = ink).apply { letterSpacing = -0.01f } })
+    val blockHeight = pad + header + 66f + height(words) + 48f + markHeight() + pad
+    val top = ((STORY_HEIGHT - blockHeight) / 2 - 40f).coerceAtLeast(80f)
+    drawRoundRect(left, top, STORY_WIDTH - left, top + blockHeight, 54f, 54f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = accent or 0xFF000000.toInt()
+        setShadowLayer(120f, 0f, 54f, android.graphics.Color.argb(115, 0, 0, 0))
+    })
+    val x = left + pad
+    var y = top + pad
+    drawCover(cover, x, y + (header - side) / 2, side, 15f)
+    val nameTop = y + (header - title.height - artist.height) / 2
+    drawBlock(title, x + side + 30f, nameTop)
+    drawBlock(artist, x + side + 30f, nameTop + title.height)
+    y += header + 66f
+    drawWords(words, x, y); y += height(words) + 48f
+    drawMark(x, y, ink = ink)
+}
+
+/** The album's name, artist, details line and mark, [align]ed at ([left], [top]) in [width]; returns their height. */
+private fun Canvas.albumNames(card: ShareCard.AlbumCard, left: Float, top: Float, width: Int, nameSize: Float, align: Layout.Alignment,
+    artistInk: Int = white(179), nameWeight: Int = 700): Float {
+    val name = textBlock(card.album, textPaint(nameSize, nameWeight), width, 2, align)
+    val artist = textBlock(card.artist, textPaint(nameSize * 0.75f, 400, ink = artistInk), width, 1, align)
+    val meta = card.meta?.let { textBlock(it, textPaint(33f, 400, 128).apply { fontFeatureSettings = "tnum" }, width, 1, align) }
+    var y = top
+    drawBlock(name, left, y); y += name.height
+    drawBlock(artist, left, y + 6f); y += artist.height + 6f
+    meta?.let { drawBlock(it, left, y + 18f); y += it.height + 18f }
+    val markX = if (align == Layout.Alignment.ALIGN_CENTER) left + (width - markWidth()) / 2 else left
+    drawMark(markX, y + 30f)
+    return y + 30f + markHeight() - top
+}
+
+private fun albumNamesHeight(card: ShareCard.AlbumCard, width: Int, nameSize: Float): Float {
+    val name = textBlock(card.album, textPaint(nameSize, 700), width, 2)
+    val artist = textBlock(card.artist, textPaint(nameSize * 0.75f, 400), width, 1)
+    val meta = card.meta?.let { textBlock(it, textPaint(33f, 400), width, 1) }
+    return name.height + artist.height + 6f + (meta?.let { it.height + 18f } ?: 0f) + 30f + markHeight()
+}
+
+/** Album: the cover stands on a dark glass floor with its reflection, like the Carousel; square corners, as on a sleeve. */
+private fun Canvas.coverFlow(card: ShareCard.AlbumCard, cover: Bitmap?) {
+    val side = 744f
+    val left = (STORY_WIDTH - side) / 2
+    val gap = 336f
+    val names = albumNamesHeight(card, 840, 60f)
+    val top = ((STORY_HEIGHT - (side + gap + names)) / 2 - 30f).coerceAtLeast(80f)
+    val floor = top + side
+    drawRect(0f, floor, STORY_WIDTH.toFloat(), floor + 540f, Paint().apply {
+        shader = LinearGradient(0f, floor, 0f, floor + 540f, white(13), white(0), Shader.TileMode.CLAMP)
+    })
+    if (cover != null && cover.width > 0 && cover.height > 0) {
+        val reflection = Bitmap.createBitmap(side.toInt(), side.toInt(), Bitmap.Config.ARGB_8888)
+        Canvas(reflection).apply {
+            save(); scale(1f, -1f, 0f, side / 2); drawCoverFill(cover, 0f, 0f, side, side); restore()
+            drawRect(0f, 0f, side, side, Paint().apply {
+                shader = LinearGradient(0f, 0f, 0f, side * 0.48f, android.graphics.Color.argb(230, 0, 0, 0), android.graphics.Color.TRANSPARENT,
+                    Shader.TileMode.CLAMP)
+                xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN)
+            })
+        }
+        drawBitmap(reflection, left, floor, Paint(Paint.FILTER_BITMAP_FLAG).apply {
+            alpha = 140
+            colorFilter = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply { setScale(1.35f, 1.35f, 1.35f, 1f) })
+        })
+        reflection.recycle()
+    }
+    drawRect(0f, floor - 1.5f, STORY_WIDTH.toFloat(), floor + 1.5f, Paint().apply {
+        shader = LinearGradient(0f, 0f, STORY_WIDTH.toFloat(), 0f, intArrayOf(white(0), white(56), white(0)), null, Shader.TileMode.CLAMP)
+    })
+    drawShadowedCover(cover, left, top, side, 0f)
+    albumNames(card, 120f, floor + gap, 840, 60f, Layout.Alignment.ALIGN_CENTER)
+}
+
+/** Album: a record slides out of the sleeve, printed with the cover in its middle, like the disc on the sideways Details page. */
+private fun Canvas.record(card: ShareCard.AlbumCard, cover: Bitmap?) {
+    val sleeve = 654f
+    val disc = 636f
+    val names = albumNamesHeight(card, 864, 66f)
+    val top = ((STORY_HEIGHT - (sleeve + 96f + names)) / 2).coerceAtLeast(80f)
+    val sleeveLeft = 84f
+    val cx = 426f + disc / 2
+    val cy = top + 12f + disc / 2
+    val r = disc / 2
+    drawCircle(cx, cy, r, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF0D0D0F.toInt(); setShadowLayer(90f, 0f, 42f, android.graphics.Color.argb(140, 0, 0, 0))
+    })
+    val groove = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2.4f; color = 0xFF1C1C1F.toInt() }
+    var ring = 126f
+    while (ring < r - 8f) { drawCircle(cx, cy, ring, groove); ring += 7.8f }
+    drawCircle(cx, cy, r - 3f, Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f; color = white(20) })
+    val label = 105f
+    if (cover != null && cover.width > 0 && cover.height > 0) {
+        val scale = label * 2 / minOf(cover.width, cover.height)
+        drawCircle(cx, cy, label, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+            shader = BitmapShader(cover, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).apply {
+                setLocalMatrix(Matrix().apply {
+                    setScale(scale, scale); postTranslate(cx - cover.width * scale / 2, cy - cover.height * scale / 2)
+                })
+            }
+        })
+    } else drawCircle(cx, cy, label, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF2C2C2E.toInt() })
+    drawCircle(cx, cy, 10f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF0D0D0F.toInt() })
+    drawShadowedCover(cover, sleeveLeft, top, sleeve, 9f)
+    albumNames(card, 108f, top + sleeve + 96f, 864, 66f, Layout.Alignment.ALIGN_NORMAL)
+}
+
+/** Album: the cover framed like a print on a wall, a warm mat in a thin dark frame, with a small label under it. */
+private fun Canvas.galleryPrint(card: ShareCard.AlbumCard, cover: Bitmap?) {
+    val mat = 768f
+    val left = (STORY_WIDTH - mat) / 2
+    val names = albumNamesHeight(card, mat.toInt(), 51f)
+    val top = ((STORY_HEIGHT - (mat + 108f + names)) / 2 - 20f).coerceAtLeast(80f)
+    drawRect(left - 9f, top - 9f, left + mat + 9f, top + mat + 9f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF1B1B1D.toInt(); setShadowLayer(120f, 0f, 60f, android.graphics.Color.argb(140, 0, 0, 0))
+    })
+    drawRect(left, top, left + mat, top + mat, Paint().apply { color = 0xFFEFE8DC.toInt() })
+    val inset = 72f
+    if (cover != null) drawCoverFill(cover, left + inset, top + inset, mat - 2 * inset, mat - 2 * inset)
+    else drawCover(null, left + inset, top + inset, mat - 2 * inset, 0f)
+    drawRect(left + inset, top + inset, left + mat - inset, top + mat - inset, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeWidth = 3f; color = android.graphics.Color.argb(64, 0, 0, 0)
+    })
+    albumNames(card, left, top + mat + 108f, mat.toInt(), 51f, Layout.Alignment.ALIGN_NORMAL, nameWeight = 600)
+}
+
+/** Album: the cover fills the picture; a dark fade at the bottom holds a big title, like a film poster. */
+private fun Canvas.albumPoster(card: ShareCard.AlbumCard, cover: Bitmap?, accent: Int) {
+    drawCoverFill(cover, 0f, 0f, STORY_WIDTH.toFloat(), STORY_HEIGHT.toFloat())
+    posterShade(0.38f, 0.62f, 1f, 140, 235)
+    val left = 84f
+    val width = STORY_WIDTH - 2 * 84
+    val title = fittedWords(listOf(card.album), width, 138f, 84f, 420f,
+        paint = { textPaint(it, 800).apply { letterSpacing = -0.035f } }).first.first()
+    val artist = textBlock(card.artist, textPaint(51f, 500, ink = accent), width, 1)
+    val meta = card.meta?.let { textBlock(it, textPaint(36f, 400, 158).apply { fontFeatureSettings = "tnum" }, width, 1) }
+    val markTop = STORY_HEIGHT - 210f - markHeight()
+    var y = markTop - 30f - (meta?.let { it.height + 12f } ?: 0f) - artist.height - 24f - title.height
+    drawBlock(title, left, y); y += title.height + 24f
+    drawBlock(artist, left, y); y += artist.height
+    meta?.let { drawBlock(it, left, y + 12f) }
+    drawMark(left, markTop)
+}
+
+/** Album: the whole cover on top, then the first songs and their lengths, like the back of a sleeve. */
+private fun Canvas.linerNotes(card: ShareCard.AlbumCard, cover: Bitmap?, accent: Int) {
+    val side = STORY_WIDTH.toFloat()
+    if (cover != null) drawCoverFill(cover, 0f, 0f, side, side) else drawCover(null, 240f, 240f, 600f, 36f)
+    drawRect(0f, side, side, STORY_HEIGHT.toFloat(), Paint().apply {
+        shader = LinearGradient(0f, side, 0f, STORY_HEIGHT.toFloat(), android.graphics.Color.argb(140, 10, 14, 20),
+            android.graphics.Color.argb(204, 10, 14, 20), Shader.TileMode.CLAMP)
+    })
+    val left = 84f
+    val width = STORY_WIDTH - 2 * 84
+    var y = side + 54f
+    val name = textBlock(card.album, textPaint(63f, 700), width, 1)
+    val artist = textBlock(card.artist, textPaint(42f, 400, ink = accent), width, 1)
+    drawBlock(name, left, y); y += name.height
+    drawBlock(artist, left, y); y += artist.height + 30f
+    val rule = Paint().apply { color = white(20) }
+    val number = textPaint(37f, 400, 115).apply { fontFeatureSettings = "tnum" }
+    val titleInk = textPaint(37f, 400)
+    val lengthInk = textPaint(37f, 400, 140).apply { fontFeatureSettings = "tnum"; textAlign = Paint.Align.RIGHT }
+    val rowHeight = 72f
+    card.tracks.take(SHARE_LINER_TRACKS).forEachIndexed { index, track ->
+        drawRect(left, y, left + width, y + 3f, rule)
+        val baseline = y + rowHeight / 2 - (titleInk.ascent() + titleInk.descent()) / 2
+        drawText("${index + 1}", left, baseline, number)
+        val room = width - 60f - lengthInk.measureText(track.length) - 30f
+        drawText(TextUtils.ellipsize(track.title, titleInk, room, TextUtils.TruncateAt.END).toString(), left + 60f, baseline, titleInk)
+        drawText(track.length, left + width, baseline, lengthInk)
+        y += rowHeight
+    }
+    card.more?.let {
+        drawRect(left, y, left + width, y + 3f, rule)
+        val more = textPaint(33f, 400, 128).apply { fontFeatureSettings = "tnum" }
+        drawText(it, left, y + 60f - (more.ascent() + more.descent()) / 2 - 6f, more)
+        y += 66f
+    }
+    drawMark(left, y + 30f)
+}
+
+/** Album: the cover fades out and the album's name, set very large, runs over the edge of the fade. */
+private fun Canvas.bigType(card: ShareCard.AlbumCard, cover: Bitmap?, accent: Int) {
+    drawFadingCover(cover, 1290, 0.52f)
+    val left = 66f
+    val width = STORY_WIDTH - 66 - 60
+    var size = 204f
+    var name: StaticLayout
+    while (true) {
+        name = textBlock(card.album, textPaint(size, 800).apply {
+            letterSpacing = -0.04f; setShadowLayer(54f, 0f, 6f, android.graphics.Color.argb(90, 0, 0, 0))
+        }, width, 3, spacing = 0.92f)
+        if ((name.lineCount <= 2 && name.height <= 600) || size <= 110f) break
+        size = maxOf(110f, size - 12f)
+    }
+    val artist = textBlock(card.artist, textPaint(54f, 500, ink = accent), width, 1)
+    val meta = card.meta?.let { textBlock(it, textPaint(36f, 400, 140).apply { fontFeatureSettings = "tnum" }, width, 1) }
+    var y = minOf(900f, 1560f - name.height)
+    drawBlock(name, left, y); y += name.height + 42f
+    drawBlock(artist, left, y); y += artist.height
+    meta?.let { drawBlock(it, left, y + 6f); y += it.height + 6f }
+    drawMark(left, y + 30f)
+}
+
 private fun plainGlow(): Bitmap = Bitmap.createBitmap(STORY_WIDTH, STORY_HEIGHT, Bitmap.Config.ARGB_8888).also {
     Canvas(it).drawPaint(Paint().apply {
         shader = LinearGradient(0f, 0f, 0f, STORY_HEIGHT.toFloat(), 0xFF2C2C30.toInt(), 0xFF111113.toInt(), Shader.TileMode.CLAMP)
     })
 }
 
-private fun textPaint(size: Float, weight: Int, alpha: Int = 255) = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-    textSize = size
-    typeface = Typeface.create(Typeface.SANS_SERIF, weight, false)
-    color = android.graphics.Color.argb(alpha, 255, 255, 255)
+/** White text at [alpha] unless [ink] gives another colour. */
+private fun textPaint(size: Float, weight: Int, alpha: Int = 255, ink: Int? = null, serif: Boolean = false, italic: Boolean = false) =
+    TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = size
+        typeface = Typeface.create(if (serif) Typeface.SERIF else Typeface.SANS_SERIF, weight, italic)
+        color = ink ?: android.graphics.Color.argb(alpha, 255, 255, 255)
+    }
+
+private fun textBlock(text: CharSequence, paint: TextPaint, width: Int, maxLines: Int,
+    alignment: Layout.Alignment = Layout.Alignment.ALIGN_NORMAL, spacing: Float = 1f): StaticLayout =
+    StaticLayout.Builder.obtain(text, 0, text.length, paint, width).setAlignment(alignment).setLineSpacing(0f, spacing)
+        .setMaxLines(maxLines).setEllipsize(TextUtils.TruncateAt.END).setIncludePad(false).build()
+
+/** "Song · Artist": the song bold, the artist in [artistInk]. */
+private fun songAndArtist(song: String, artist: String, artistInk: Int): CharSequence = android.text.SpannableStringBuilder().apply {
+    append(song, android.text.style.StyleSpan(Typeface.BOLD), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    append(" · $artist", android.text.style.ForegroundColorSpan(artistInk), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
 }
 
-private fun textBlock(text: String, paint: TextPaint, width: Int, maxLines: Int,
-    alignment: Layout.Alignment = Layout.Alignment.ALIGN_NORMAL): StaticLayout =
-    StaticLayout.Builder.obtain(text, 0, text.length, paint, width).setAlignment(alignment)
-        .setMaxLines(maxLines).setEllipsize(TextUtils.TruncateAt.END).setIncludePad(false).build()
+private fun white(alpha: Int) = android.graphics.Color.argb(alpha, 255, 255, 255)
 
 private fun Canvas.drawBlock(block: StaticLayout, x: Float, y: Float) {
     save(); translate(x, y); block.draw(this); restore()
@@ -311,9 +759,10 @@ private fun Canvas.drawCover(cover: Bitmap?, left: Float, top: Float, side: Floa
 }
 
 /** A music note [size] tall at ([x], [y]), in white at [alpha]. */
-private fun Canvas.drawNote(x: Float, y: Float, size: Float, alpha: Int) {
+private fun Canvas.drawNote(x: Float, y: Float, size: Float, alpha: Int) = drawNoteIn(x, y, size, white(alpha))
+
+private fun Canvas.drawNoteIn(x: Float, y: Float, size: Float, ink: Int) {
     val s = size / 24f
-    val ink = android.graphics.Color.argb(alpha, 255, 255, 255)
     drawPath(Path().apply { moveTo(x + 9 * s, y + 18 * s); lineTo(x + 9 * s, y + 6 * s); lineTo(x + 20 * s, y + 4 * s); lineTo(x + 20 * s, y + 16 * s) },
         Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2.4f * s; color = ink; strokeJoin = Paint.Join.ROUND })
     val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = ink }
@@ -323,12 +772,12 @@ private fun Canvas.drawNote(x: Float, y: Float, size: Float, alpha: Int) {
 
 private const val MARK_SIZE = 31f
 
-/** "♪ Evanna" in small faint letters; returns its height. */
-private fun Canvas.drawMark(x: Float, y: Float): Float {
-    val paint = textPaint(MARK_SIZE, 500, 140)
+/** "♪ Evanna" in small faint letters ([ink] for a coloured page); returns its height. */
+private fun Canvas.drawMark(x: Float, y: Float, ink: Int = white(140)): Float {
+    val paint = textPaint(MARK_SIZE, 500, ink = ink)
     val metrics = paint.fontMetrics
     val height = metrics.descent - metrics.ascent
-    drawNote(x, y + (height - MARK_SIZE) / 2, MARK_SIZE, 140)
+    drawNoteIn(x, y + (height - MARK_SIZE) / 2, MARK_SIZE, ink)
     drawText("Evanna", x + MARK_SIZE * 1.15f, y - metrics.ascent, paint)
     return height
 }
@@ -468,22 +917,41 @@ internal fun ShareSheet(card: ShareCard, cover: suspend () -> Bitmap?, onClose: 
     var failed by remember(card) { mutableStateOf(false) }
     // The look last picked for this kind of card opens first.
     val settings = remember(context) { context.getSharedPreferences(UI_SETTINGS, Context.MODE_PRIVATE) }
-    var style by remember(card) { mutableStateOf(ShareStyle.stored(settings.getString(shareStyleKey(card), null))) }
+    val looks = remember(card) { ShareLook.ordered(card, settings.getString(shareStyleKey(card), null)) }
+    var style by remember(card) { mutableStateOf(looks.first()) }
+    var renderer by remember(card) { mutableStateOf<ShareRenderer?>(null) }
+    var thumbnails by remember(card) { mutableStateOf<Map<ShareLook, Bitmap>>(emptyMap()) }
+    LaunchedEffect(card) {
+        val loaded = try { cover() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
+        renderer = withContext(Dispatchers.Default) { ShareRenderer(card, loaded) }
+    }
+    LaunchedEffect(renderer) {
+        val ready = renderer ?: return@LaunchedEffect
+        for (look in looks) {
+            val thumbnail = try { withContext(Dispatchers.Default) { ready.thumbnail(look) } }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { continue }
+            thumbnails = thumbnails + (look to thumbnail)
+        }
+    }
     // The last picture stays on screen while the next look is drawn.
     var pictures by remember(card) { mutableStateOf<SharePictures?>(null) }
-    LaunchedEffect(card, style) {
-        val loaded = try { cover() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
+    var renderedStyle by remember(card) { mutableStateOf<ShareLook?>(null) }
+    LaunchedEffect(renderer, style) {
+        val ready = renderer ?: return@LaunchedEffect
+        val look = style
         failed = false
-        pictures = try { withContext(Dispatchers.Default) { drawSharePictures(card, loaded, style) } }
+        pictures = try { withContext(Dispatchers.Default) { ready.pictures(look) } }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Throwable) { failed = true; null }
+        renderedStyle = look
     }
     var note by remember(card) { mutableStateOf<String?>(null) }
     var working by remember { mutableStateOf(false) }
     val instagram = remember(context) { instagramStories(context) }
     fun act(action: suspend (SharePictures) -> String?) {
         val ready = pictures ?: return
-        if (working) return
+        if (working || renderedStyle != style) return
         working = true
         scope.launch {
             note = try { action(ready) }
@@ -515,14 +983,32 @@ internal fun ShareSheet(card: ShareCard, cover: suspend () -> Bitmap?, onClose: 
                     else -> ActivityIndicator()
                 }
             }
-            val looks = ShareStyle.entries
-            SingleChoiceSegmentedButtonRow(looks.map { it.label(card) }, looks.indexOf(style), { picked ->
-                style = looks[picked]
-                note = null
-                settings.edit().putString(shareStyleKey(card), style.name).apply()
-            }, modifier = Modifier.padding(top = 20.dp).widthIn(max = 360.dp).fillMaxWidth(), enabled = !working)
+            Row(Modifier.padding(top = 16.dp).fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup()
+                .padding(4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                for (look in looks) {
+                    val selected = look == style
+                    Column(Modifier.width(72.dp).clip(RoundedCornerShape(12.dp))
+                        .selectable(selected, enabled = !working, role = Role.RadioButton, onClick = {
+                            style = look
+                            note = null
+                            settings.edit().putString(shareStyleKey(card), look.name).apply()
+                        }).padding(3.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(Modifier.fillMaxWidth().aspectRatio(9f / 16f)
+                            .border(if (selected) 3.dp else 1.dp, if (selected) colors.onSurface else colors.onSurface.copy(alpha = 0.12f),
+                                RoundedCornerShape(9.dp)).padding(3.dp).clip(RoundedCornerShape(6.dp))
+                            .background(colors.surfaceContainerHigh), contentAlignment = Alignment.Center) {
+                            thumbnails[look]?.let { thumbnail ->
+                                Image(remember(thumbnail) { thumbnail.asImageBitmap() }, null, Modifier.fillMaxSize())
+                            }
+                        }
+                        Text(look.label, style = EvannaDesign.typography.labelMedium,
+                            color = if (selected) colors.onSurface else colors.onSurfaceVariant,
+                            textAlign = TextAlign.Center, maxLines = 2, modifier = Modifier.padding(top = 7.dp).fillMaxWidth())
+                    }
+                }
+            }
             Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val enabled = pictures != null && !working
+                val enabled = pictures != null && renderedStyle == style && !working
                 if (instagram) ShareButton(ShareGlyph.STORY, "Instagram Stories", enabled) {
                     act { ready ->
                         // The glass card goes over the glow as a sticker to move; the other looks go as the whole picture.

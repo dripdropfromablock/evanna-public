@@ -24,6 +24,16 @@ class UsbAdapterProbe : Instrumentation() {
         waitForIdleSync()
         val result = Bundle()
         try {
+            if (probe == "share-cards") {
+                result.putString("report", com.evanna.player.ShareCardsProbe.run(this))
+                finish(Activity.RESULT_OK, result)
+                return
+            }
+            if (probe == "share-cards-ui") {
+                result.putString("report", com.evanna.player.ShareCardsProbe.ui(this))
+                finish(Activity.RESULT_OK, result)
+                return
+            }
             if(probe=="usb-music") {
                 result.putString("report",UsbMusicProbe.run(this));finish(Activity.RESULT_OK,result);return
             }
