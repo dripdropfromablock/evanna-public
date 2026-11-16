@@ -86,8 +86,11 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -172,7 +175,7 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
     onSavePlaylist: () -> Unit, loadArtwork: suspend (String) -> Bitmap?, motion: PlayerSheetMotion, flying: Boolean,
     wantedOpen: Boolean, onConvert: (() -> Unit)? = null,
     outputSheetOpen: Boolean = false, sidewaysStyle: SidewaysStyle = SidewaysStyle.DETAILS,
-    loadSongInfo: suspend (String) -> LibrarySong? = { null }) {
+    loadSongInfo: suspend (String) -> LibrarySong? = { null }, coverStyle: CoverStyle = CoverStyle.CARD) {
     var page by rememberSaveable { mutableStateOf(PlayerPage.SONG) }
     var lyricsTrack by rememberSaveable { mutableStateOf<String?>(null) }
     var showSignal by rememberSaveable { mutableStateOf(false) }
@@ -200,13 +203,26 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
             if (page == PlayerPage.QUEUE && state.connected && state.queue.isNotEmpty()) add("Save queue as playlist" to onSavePlaylist)
         })
     }
-    Box(Modifier.fillMaxSize()) {
+    // Upright, the full cover fills the top of the Song page and fades into the backdrop above the title.
+    val fullCover = coverStyle == CoverStyle.FULL && cover != null && state.hasSong && !sidewaysPhone()
+    var screenBox by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var songCoverArea by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    Box(Modifier.fillMaxSize().onGloballyPositioned { screenBox = it }) {
         PlayerBackdrop(cover, LocalLookStyle.current.look == EvannaLook.APPLE_LIGHT,
             // Growing out of the mini player, the page is solid almost at once and its words come in near the end.
             Modifier.matchParentSize().graphicsLayer { alpha = if (motion.morphs) (motion.progress / 0.2f).coerceAtMost(1f) else motion.progress })
         val contentAlpha = {
             if (motion.morphs) ((motion.progress - 0.5f) / 0.5f).coerceIn(0f, 1f)
             else ((motion.progress - 0.15f) / 0.85f).coerceIn(0f, 1f)
+        }
+        if (fullCover && cover != null) {
+            val onSong by animateFloatAsState(if (page == PlayerPage.SONG) 1f else 0f, tween(260), label = "full cover")
+            FullCover(cover, bottom = {
+                val box = screenBox
+                val area = songCoverArea
+                if (box?.isAttached == true && area?.isAttached == true) box.localBoundingBoxOf(area).bottom else null
+            }, modifier = Modifier.graphicsLayer { alpha = onSong * contentAlpha() }
+                .dockingCover(motion, flying, corner = 0.dp, report = page == PlayerPage.SONG, fade = true))
         }
         val openPage: (PlayerPage) -> Unit = {
             if (it == PlayerPage.LYRICS) lyricsTrack = state.id
@@ -250,7 +266,8 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
                             Box(Modifier.fillMaxSize().then(if (shown == page) Modifier else Modifier.clearAndSetSemantics {})) {
                                 when (shown) {
                                     PlayerPage.SONG -> SongPage(state, cover, onFavorite, more,
-                                        Modifier.dockingCover(motion, flying, corner = 10.dp, report = shown == page).then(sharedCover))
+                                        Modifier.dockingCover(motion, flying, corner = 10.dp, report = shown == page && !fullCover).then(sharedCover),
+                                        fullCover, onCoverArea = { songCoverArea = it })
                                     PlayerPage.LYRICS -> Column(Modifier.fillMaxSize()) {
                                         CompactHeader(state, cover, more,
                                             Modifier.dockingCover(motion, flying, report = shown == page).then(sharedCover)) { page = PlayerPage.SONG }
@@ -362,19 +379,44 @@ private fun SleepDialog(state: PlayerPresentation, onSleep: (SleepMode, Int) -> 
 /** Page 1: the big cover, then title and artist with Favorite and More. The cover shrinks a little while paused. */
 @Composable
 private fun SongPage(state: PlayerPresentation, cover: Bitmap?, onFavorite: (String, Boolean) -> Unit,
-    more: @Composable () -> Unit, artwork: Modifier) {
+    more: @Composable () -> Unit, artwork: Modifier, fullCover: Boolean = false, onCoverArea: (LayoutCoordinates) -> Unit = {}) {
     Column(Modifier.fillMaxSize().padding(horizontal = 30.dp)) {
         val scale by animateFloatAsState(if (state.playing) 1f else 0.86f, spring(dampingRatio = 0.78f, stiffness = 380f), label = "cover scale")
         val lift by animateDpAsState(if (state.playing) 15.dp else 8.dp, spring(dampingRatio = 0.78f, stiffness = 380f), label = "cover shadow")
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            val side = minOf(maxWidth, maxHeight)
-            Box(Modifier.size(side).graphicsLayer { scaleX = scale; scaleY = scale }) {
-                ArtworkImage(cover, Modifier.fillMaxSize().then(artwork).shadow(lift, CoverShape), CoverShape)
+        // With the full cover the screen draws the cover behind the page; this room only sets where it ends.
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().onGloballyPositioned(onCoverArea), contentAlignment = Alignment.Center) {
+            if (!fullCover) {
+                val side = minOf(maxWidth, maxHeight)
+                Box(Modifier.size(side).graphicsLayer { scaleX = scale; scaleY = scale }) {
+                    ArtworkImage(cover, Modifier.fillMaxSize().then(artwork).shadow(lift, CoverShape), CoverShape)
+                }
             }
         }
         Spacer(Modifier.height(18.dp))
         SongTitleRow(state, onFavorite, more)
     }
+}
+
+/** How far the full cover runs past the cover room, under the title, while it fades out. */
+private val FullCoverOverlap = 56.dp
+
+/**
+ * The full cover: the screen's width, from the top edge under the status bar to a little past where the card would end
+ * ([bottom], in this box's pixels), cropped to fill. It fades out over its lower 45%, so the title sits on the backdrop.
+ * A light shade at the top keeps the clock and the grabber readable on a bright cover.
+ */
+@Composable
+private fun FullCover(cover: Bitmap, bottom: () -> Float?, modifier: Modifier) {
+    val image = remember(cover) { cover.asImageBitmap() }
+    val overlap = with(LocalDensity.current) { FullCoverOverlap.toPx() }
+    Image(image, contentDescription = null, contentScale = ContentScale.Crop, modifier = modifier
+        .layout { measurable, constraints ->
+            val width = constraints.maxWidth
+            val height = ((bottom() ?: width.toFloat()) + overlap).roundToInt().coerceIn(width, maxOf(width, constraints.maxHeight))
+            val placeable = measurable.measure(Constraints.fixed(width, height))
+            layout(width, height) { placeable.place(0, 0) }
+        }
+        .coverFade { 1f })
 }
 
 /** Title and artist, with Favorite and More at the end. */
@@ -1318,6 +1360,13 @@ internal enum class SidewaysStyle(val label: String) {
     companion object { fun stored(value: Any?) = entries.firstOrNull { it.name == value } ?: DETAILS }
 }
 internal const val SIDEWAYS_STYLE_PREFERENCE = "sideways-player"
+
+/** How upright Now Playing shows the cover (Settings → Appearance; docs/mockups/now-playing-full-cover.html). */
+internal enum class CoverStyle(val label: String) {
+    CARD("Card"), FULL("Full cover");
+    companion object { fun stored(value: Any?) = entries.firstOrNull { it.name == value } ?: CARD }
+}
+internal const val COVER_STYLE_PREFERENCE = "now-playing-cover"
 /** UI_SETTINGS key: on its side, Now Playing and Carousel hide the phone's status and navigation bars (default on). */
 internal const val FULL_SCREEN_SIDEWAYS_PREFERENCE = "sideways-full-screen"
 

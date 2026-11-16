@@ -22,8 +22,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -75,6 +82,8 @@ internal class PlayerSheetMotion(initiallyOpen: Boolean) {
     var miniCover by mutableStateOf<LayoutCoordinates?>(null)
     var fullCover by mutableStateOf<LayoutCoordinates?>(null)
     var fullCorner by mutableStateOf(10.dp)
+    /** Now Playing shows the full cover, so the flying cover lands with its faded edge. */
+    var fullFade by mutableStateOf(false)
     /** The mini player capsule. While it is on screen, Now Playing grows out of it instead of fading in place. */
     var miniBox by mutableStateOf<LayoutCoordinates?>(null)
     val morphs get() = miniBox?.isAttached == true
@@ -157,11 +166,12 @@ internal fun Modifier.playerPull(motion: PlayerSheetMotion, fromOpen: Boolean, t
     }
 
 internal fun Modifier.dockingCover(motion: PlayerSheetMotion, flying: Boolean, corner: Dp = 5.dp,
-    mini: Boolean = false, report: Boolean = true): Modifier =
+    mini: Boolean = false, report: Boolean = true, fade: Boolean = false): Modifier =
     (if (report) onGloballyPositioned {
         if (mini) motion.miniCover = it else {
             motion.fullCover = it
             motion.fullCorner = corner
+            motion.fullFade = fade
         }
     } else this).graphicsLayer { alpha = if (flying) 0f else 1f }
 
@@ -232,10 +242,31 @@ internal fun PlayerSheet(motion: PlayerSheetMotion, cover: Bitmap?, flying: Bool
     }
 }
 
+/**
+ * The full cover's edges: its lower part fades into the backdrop and a light shade sits under the status bar.
+ * [strength] 0 draws the plain cover, 1 the full fade, so the flying cover can turn into the full cover as it lands.
+ */
+internal fun Modifier.coverFade(strength: () -> Float): Modifier =
+    graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
+        val s = strength().coerceIn(0f, 1f)
+        drawContent()
+        if (s > 0f) {
+            drawRect(Brush.verticalGradient(0.55f to Color.Black, 1f to Color.Black.copy(alpha = 1f - s)), blendMode = BlendMode.DstIn)
+            drawRect(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.3f * s), 1f to Color.Transparent, endY = 120.dp.toPx()))
+        }
+    }
+
 @Composable
 private fun FlyingCover(motion: PlayerSheetMotion, cover: Bitmap?, sheet: LayoutCoordinates?) {
     Layout(content = {
-        ArtworkImage(cover, Modifier.fillMaxSize().graphicsLayer {
+        val image = remember(cover) { cover?.asImageBitmap() }
+        // Toward the full cover the artwork loses its frame and fades in step with the sheet, so landing shows no edge.
+        if (motion.fullFade && image != null) Image(image, contentDescription = null, contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize().graphicsLayer {
+                shape = RoundedCornerShape(lerp(8.dp, 0.dp, motion.progress))
+                clip = true
+            }.coverFade { motion.progress })
+        else ArtworkImage(cover, Modifier.fillMaxSize().graphicsLayer {
             shape = RoundedCornerShape(lerp(8.dp, motion.fullCorner, motion.progress))
             clip = true
         }, RectangleShape)

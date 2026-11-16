@@ -161,6 +161,8 @@ class MainActivity : ComponentActivity() {
     private var increaseContrast by mutableStateOf(false)
     /** Now Playing's layout on a phone on its side. */
     private var sidewaysStyle by mutableStateOf(SidewaysStyle.DETAILS)
+    /** How upright Now Playing shows the cover: in a card, or filling the top of the screen. */
+    private var coverStyle by mutableStateOf(CoverStyle.CARD)
     /** On its side, Now Playing and Carousel hide the phone's status and navigation bars. */
     private var fullScreenSideways by mutableStateOf(true)
     private var foreground by mutableStateOf(false)
@@ -325,6 +327,7 @@ class MainActivity : ComponentActivity() {
         reduceTransparency = uiPreferences[REDUCE_TRANSPARENCY_PREFERENCE] as? Boolean ?: false
         increaseContrast = uiPreferences[INCREASE_CONTRAST_PREFERENCE] as? Boolean ?: false
         sidewaysStyle = SidewaysStyle.stored(uiPreferences[SIDEWAYS_STYLE_PREFERENCE])
+        coverStyle = CoverStyle.stored(uiPreferences[COVER_STYLE_PREFERENCE])
         fullScreenSideways = uiPreferences[FULL_SCREEN_SIDEWAYS_PREFERENCE] as? Boolean ?: true
         motionScale.speed = storedAnimationSpeed(uiPreferences[ANIMATION_SPEED_PREFERENCE])
         fun readSystemMotionScale() = AndroidSettings.Global.getFloat(
@@ -628,6 +631,7 @@ class MainActivity : ComponentActivity() {
                                     onSavePlaylist = { openPlaylists(saveQueue = true) }, loadArtwork = ::queueArtwork,
                                     motion = motion, flying = flying, wantedOpen = wantedOpen,
                                     outputSheetOpen = showOutput, sidewaysStyle = sidewaysStyle, loadSongInfo = ::currentSongInfo,
+                                    coverStyle = coverStyle,
                                     onConvert = if (outputRoute == "DIRECT_USB" && usbPolicy == UsbPlaybackPolicy.STRICT &&
                                         playerUi.canPlayPause && !playing) ::playConvertedOnce else null)
                             } }
@@ -1533,6 +1537,17 @@ class MainActivity : ComponentActivity() {
                             increaseContrast = on
                             getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putBoolean(INCREASE_CONTRAST_PREFERENCE, on).apply()
                         } }
+                    }
+                }
+                item(key = "cover") {
+                    SettingsSection("Now Playing cover", footer = "Card shows the cover in a frame. " +
+                        "Full cover fills the top of the screen with it.", choices = true) {
+                        for (choice in CoverStyle.entries) row(choice) {
+                            CheckRow(choice.label, coverStyle == choice) {
+                                coverStyle = choice
+                                getSharedPreferences(UI_SETTINGS, MODE_PRIVATE).edit().putString(COVER_STYLE_PREFERENCE, choice.name).apply()
+                            }
+                        }
                     }
                 }
                 item(key = "sideways") {
