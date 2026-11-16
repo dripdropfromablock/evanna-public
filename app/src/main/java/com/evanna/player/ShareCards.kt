@@ -97,23 +97,165 @@ internal sealed interface ShareCard {
     }
 }
 
-/** A story picture (1080 × 1920), plus its two layers for Instagram: the glow alone and the card alone. */
-internal class SharePictures(val story: Bitmap, val background: Bitmap, val sticker: Bitmap)
+/**
+ * The card's look (docs/mockups/share-cards.html). [GLASS] (A) is a glass card; [BOLD] is B (big words / a floating
+ * cover) and [COVER] is C (the cover on top / the full cover).
+ */
+internal enum class ShareStyle { GLASS, BOLD, COVER;
+    fun label(card: ShareCard) = when (this) {
+        GLASS -> "Card"
+        BOLD -> if (card is ShareCard.LyricCard) "Big words" else "Floating"
+        COVER -> if (card is ShareCard.LyricCard) "Cover" else "Full cover"
+    }
+    companion object { fun stored(value: Any?) = entries.firstOrNull { it.name == value } ?: GLASS }
+}
+
+/** UI_SETTINGS keys: the look last picked for each kind of card. */
+internal fun shareStyleKey(card: ShareCard) = if (card is ShareCard.LyricCard) "share-lyric-style" else "share-album-style"
+
+/**
+ * A story picture (1080 × 1920), plus its layers for Instagram: the glow alone and, for the glass card, the card alone as a
+ * sticker. The other looks have no card to move, so Instagram gets the whole picture.
+ */
+internal class SharePictures(val story: Bitmap, val background: Bitmap, val sticker: Bitmap?)
 
 private const val STORY_WIDTH = 1080
 private const val STORY_HEIGHT = 1920
 private const val CARD_WIDTH = 840
 
 /** Draws the card over the cover's glow, the same glow as behind Now Playing. Takes a moment; call off the main thread. */
-internal fun drawSharePictures(card: ShareCard, cover: Bitmap?): SharePictures {
+internal fun drawSharePictures(card: ShareCard, cover: Bitmap?, style: ShareStyle = ShareStyle.GLASS): SharePictures {
     val background = cover?.let { backdropPicture(it, STORY_WIDTH, STORY_HEIGHT) } ?: plainGlow()
-    val sticker = when (card) {
-        is ShareCard.LyricCard -> lyricSticker(card, cover)
-        is ShareCard.AlbumCard -> albumSticker(card, cover)
-    }
     val story = background.copy(Bitmap.Config.ARGB_8888, true)
-    Canvas(story).drawBitmap(sticker, (STORY_WIDTH - sticker.width) / 2f, (STORY_HEIGHT - sticker.height) / 2f, null)
-    return SharePictures(story, background, sticker)
+    val canvas = Canvas(story)
+    if (style == ShareStyle.GLASS) {
+        val sticker = when (card) {
+            is ShareCard.LyricCard -> lyricSticker(card, cover)
+            is ShareCard.AlbumCard -> albumSticker(card, cover)
+        }
+        canvas.drawBitmap(sticker, (STORY_WIDTH - sticker.width) / 2f, (STORY_HEIGHT - sticker.height) / 2f, null)
+        return SharePictures(story, background, sticker)
+    }
+    when (card) {
+        is ShareCard.LyricCard -> if (style == ShareStyle.BOLD) canvas.bigWords(card, cover) else canvas.lyricsUnderCover(card, cover)
+        is ShareCard.AlbumCard -> if (style == ShareStyle.BOLD) canvas.floatingCover(card, cover) else canvas.fullCover(card, cover)
+    }
+    return SharePictures(story, background, null)
+}
+
+/** The picked lines as text blocks at [size], shrunk in 6 px steps (not below [smallest]) until they fit in [room]. */
+private fun fittedWords(lines: List<String>, width: Int, start: Float, smallest: Float, room: Float): Pair<List<StaticLayout>, Int> {
+    var size = start
+    while (true) {
+        val paint = textPaint(size, 700)
+        val words = lines.map { textBlock(it, paint, width, maxLines = 6) }
+        val gap = (size * 0.38f).roundToInt()
+        if (words.sumOf { it.height } + gap * (words.size - 1).coerceAtLeast(0) <= room || size <= smallest) return words to gap
+        size = maxOf(smallest, size - 6f)
+    }
+}
+
+private fun height(words: Pair<List<StaticLayout>, Int>) = words.first.sumOf { it.height } + words.second * (words.first.size - 1).coerceAtLeast(0)
+
+private fun Canvas.drawWords(words: Pair<List<StaticLayout>, Int>, x: Float, top: Float) {
+    var y = top
+    for (block in words.first) { drawBlock(block, x, y); y += block.height + words.second }
+}
+
+/** Lyric B: large words straight on the glow, the song small at the bottom. */
+private fun Canvas.bigWords(card: ShareCard.LyricCard, cover: Bitmap?) {
+    val left = 96f
+    val width = STORY_WIDTH - 2 * 96
+    val side = 120f
+    val textLeft = side + 33f
+    val title = textBlock(card.song, textPaint(42f, 600), (width - textLeft).toInt(), 1)
+    val artist = textBlock(card.artist, textPaint(39f, 400, 179), (width - textLeft).toInt(), 1)
+    val column = title.height + artist.height + 8f + markHeight()
+    val row = maxOf(side, column)
+    val rowTop = STORY_HEIGHT - 240f - row
+    val words = fittedWords(card.lines, width, 90f, 56f, rowTop - 400f)
+    val top = (200f + (rowTop - 120f - 200f - height(words)) / 2).coerceAtLeast(160f)
+    drawWords(words, left, top)
+    drawCover(cover, left, rowTop + (row - side) / 2, side, 15f)
+    var line = rowTop + (row - column) / 2
+    drawBlock(title, left + textLeft, line); line += title.height
+    drawBlock(artist, left + textLeft, line); line += artist.height + 8f
+    drawMark(left + textLeft, line)
+}
+
+/** Lyric C: the cover first, the words under it, then "Song · Artist" and the mark; the group sits in the middle. */
+private fun Canvas.lyricsUnderCover(card: ShareCard.LyricCard, cover: Bitmap?) {
+    val side = 840f
+    val left = (STORY_WIDTH - side) / 2
+    val words = fittedWords(card.lines, side.toInt(), 54f, 40f, 460f)
+    val name = android.text.SpannableStringBuilder().apply {
+        append(card.song, android.text.style.StyleSpan(Typeface.BOLD), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        append(" · " + card.artist, android.text.style.ForegroundColorSpan(android.graphics.Color.argb(179, 255, 255, 255)), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+    val nameBlock = StaticLayout.Builder.obtain(name, 0, name.length, textPaint(39f, 400), side.toInt())
+        .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).setIncludePad(false).build()
+    val group = side + 72f + height(words) + 42f + nameBlock.height + 18f + markHeight()
+    val top = ((STORY_HEIGHT - group) / 2).coerceAtLeast(80f)
+    drawShadowedCover(cover, left, top, side, 36f)
+    val wordsTop = top + side + 72f
+    drawWords(words, left, wordsTop)
+    val nameTop = wordsTop + height(words) + 42f
+    drawBlock(nameBlock, left, nameTop)
+    drawMark(left, nameTop + nameBlock.height + 18f)
+}
+
+/** Album B: a big cover with a soft shadow and the names centred under it. */
+private fun Canvas.floatingCover(card: ShareCard.AlbumCard, cover: Bitmap?) {
+    val side = 840f
+    val left = (STORY_WIDTH - side) / 2
+    val name = textBlock(card.album, textPaint(60f, 700), side.toInt(), 2, Layout.Alignment.ALIGN_CENTER)
+    val artist = textBlock(card.artist, textPaint(47f, 400, 179), side.toInt(), 1, Layout.Alignment.ALIGN_CENTER)
+    val group = side + 66f + name.height + artist.height + 24f + markHeight()
+    val top = ((STORY_HEIGHT - group) / 2 - 40f).coerceAtLeast(80f)
+    drawShadowedCover(cover, left, top, side, 36f)
+    val nameTop = top + side + 66f
+    drawBlock(name, left, nameTop)
+    drawBlock(artist, left, nameTop + name.height)
+    drawMark((STORY_WIDTH - markWidth()) / 2, nameTop + name.height + artist.height + 24f)
+}
+
+/** Album C: the cover fills the top and fades into the glow, like the full cover in Now Playing; the names sit under it. */
+private fun Canvas.fullCover(card: ShareCard.AlbumCard, cover: Bitmap?) {
+    val coverHeight = 1260
+    if (cover != null && cover.width > 0 && cover.height > 0) {
+        val layer = Bitmap.createBitmap(STORY_WIDTH, coverHeight, Bitmap.Config.ARGB_8888)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        Canvas(layer).apply {
+            val scale = maxOf(STORY_WIDTH.toFloat() / cover.width, coverHeight.toFloat() / cover.height)
+            val w = cover.width * scale
+            val h = cover.height * scale
+            drawBitmap(cover, null, android.graphics.RectF((STORY_WIDTH - w) / 2, (coverHeight - h) / 2,
+                (STORY_WIDTH + w) / 2, (coverHeight + h) / 2), paint)
+            drawRect(0f, 0f, STORY_WIDTH.toFloat(), coverHeight.toFloat(), Paint().apply {
+                shader = LinearGradient(0f, coverHeight * 0.6f, 0f, coverHeight.toFloat(), android.graphics.Color.BLACK,
+                    android.graphics.Color.TRANSPARENT, Shader.TileMode.CLAMP)
+                xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN)
+            })
+        }
+        drawBitmap(layer, 0f, 0f, null)
+    } else drawCover(null, (STORY_WIDTH - 720f) / 2, 260f, 720f, 36f)
+    val left = 96f
+    val width = STORY_WIDTH - 2 * 96
+    val name = textBlock(card.album, textPaint(66f, 700), width, 2)
+    val artist = textBlock(card.artist, textPaint(51f, 400, 179), width, 1)
+    val top = 1296f
+    drawBlock(name, left, top)
+    drawBlock(artist, left, top + name.height)
+    drawMark(left, top + name.height + artist.height + 24f)
+}
+
+/** The cover with a soft shadow under it, as it floats over the glow. */
+private fun Canvas.drawShadowedCover(cover: Bitmap?, left: Float, top: Float, side: Float, radius: Float) {
+    drawRoundRect(left, top, left + side, top + side, radius, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.argb(255, 12, 12, 14)
+        setShadowLayer(66f, 0f, 54f, android.graphics.Color.argb(150, 0, 0, 0))
+    })
+    drawCover(cover, left, top, side, radius)
 }
 
 private fun plainGlow(): Bitmap = Bitmap.createBitmap(STORY_WIDTH, STORY_HEIGHT, Bitmap.Config.ARGB_8888).also {
@@ -128,8 +270,9 @@ private fun textPaint(size: Float, weight: Int, alpha: Int = 255) = TextPaint(Pa
     color = android.graphics.Color.argb(alpha, 255, 255, 255)
 }
 
-private fun textBlock(text: String, paint: TextPaint, width: Int, maxLines: Int): StaticLayout =
-    StaticLayout.Builder.obtain(text, 0, text.length, paint, width).setAlignment(Layout.Alignment.ALIGN_NORMAL)
+private fun textBlock(text: String, paint: TextPaint, width: Int, maxLines: Int,
+    alignment: Layout.Alignment = Layout.Alignment.ALIGN_NORMAL): StaticLayout =
+    StaticLayout.Builder.obtain(text, 0, text.length, paint, width).setAlignment(alignment)
         .setMaxLines(maxLines).setEllipsize(TextUtils.TruncateAt.END).setIncludePad(false).build()
 
 private fun Canvas.drawBlock(block: StaticLayout, x: Float, y: Float) {
@@ -191,6 +334,8 @@ private fun Canvas.drawMark(x: Float, y: Float): Float {
 }
 
 private fun markHeight(): Float = textPaint(MARK_SIZE, 500).fontMetrics.let { it.descent - it.ascent }
+
+private fun markWidth(): Float = MARK_SIZE * 1.15f + textPaint(MARK_SIZE, 500).measureText("Evanna")
 
 /** Lyric card A: the words (they shrink a little when there are many), then the cover, the song, the artist and the mark. */
 private fun lyricSticker(card: ShareCard.LyricCard, cover: Bitmap?): Bitmap {
@@ -297,14 +442,14 @@ private fun instagramStories(context: Context): Boolean =
     context.packageManager.resolveActivity(Intent(ADD_TO_STORY).setPackage(INSTAGRAM).setType("image/png"), 0) != null
 
 /** Opens Instagram's story screen with the glow as the background and the card as a sticker the user can move. */
-private fun openInstagramStory(context: Context, background: Uri, sticker: Uri) {
+private fun openInstagramStory(context: Context, background: Uri, sticker: Uri?) {
     val intent = Intent(ADD_TO_STORY).setPackage(INSTAGRAM).apply {
         putExtra("source_application", META_APP_ID)
         setDataAndType(background, "image/png")
-        putExtra("interactive_asset_uri", sticker)
+        if (sticker != null) putExtra("interactive_asset_uri", sticker)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    context.grantUriPermission(INSTAGRAM, sticker, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    sticker?.let { context.grantUriPermission(INSTAGRAM, it, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
     context.grantUriPermission(INSTAGRAM, background, Intent.FLAG_GRANT_READ_URI_PERMISSION)
     context.startActivity(intent)
 }
@@ -321,9 +466,15 @@ internal fun ShareSheet(card: ShareCard, cover: suspend () -> Bitmap?, onClose: 
     val colors = EvannaDesign.colorScheme
     val scope = rememberCoroutineScope()
     var failed by remember(card) { mutableStateOf(false) }
-    val pictures by produceState<SharePictures?>(null, card) {
-        val art = try { cover() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
-        value = try { withContext(Dispatchers.Default) { drawSharePictures(card, art) } }
+    // The look last picked for this kind of card opens first.
+    val settings = remember(context) { context.getSharedPreferences(UI_SETTINGS, Context.MODE_PRIVATE) }
+    var style by remember(card) { mutableStateOf(ShareStyle.stored(settings.getString(shareStyleKey(card), null))) }
+    // The last picture stays on screen while the next look is drawn.
+    var pictures by remember(card) { mutableStateOf<SharePictures?>(null) }
+    LaunchedEffect(card, style) {
+        val loaded = try { cover() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
+        failed = false
+        pictures = try { withContext(Dispatchers.Default) { drawSharePictures(card, loaded, style) } }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Throwable) { failed = true; null }
     }
@@ -364,14 +515,23 @@ internal fun ShareSheet(card: ShareCard, cover: suspend () -> Bitmap?, onClose: 
                     else -> ActivityIndicator()
                 }
             }
-            Row(Modifier.padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val looks = ShareStyle.entries
+            SingleChoiceSegmentedButtonRow(looks.map { it.label(card) }, looks.indexOf(style), { picked ->
+                style = looks[picked]
+                note = null
+                settings.edit().putString(shareStyleKey(card), style.name).apply()
+            }, modifier = Modifier.padding(top = 20.dp).widthIn(max = 360.dp).fillMaxWidth(), enabled = !working)
+            Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val enabled = pictures != null && !working
                 if (instagram) ShareButton(ShareGlyph.STORY, "Instagram Stories", enabled) {
                     act { ready ->
-                        val (background, sticker) = withContext(Dispatchers.IO) {
-                            ShareFiles.write(context, listOf("background" to ready.background, "sticker" to ready.sticker))
+                        // The glass card goes over the glow as a sticker to move; the other looks go as the whole picture.
+                        val sticker = ready.sticker
+                        val uris = withContext(Dispatchers.IO) {
+                            ShareFiles.write(context, if (sticker != null) listOf("background" to ready.background, "sticker" to sticker)
+                                else listOf("story" to ready.story))
                         }
-                        openInstagramStory(context, background, sticker)
+                        openInstagramStory(context, uris[0], uris.getOrNull(1))
                         null
                     }
                 }
