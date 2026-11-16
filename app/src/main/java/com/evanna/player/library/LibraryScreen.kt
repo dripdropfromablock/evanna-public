@@ -18,6 +18,8 @@ import com.evanna.player.LocalLookStyle
 import com.evanna.player.PlayerIcons
 import com.evanna.player.ScreenBackHandler
 import com.evanna.player.SettingsLink
+import com.evanna.player.ShareCard
+import com.evanna.player.ShareSheet
 import com.evanna.player.UI_SETTINGS
 import com.evanna.player.EvannaDesign
 import com.evanna.player.counted
@@ -401,6 +403,12 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                         onShuffle = { onSelect(LibraryContextRequest(filter, null, LibraryContextAction.SHUFFLE)) { selectionFailed = !it } })
                     TextButton(onClick = { onPlaylistAlbum(filter) }, enabled = !busy && !loading && (shown?.total ?: 0) > 0,
                         modifier = Modifier.heightIn(min = 48.dp)) { Text("Add album to playlist") }
+                    // An album card for a story: the cover, the album's name and the artist (docs/mockups/share-cards.html).
+                    var sharing by remember { mutableStateOf(false) }
+                    TextButton(onClick = { sharing = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Share album") }
+                    if (sharing) ShareSheet(ShareCard.AlbumCard(groupName.ifBlank { "Unknown album" },
+                        shown?.albumSummary?.displayArtist?.takeIf { it.isNotBlank() } ?: "Unknown artist"),
+                        { artwork.album(selectedAlbum, ArtworkSize.LARGE) }) { sharing = false }
                 }
             }
         } else line {

@@ -10,6 +10,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Only Android 9 needs this to save a share card to Pictures/Evanna; newer Android saves there without it. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- Lets Evanna see Instagram, so it can offer Instagram Stories for a share card only when Instagram is there. -->
+    <queries>
+        <package android:name="com.instagram.android" />
+    </queries>
     <application
         android:name=".EvannaApplication"
         android:allowBackup="false"

@@ -263,4 +263,20 @@ private class BackdropRenderer(cover: Bitmap, private val size: IntSize, lightLo
     }
 
     fun snapshot(): ImageBitmap = target.copy(Bitmap.Config.ARGB_8888, false).asImageBitmap()
+
+    /** The small frame itself, for drawing it larger elsewhere. */
+    val frame: Bitmap get() = target
+}
+
+/**
+ * The backdrop at rest (the end of its drift), as a [width] × [height] picture: the glow behind a share card. It is drawn
+ * from the same small blurred buffer as on screen, at the finer size, then stretched smoothly.
+ */
+internal fun backdropPicture(cover: Bitmap, width: Int, height: Int): Bitmap {
+    val renderer = BackdropRenderer(cover, backdropBufferSize(width, height, densityDpi = 320), lightLook = false)
+    renderer.render(backdropDriftPhase(BACKDROP_DRIFT_MS))
+    val picture = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    AndroidCanvas(picture).drawBitmap(renderer.frame, null, android.graphics.Rect(0, 0, width, height),
+        Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG))
+    return picture
 }

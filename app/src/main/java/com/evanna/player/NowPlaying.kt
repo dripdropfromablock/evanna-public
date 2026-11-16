@@ -29,7 +29,9 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -74,6 +76,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -189,7 +193,25 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
     var showSleep by rememberSaveable { mutableStateOf(false) }
     if (showSleep) SleepDialog(state, onSleep) { showSleep = false }
     if (showSignal) SoundPathSheet(state.soundPath, { showSignal = false; onOutput(null) }, { showSignal = false }, signalOrigin)
-    BackHandler { if (wantedOpen && page != PlayerPage.SONG) page = PlayerPage.SONG else onBack() }
+    // Share cards (docs/mockups/share-cards.html): picked lyric lines or the album, over the cover's glow.
+    var shareCard by remember { mutableStateOf<ShareCard?>(null) }
+    val latest by rememberUpdatedState(state)
+    val latestCover by rememberUpdatedState(cover)
+    val lyricShare = remember(state.id) {
+        LyricShare { lines ->
+            shareCard = ShareCard.LyricCard(lines, latest.title.ifBlank { "Local audio file" },
+                latest.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist")
+        }
+    }
+    LaunchedEffect(page) { if (page != PlayerPage.LYRICS) lyricShare.picked = null }
+    shareCard?.let { card -> ShareSheet(card, { latestCover }) { shareCard = null } }
+    BackHandler {
+        when {
+            lyricShare.picked != null -> lyricShare.picked = null
+            wantedOpen && page != PlayerPage.SONG -> page = PlayerPage.SONG
+            else -> onBack()
+        }
+    }
     // The preview and full view share one load, and never show the preceding track's words.
     val loaded by key(state.id) {
         produceState<LyricsLoad>(LyricsLoad.Loading) {
@@ -255,6 +277,17 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
     }
     val more: @Composable () -> Unit = {
         MoreButton(buildList<Pair<String, () -> Unit>> {
+            (lyrics as? LyricsLoad.Ready)?.lyrics?.let { words ->
+                if (state.hasSong) add("Share lyrics" to {
+                    lyricsTrack = state.id
+                    page = PlayerPage.LYRICS
+                    lyricShare.picked = setOfNotNull(firstShareLine(words, state.positionMs))
+                })
+            }
+            if (state.hasSong) add("Share album" to {
+                shareCard = ShareCard.AlbumCard(state.album?.takeIf { it.isNotBlank() } ?: state.title.ifBlank { "Local audio file" },
+                    state.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist")
+            })
             add("Sleep timer" to { showSleep = true })
             if (onConvert != null) add("Play converted once" to onConvert)
             if (page == PlayerPage.QUEUE && state.connected && state.queue.isNotEmpty()) add("Save queue as playlist" to onSavePlaylist)
@@ -303,7 +336,8 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
             lyrics is LyricsLoad.Ready && !outputSheetOpen && !showSignal && !showSleep && !talkBack &&
             state.error == null && actionError == null
         val lyricsIdle = rememberIdleWatch(canHideControls)
-        val hideControls = lyricsIdle.idle && canHideControls
+        // While lyric lines are being ticked, their bar takes the controls' place.
+        val hideControls = (lyricsIdle.idle && canHideControls) || (lyricShare.picked != null && page == PlayerPage.LYRICS && !sidewaysPhone())
         val controlsHidden by animateFloatAsState(if (hideControls) 1f else 0f,
             tween(if (hideControls) 420 else 260, easing = FastOutSlowInEasing), label = "lyrics controls hide")
         // Read each frame only while laying out and drawing; the page itself hears only when the controls start or finish moving.
@@ -315,10 +349,11 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
                 }
                 DetailsPlayer(state, cover, info, page, openPage, lyrics, more, contentAlpha, motion, flying, onBack, onFavorite, onSeek,
                     onPlayPause, onPrevious, onNext, { signalOrigin = it; showSignal = true }, onOutput, outputSheetOpen, onSelect,
-                    queue = { QueuePage(state, onShuffle, onRepeat, onSelect, onMove, onRemove, onLibrary, loadArtwork, it) }, search = lyricsSearch)
+                    queue = { QueuePage(state, onShuffle, onRepeat, onSelect, onMove, onRemove, onLibrary, loadArtwork, it) }, search = lyricsSearch,
+                    share = lyricShare)
             }
             else if (sidewaysPhone() && state.hasSong) SidewaysPlayer(state, cover, page, openPage, lyrics, more, contentAlpha, motion, flying,
-                onBack, onFavorite, onSeek, onPlayPause, onPrevious, onNext, search = lyricsSearch,
+                onBack, onFavorite, onSeek, onPlayPause, onPrevious, onNext, search = lyricsSearch, share = lyricShare,
                 controls = {
                     PlayerControls(state, actionError, page, openPage, lyrics, onSeek, { signalOrigin = it; showSignal = true },
                         onPlayPause, onPrevious, onNext, onUsbVolume, onUsbVolumeSet, onSleep, onOutput, outputSheetOpen, sideways = true)
@@ -351,7 +386,7 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
                                     PlayerPage.LYRICS -> Column(Modifier.fillMaxSize()) {
                                         CompactHeader(state, cover, more,
                                             Modifier.dockingCover(motion, flying, report = shown == page).then(sharedCover)) { page = PlayerPage.SONG }
-                                        LyricsPage(lyrics, state, onSeek, holdLine = controlsMoved, search = lyricsSearch, modifier = Modifier.weight(1f).padding(top = 24.dp).graphicsLayer {
+                                        LyricsPage(lyrics, state, onSeek, holdLine = controlsMoved, search = lyricsSearch, share = lyricShare, modifier = Modifier.weight(1f).padding(top = 24.dp).graphicsLayer {
                                             val expanded = ((motion.progress - 0.35f) / 0.65f).coerceIn(0f, 1f)
                                             alpha = expanded
                                             scaleX = 0.65f + 0.35f * expanded
@@ -553,7 +588,7 @@ internal fun sidewaysPhone(): Boolean {
 private fun SidewaysPlayer(state: PlayerPresentation, cover: Bitmap?, page: PlayerPage, onPage: (PlayerPage) -> Unit,
     lyrics: LyricsLoad, more: @Composable () -> Unit, contentAlpha: () -> Float, motion: PlayerSheetMotion, flying: Boolean,
     onBack: () -> Unit, onFavorite: (String, Boolean) -> Unit, onSeek: (String?, Long) -> Unit,
-    onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, search: LyricsSearch,
+    onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, search: LyricsSearch, share: LyricShare,
     controls: @Composable () -> Unit, queue: @Composable (Modifier) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val panel = (maxWidth * 0.46f).coerceIn(320.dp, 460.dp)
@@ -592,7 +627,7 @@ private fun SidewaysPlayer(state: PlayerPresentation, cover: Bitmap?, page: Play
                             controls()
                         }
                         PlayerPage.LYRICS -> {
-                            LyricsPage(lyrics, state, onSeek, Modifier.weight(1f), search = search)
+                            LyricsPage(lyrics, state, onSeek, Modifier.weight(1f), search = search, share = share)
                             SidewaysPlayRow(state, page, onPage, lyrics, onPlayPause, onPrevious, onNext)
                         }
                         PlayerPage.QUEUE -> {
@@ -982,7 +1017,7 @@ internal fun lyricFramePosition(previous: Long, elapsedMs: Long, target: Long): 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LyricsPage(load: LyricsLoad, state: PlayerPresentation, onSeek: (String?, Long) -> Unit, modifier: Modifier,
-    small: Boolean = false, accent: Color = Pv1, holdLine: Boolean = false, search: LyricsSearch? = null) {
+    small: Boolean = false, accent: Color = Pv1, holdLine: Boolean = false, search: LyricsSearch? = null, share: LyricShare? = null) {
     BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         search?.note?.let { note ->
             Text(note, style = Status, color = Pv1, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.BottomCenter).zIndex(1f)
@@ -1034,8 +1069,10 @@ private fun LyricsPage(load: LyricsLoad, state: PlayerPresentation, onSeek: (Str
             var following by remember { mutableStateOf(true) }
             var placed by remember { mutableStateOf(false) }
             LaunchedEffect(dragged) { if (dragged) following = false }
-            LaunchedEffect(current, dragged, following, reducedMotion) {
-                if (!lyrics.timed || dragged || !following) return@LaunchedEffect
+            // While lines are being ticked the page holds still, so a line does not move away from the finger.
+            val picked = share?.picked
+            LaunchedEffect(current, dragged, following, reducedMotion, picked != null) {
+                if (!lyrics.timed || dragged || !following || picked != null) return@LaunchedEffect
                 val target = if (current < 0) 0 else current + offset
                 val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
                 when {
@@ -1075,49 +1112,87 @@ private fun LyricsPage(load: LyricsLoad, state: PlayerPresentation, onSeek: (Str
                         if (next != null && next - start >= DOTS_BREAK_MS) {
                             BreakDots(index == current, position, start, next, reducedMotion, small)
                         } else Spacer(Modifier.height(8.dp))
-                    } else LyricRow(line, lyrics.timed, index == current, !following || dragged, position, next, seekable, reducedMotion,
-                        small, accent) {
+                    } else LyricRow(line, lyrics.timed, index == current, !following || dragged || picked != null, position, next,
+                        seekable, reducedMotion, small, accent, picked = picked?.let { index in it },
+                        onPick = {
+                            val now = share?.picked
+                            if (share != null && now != null) toggledPick(now, index)?.let { share.picked = it } ?: share.refused++
+                        },
+                        onLongPress = if (share != null && line.text.isNotBlank()) ({ share.picked = setOf(index) }) else null) {
                         following = true
                         onSeek(state.id, line.timeMs!!)
                     }
                 }
             }
-            if (lyrics.timed && !following && !dragged) {
+            if (lyrics.timed && !following && !dragged && picked == null) {
                 FilledTonalButton(onClick = { following = true },
                     modifier = Modifier.align(Alignment.BottomEnd).padding(end = 28.dp, bottom = 6.dp)) {
                     Text("Sync")
                 }
             }
+            if (share != null && picked != null) PickBar(picked.size, share.refused, onCancel = { share.picked = null }, onShare = {
+                val words = pickedWords(lyrics.lines.map { it.text }, picked)
+                if (words.isNotEmpty()) { share.onShare(words); share.picked = null }
+            }, modifier = Modifier.align(Alignment.BottomCenter))
         }
     }
 }
 
+/**
+ * One lyric line. Tap plays from it. A long press ([onLongPress]) starts picking lines for a share card; while picking,
+ * [picked] is whether this line is ticked: a tap ticks or unticks it ([onPick]) and only ticked lines are bright.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LyricRow(line: LyricLine, timed: Boolean, current: Boolean, browsing: Boolean,
-    position: State<Long>, next: Long?, seekable: Boolean, reducedMotion: Boolean, small: Boolean, accent: Color, onSeek: () -> Unit,
+    position: State<Long>, next: Long?, seekable: Boolean, reducedMotion: Boolean, small: Boolean, accent: Color,
+    picked: Boolean? = null, onPick: () -> Unit = {}, onLongPress: (() -> Unit)? = null, onSeek: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
-    val active = !timed || current || browsing
+    val picking = picked != null
+    val active = if (picking) picked == true else !timed || current || browsing
     // Small: the other lines are drawn at about 15 sp beside the 21 sp current one, by scale so the text does not re-wrap.
     val resting = if (small) SMALL_LYRIC_SCALE else 0.98f
     val blur by animateFloatAsState(if (!active && Build.VERSION.SDK_INT >= 31) 3f else 0f,
         EvannaMotion.enter, label = "lyric focus blur")
-    val scale by animateFloatAsState(if (!timed || current) 1f else if (active && !small) 1f else resting, EvannaMotion.enter,
-        label = "line scale")
+    val scale by animateFloatAsState(when {
+        picking -> if (small && picked != true) resting else 1f
+        !timed || current -> 1f
+        active && !small -> 1f
+        else -> resting
+    }, EvannaMotion.enter, label = "line scale")
     val opacity by animateFloatAsState(if (active) 1f else INACTIVE_LYRIC_OPACITY, EvannaMotion.enter, label = "line opacity")
     val style = if (!small) LyricsLine else SmallLyricsLine
-    val lit = if (small && timed && current) accent else Pv1
+    val lit = if (small && timed && current && !picking) accent else Pv1
+    val touchable = picking || seekable || onLongPress != null
     Box(Modifier.fillMaxWidth().padding(horizontal = if (small) 4.dp else 20.dp).clip(RoundedCornerShape(16.dp))
-        .then(if (seekable) Modifier.controlFocus(interaction, RoundedCornerShape(16.dp))
-            .clickable(interaction, indication = null, onClickLabel = "Play from this line", onClick = onSeek) else Modifier)
-        .then(if (timed && current) Modifier.semantics { stateDescription = "Current lyric" } else Modifier)
+        .then(if (touchable) Modifier.controlFocus(interaction, RoundedCornerShape(16.dp))
+            .combinedClickable(interaction, indication = null,
+                onClickLabel = when { picking -> if (picked == true) "Untick line" else "Tick line"; seekable -> "Play from this line"; else -> null },
+                onLongClickLabel = if (!picking && onLongPress != null) "Share lyrics" else null,
+                onLongClick = if (!picking) onLongPress else null,
+                onClick = { if (picking) onPick() else if (seekable) onSeek() }) else Modifier)
+        .then(if (picking) Modifier.semantics { selected = picked == true }
+            else if (timed && current) Modifier.semantics { stateDescription = "Current lyric" } else Modifier)
         .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = if (small) 4.dp else 10.dp)
         .graphicsLayer {
             scaleX = scale; scaleY = scale; alpha = opacity; transformOrigin = TransformOrigin(if (small) 0.5f else 0f, 0.5f)
             val radius = blur.dp.toPx()
             renderEffect = if (radius > 0f) BlurEffect(radius, radius, TileMode.Decal) else null
         }.pressScale(interaction), contentAlignment = if (small) Alignment.Center else Alignment.CenterStart) {
+        if (picking) Row(verticalAlignment = Alignment.Top) {
+            PickCircle(picked == true, Modifier.padding(top = if (small) 2.dp else 8.dp))
+            Spacer(Modifier.width(12.dp))
+            Box(Modifier.weight(1f, fill = false)) { LyricWords(line, timed, current, true, position, next, reducedMotion, small, style, lit) }
+        } else LyricWords(line, timed, current, browsing, position, next, reducedMotion, small, style, lit)
+    }
+}
+
+/** A line's words: plain, sung word by word, or still. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LyricWords(line: LyricLine, timed: Boolean, current: Boolean, browsing: Boolean, position: State<Long>, next: Long?,
+    reducedMotion: Boolean, small: Boolean, style: TextStyle, lit: Color) {
         val align = if (small) TextAlign.Center else TextAlign.Start
         when {
             !timed -> Text(line.text.ifEmpty { " " }, style = if (small) SmallPlainLyrics else PlainLyrics, color = Pv1, textAlign = align)
@@ -1133,6 +1208,48 @@ private fun LyricRow(line: LyricLine, timed: Boolean, current: Boolean, browsing
             }
             else -> Text(line.text, style = style, color = lit, textAlign = align)
         }
+}
+
+/** The tick beside a lyric line while picking: an empty ring, or a blue disc with a white check. */
+@Composable
+private fun PickCircle(on: Boolean, modifier: Modifier) {
+    Box(modifier.size(24.dp).clip(CircleShape)
+        .then(if (on) Modifier.background(PickBlue) else Modifier.border(2.dp, Pv3, CircleShape)), contentAlignment = Alignment.Center) {
+        if (on) Canvas(Modifier.size(14.dp)) {
+            val s = size.width / 14f
+            drawPath(androidx.compose.ui.graphics.Path().apply { moveTo(2.5f * s, 7.5f * s); lineTo(5.8f * s, 10.8f * s); lineTo(11.5f * s, 3.5f * s) },
+                Color.White, style = androidx.compose.ui.graphics.drawscope.Stroke(2.2f * s, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
+    }
+}
+
+private val PickBlue = Color(0xFF0A84FF)
+
+/** The line "Share lyrics" ticks first: the one being sung, else the first line with words. */
+private fun firstShareLine(lyrics: Lyrics, positionMs: Long): Int? =
+    lyrics.lineAt(positionMs).takeIf { it >= 0 && lyrics.lines[it].text.isNotBlank() }
+        ?: lyrics.lines.indexOfFirst { it.text.isNotBlank() }.takeIf { it >= 0 }
+
+/** Ticking lyric lines for a share card: [picked] is null when not picking, else the ticked lines (their indexes). */
+private class LyricShare(val onShare: (List<String>) -> Unit) {
+    var picked by mutableStateOf<Set<Int>?>(null)
+    /** Counts refused ticks (a fifth line), so the bar can say why. */
+    var refused by mutableIntStateOf(0)
+}
+
+/** Under the lyrics while picking: Cancel, how many lines are ticked, and Share. */
+@Composable
+private fun PickBar(count: Int, refused: Int, onCancel: () -> Unit, onShare: () -> Unit, modifier: Modifier) {
+    var full by remember { mutableStateOf(false) }
+    LaunchedEffect(refused) { if (refused > 0) { full = true; delay(2_000); full = false } }
+    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).heightIn(min = 56.dp).clip(RoundedCornerShape(50))
+        .background(Color(0xE61C1C1E)).padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = onCancel, colors = ButtonDefaults.textButtonColors(contentColor = Pv1),
+            modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
+        Text(if (full) "$SHARE_MAX_LINES lines at most" else "$count of $SHARE_MAX_LINES lines", style = Status,
+            color = if (full) Pv1 else Pv2, textAlign = TextAlign.Center, maxLines = 1,
+            modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite })
+        Button(onClick = onShare, enabled = count > 0, modifier = Modifier.heightIn(min = 48.dp)) { Text("Share") }
     }
 }
 
@@ -1543,7 +1660,8 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
     lyrics: LyricsLoad, more: @Composable () -> Unit, contentAlpha: () -> Float, motion: PlayerSheetMotion, flying: Boolean,
     onBack: () -> Unit, onFavorite: (String, Boolean) -> Unit, onSeek: (String?, Long) -> Unit,
     onPlayPause: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onSignal: (Rect?) -> Unit, onOutput: (Rect?) -> Unit,
-    outputSheetOpen: Boolean, onSelect: (String) -> Unit, queue: @Composable (Modifier) -> Unit, search: LyricsSearch) {
+    outputSheetOpen: Boolean, onSelect: (String) -> Unit, queue: @Composable (Modifier) -> Unit, search: LyricsSearch,
+    share: LyricShare) {
     val accent = EvannaDesign.colorScheme.primary
     // The page on the right while Details shows stays the last one opened, so it can fade out as the disc comes back.
     var lastPane by remember { mutableStateOf(PlayerPage.LYRICS) }
@@ -1684,7 +1802,7 @@ private fun DetailsPlayer(state: PlayerPresentation, cover: Bitmap?, info: Libra
                     }
                 }, label = "details pane") { shown ->
                     if (shown == PlayerPage.QUEUE) queue(Modifier.fillMaxSize())
-                    else LyricsPage(lyrics, state, onSeek, Modifier.fillMaxSize(), small = true, accent = accent, search = search)
+                    else LyricsPage(lyrics, state, onSeek, Modifier.fillMaxSize(), small = true, accent = accent, search = search, share = share)
                 }
             }
         }
