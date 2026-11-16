@@ -15,8 +15,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -39,7 +42,7 @@ import kotlin.math.roundToLong
  * no more frames are drawn at all; the still frame looks the same.
  */
 @Composable
-internal fun PlayerBackdrop(cover: Bitmap?, lightLook: Boolean, modifier: Modifier = Modifier) {
+internal fun PlayerBackdrop(cover: Bitmap?, lightLook: Boolean, modifier: Modifier = Modifier, calm: () -> BackdropCalm? = { null }) {
     val context = LocalContext.current
     val durationScale = rememberCoroutineScope().coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
     BoxWithConstraints(modifier) {
@@ -47,11 +50,18 @@ internal fun PlayerBackdrop(cover: Bitmap?, lightLook: Boolean, modifier: Modifi
         val buffer = backdropBufferSize(constraints.maxWidth, constraints.maxHeight, dpi)
         val renderer = remember(cover, buffer, lightLook) { cover?.let { BackdropRenderer(it, buffer, lightLook) } }
         var outgoing by remember { mutableStateOf<ImageBitmap?>(null) }
+        var outgoingAverage by remember { mutableStateOf(BACKDROP_PLACEHOLDER) }
         var fade by remember { mutableFloatStateOf(1f) }
         var fadeElapsedMs by remember(renderer) { mutableDoubleStateOf(0.0) }
         var frame by remember { mutableIntStateOf(0) }
         // A new cover fades in over the last frame of the old one.
-        DisposableEffect(renderer) { onDispose { outgoing = renderer?.snapshot(); fade = 0f } }
+        DisposableEffect(renderer) {
+            onDispose {
+                outgoing = renderer?.snapshot()
+                outgoingAverage = renderer?.average ?: BACKDROP_PLACEHOLDER
+                fade = 0f
+            }
+        }
         LaunchedEffect(renderer, durationScale) {
             if (renderer == null || durationScale == 0f) {
                 outgoing = null
@@ -99,9 +109,21 @@ internal fun PlayerBackdrop(cover: Bitmap?, lightLook: Boolean, modifier: Modifi
             outgoing?.let {
                 drawImage(it, IntOffset.Zero, IntSize(it.width, it.height), IntOffset.Zero, target, alpha = 1f - fade, filterQuality = FilterQuality.Low)
             }
+            calm()?.takeIf { it.alpha > 0f && it.to > 0f }?.let { zone ->
+                val average = renderer?.average ?: BACKDROP_PLACEHOLDER
+                val color = if (outgoing != null) lerp(outgoingAverage, average, fade) else average
+                drawRect(Brush.verticalGradient(0f to color, 1f to color.copy(alpha = 0f), startY = zone.from, endY = zone.to),
+                    size = Size(size.width, zone.to), alpha = zone.alpha.coerceIn(0f, 1f))
+            }
         }
     }
 }
+
+/**
+ * Where the backdrop gives way to its own average colour, in its pixels: fully above [from], not at all below [to],
+ * at [alpha]. The full cover fades over the same band, so its glow does not show through the cover.
+ */
+internal class BackdropCalm(val from: Float, val to: Float, val alpha: Float)
 
 private val BACKDROP_PLACEHOLDER = Color(0xFF424242)
 private const val BACKDROP_FRAME_MS = 42L  // about 24 fps
@@ -202,6 +224,8 @@ private class BackdropRenderer(cover: Bitmap, private val size: IntSize, lightLo
     private val lift = if (lightLook) 0.10f else 0.05f
     private val scrim: Float
     val image: ImageBitmap = target.asImageBitmap()
+    /** The first frame's average colour: the backdrop with its glow smoothed away. */
+    val average: Color
 
     init {
         // Saturate once per cover (x2.5), at 64 px: the blur removes all detail anyway.
@@ -211,6 +235,10 @@ private class BackdropRenderer(cover: Bitmap, private val size: IntSize, lightLo
         val sample = IntArray(64 * 64).also { source.getPixels(it, 0, 64, 0, 0, 64, 64); boxBlur(it, 64, 64, 6) }
         scrim = backdropScrim(sample.maxBy(::relativeLuminance), base = if (lightLook) 0.30f else 0.50f, lift = lift)
         render(0)
+        var r = 0L; var g = 0L; var b = 0L
+        for (p in pixels) { r += p shr 16 and 255; g += p shr 8 and 255; b += p and 255 }
+        val n = pixels.size
+        average = Color((r / n).toInt(), (g / n).toInt(), (b / n).toInt())
     }
 
     fun render(elapsedMs: Long) {

@@ -250,6 +250,9 @@ internal fun PlayerSheet(motion: PlayerSheetMotion, cover: Bitmap?, flying: Bool
     }
 }
 
+/** Where the full cover starts to fade, as a share of its height. */
+internal const val COVER_FADE_START = 0.55f
+
 /**
  * The full cover's edges: its lower part fades into the backdrop and a light shade sits under the status bar.
  * [strength] 0 draws the plain cover, 1 the full fade, so the flying cover can turn into the full cover as it lands.
@@ -259,7 +262,7 @@ internal fun Modifier.coverFade(strength: () -> Float): Modifier =
         val s = strength().coerceIn(0f, 1f)
         drawContent()
         if (s > 0f) {
-            drawRect(Brush.verticalGradient(0.55f to Color.Black, 1f to Color.Black.copy(alpha = 1f - s)), blendMode = BlendMode.DstIn)
+            drawRect(Brush.verticalGradient(COVER_FADE_START to Color.Black, 1f to Color.Black.copy(alpha = 1f - s)), blendMode = BlendMode.DstIn)
             drawRect(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.3f * s), 1f to Color.Transparent, endY = 120.dp.toPx()))
         }
     }

@@ -207,21 +207,31 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
     val fullCover = coverStyle == CoverStyle.FULL && cover != null && state.hasSong && !sidewaysPhone()
     var screenBox by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var songCoverArea by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val contentAlpha = {
+        if (motion.morphs) ((motion.progress - 0.5f) / 0.5f).coerceIn(0f, 1f)
+        else ((motion.progress - 0.15f) / 0.85f).coerceIn(0f, 1f)
+    }
+    val onSong by animateFloatAsState(if (page == PlayerPage.SONG) 1f else 0f, tween(260), label = "full cover")
+    val coverBottom = {
+        val box = screenBox
+        val area = songCoverArea
+        if (box?.isAttached == true && area?.isAttached == true) box.localBoundingBoxOf(area).bottom else null
+    }
+    val coverOverlap = with(LocalDensity.current) { FullCoverOverlap.toPx() }
     Box(Modifier.fillMaxSize().onGloballyPositioned { screenBox = it }) {
         PlayerBackdrop(cover, LocalLookStyle.current.look == EvannaLook.APPLE_LIGHT,
             // Growing out of the mini player, the page is solid almost at once and its words come in near the end.
-            Modifier.matchParentSize().graphicsLayer { alpha = if (motion.morphs) (motion.progress / 0.2f).coerceAtMost(1f) else motion.progress })
-        val contentAlpha = {
-            if (motion.morphs) ((motion.progress - 0.5f) / 0.5f).coerceIn(0f, 1f)
-            else ((motion.progress - 0.15f) / 0.85f).coerceIn(0f, 1f)
-        }
+            Modifier.matchParentSize().graphicsLayer { alpha = if (motion.morphs) (motion.progress / 0.2f).coerceAtMost(1f) else motion.progress },
+            // Under the full cover the backdrop's glow fades out too, so the cover fades into one calm colour, not into it.
+            // The calm holds through the first half of the cover's fade, so the glow comes back only near its end.
+            calm = calm@{
+                val box = screenBox?.takeIf { fullCover && it.isAttached } ?: return@calm null
+                val height = fullCoverHeight(coverBottom(), box.size.width, box.size.height, coverOverlap).toFloat()
+                val fadeTop = height * COVER_FADE_START
+                BackdropCalm(fadeTop + (height - fadeTop) / 2, height, onSong * contentAlpha())
+            })
         if (fullCover && cover != null) {
-            val onSong by animateFloatAsState(if (page == PlayerPage.SONG) 1f else 0f, tween(260), label = "full cover")
-            FullCover(cover, bottom = {
-                val box = screenBox
-                val area = songCoverArea
-                if (box?.isAttached == true && area?.isAttached == true) box.localBoundingBoxOf(area).bottom else null
-            }, modifier = Modifier.graphicsLayer { alpha = onSong * contentAlpha() }
+            FullCover(cover, bottom = coverBottom, modifier = Modifier.graphicsLayer { alpha = onSong * contentAlpha() }
                 .dockingCover(motion, flying, corner = 0.dp, report = page == PlayerPage.SONG, fade = true))
         }
         val openPage: (PlayerPage) -> Unit = {
@@ -422,6 +432,10 @@ private fun SongPage(state: PlayerPresentation, cover: Bitmap?, onFavorite: (Str
 /** How far the full cover runs past the cover room, under the title, while it fades out. */
 private val FullCoverOverlap = 56.dp
 
+/** The full cover's height in pixels: down to [bottom] plus [overlap], at least square, at most [maxHeight]. */
+private fun fullCoverHeight(bottom: Float?, width: Int, maxHeight: Int, overlap: Float) =
+    ((bottom ?: width.toFloat()) + overlap).roundToInt().coerceIn(width, maxOf(width, maxHeight))
+
 /**
  * The full cover: the screen's width, from the top edge under the status bar to a little past where the card would end
  * ([bottom], in this box's pixels), cropped to fill. It fades out over its lower 45%, so the title sits on the backdrop.
@@ -434,7 +448,7 @@ private fun FullCover(cover: Bitmap, bottom: () -> Float?, modifier: Modifier) {
     Image(image, contentDescription = null, contentScale = ContentScale.Crop, modifier = modifier
         .layout { measurable, constraints ->
             val width = constraints.maxWidth
-            val height = ((bottom() ?: width.toFloat()) + overlap).roundToInt().coerceIn(width, maxOf(width, constraints.maxHeight))
+            val height = fullCoverHeight(bottom(), width, constraints.maxHeight, overlap)
             val placeable = measurable.measure(Constraints.fixed(width, height))
             layout(width, height) { placeable.place(0, 0) }
         }
