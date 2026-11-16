@@ -22,15 +22,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -256,17 +264,57 @@ internal fun Modifier.coverFade(strength: () -> Float): Modifier =
         }
     }
 
+/**
+ * The flight into the full cover. A box flying over the growing sheet looked wrong, so here the cover rides the sheet:
+ * it leaves the mini player's artwork and soon spans the sheet's width at its top, kept to the cover's shape, clipped to
+ * the sheet's rounded edge, and fades at the bottom as it goes. Its last frame is the full cover itself.
+ */
+@Composable
+private fun FullCoverFlight(motion: PlayerSheetMotion, image: ImageBitmap, sheet: LayoutCoordinates?) {
+    Box(Modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawBehind {
+        val from = coverBounds(motion.miniCover, sheet) ?: return@drawBehind
+        val to = coverBounds(motion.fullCover, sheet) ?: return@drawBehind
+        val box = coverBounds(motion.miniBox, sheet)
+        val p = motion.progress
+        val whole = Rect(Offset.Zero, size)
+        // The same edge the sheet grows with (see PlayerSheet).
+        val page = box?.let { androidx.compose.ui.geometry.lerp(it, whole, p) } ?: whole
+        val radius = box?.let { it.height / 2f + (32.dp.toPx() - it.height / 2f) * p } ?: 0f
+        val scale = page.width / size.width
+        val carried = Rect(page.left + to.left * scale, page.top + to.top * scale, page.left + to.right * scale, page.top + to.bottom * scale)
+        // The cover reaches the sheet's top and width in the first 40% of the way, then rides it. Slower, it trailed
+        // as a box in the sheet's lower corner with an empty band above it.
+        val t = (p / 0.4f).coerceIn(0f, 1f)
+        val e = 1f - (1f - t) * (1f - t) * (1f - t)
+        val frame = androidx.compose.ui.geometry.lerp(from, carried, e)
+        if (frame.width < 1f || frame.height < 1f) return@drawBehind
+        val iw = image.width.toFloat()
+        val ih = image.height.toFloat()
+        val aspect = frame.width / frame.height
+        // Centre crop, as the full cover's ContentScale.Crop does.
+        val src = if (iw / ih > aspect) (ih * aspect).let { Rect((iw - it) / 2f, 0f, (iw + it) / 2f, ih) }
+            else (iw / aspect).let { Rect(0f, (ih - it) / 2f, iw, (ih + it) / 2f) }
+        clipPath(Path().apply { addRoundRect(RoundRect(page, CornerRadius(radius))) }) {
+            clipPath(Path().apply { addRoundRect(RoundRect(frame, CornerRadius(8.dp.toPx() * (1f - e)))) }) {
+                drawImage(image, IntOffset(src.left.roundToInt(), src.top.roundToInt()), IntSize(src.width.roundToInt(), src.height.roundToInt()),
+                    IntOffset(frame.left.roundToInt(), frame.top.roundToInt()), IntSize(frame.width.roundToInt(), frame.height.roundToInt()),
+                    filterQuality = FilterQuality.Medium)
+                drawRect(Brush.verticalGradient(0.55f to Color.Black, 1f to Color.Black.copy(alpha = 1f - e), startY = frame.top, endY = frame.bottom),
+                    frame.topLeft, frame.size, blendMode = BlendMode.DstIn)
+                val shade = minOf(120.dp.toPx(), frame.height)
+                drawRect(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.3f * e), 1f to Color.Transparent, startY = frame.top, endY = frame.top + shade),
+                    frame.topLeft, Size(frame.width, shade))
+            }
+        }
+    })
+}
+
 @Composable
 private fun FlyingCover(motion: PlayerSheetMotion, cover: Bitmap?, sheet: LayoutCoordinates?) {
-    Layout(content = {
-        val image = remember(cover) { cover?.asImageBitmap() }
-        // Toward the full cover the artwork loses its frame and fades in step with the sheet, so landing shows no edge.
-        if (motion.fullFade && image != null) Image(image, contentDescription = null, contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize().graphicsLayer {
-                shape = RoundedCornerShape(lerp(8.dp, 0.dp, motion.progress))
-                clip = true
-            }.coverFade { motion.progress })
-        else ArtworkImage(cover, Modifier.fillMaxSize().graphicsLayer {
+    val image = remember(cover) { cover?.asImageBitmap() }
+    if (motion.fullFade && image != null) FullCoverFlight(motion, image, sheet)
+    else Layout(content = {
+        ArtworkImage(cover, Modifier.fillMaxSize().graphicsLayer {
             shape = RoundedCornerShape(lerp(8.dp, motion.fullCorner, motion.progress))
             clip = true
         }, RectangleShape)
