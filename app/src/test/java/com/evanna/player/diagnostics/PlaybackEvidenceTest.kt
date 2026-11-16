@@ -46,6 +46,18 @@ class PlaybackEvidenceTest {
         assertEquals("USB_HARDWARE", fields[ReportField.VOLUME_CONTROL])
         assertEquals("ANDROID_SYSTEM", playbackSignalFields(snapshot.copy(route = PlaybackRoute.ANDROID))[ReportField.POLICY])
     }
+    @Test fun reportsSayWhatChangedTheSound() {
+        val snapshot = UsbPlaybackSnapshot(route = PlaybackRoute.DIRECT_USB, crossfeed = com.evanna.player.equalizer.Crossfeed.STRONG,
+            crossfeedProcessed = true, eqProcessed = true, plan = PlaybackPlan(44100, 24, false, false, true))
+        val fields = Incident("sound", IncidentKind.HANDLED_FAILURE, 1, playbackSignalFields(snapshot)).safeFields()
+        assertEquals("STRONG", fields[ReportField.CROSSFEED])
+        assertEquals("true", fields[ReportField.CROSSFEED_PROCESSED])
+        assertEquals("true", fields[ReportField.EQ_PROCESSED])
+        assertEquals("true", fields[ReportField.PLANNED_PROCESSED])
+        val android = playbackSignalFields(snapshot.copy(route = PlaybackRoute.ANDROID, plan = null))
+        assertNull(android[ReportField.CROSSFEED]); assertNull(android[ReportField.PLANNED_PROCESSED])
+        assertEquals("UNKNOWN", Incident("bad", IncidentKind.HANDLED_FAILURE, 1, mapOf(ReportField.CROSSFEED to "content://x")).safeFields()[ReportField.CROSSFEED])
+    }
     @Test fun originalSourceAndLiveReadinessGateBitPerfectEvidence() {
         val clean = UsbPlaybackSnapshot(state = UsbPlaybackState.PLAYING, source = PcmFixture(44100, 24, 2),
             stream = stream, readiness = UsbPlaybackReadiness(true, true, true), route = PlaybackRoute.DIRECT_USB)

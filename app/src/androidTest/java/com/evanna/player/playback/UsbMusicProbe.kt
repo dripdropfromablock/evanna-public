@@ -102,15 +102,15 @@ internal object UsbMusicProbe {
             } finally {SoundSettings.update {ownerEq}}
             observations+="Built-in EQ plays in Strict with processed status and zero clips, and on-but-flat stays an exact bypass; physical sound unmeasured"
             check(owner.setCrossfeed(Crossfeed.STRONG,profile.identity.key))
-            check(!owner.play() && owner.snapshot.value.failure==UsbPlaybackFailure.CONVERSION_REQUIRED)
-            check(owner.play(true) && owner.snapshot.value.stream?.let {it.processed && !it.bitPerfect}==true)
+            // Like the EQ, the saved Crossfeed plays in Strict without one-play permission, reported as processed.
+            check(owner.play() && owner.snapshot.value.stream?.let {it.processed && !it.bitPerfect}==true && !owner.snapshot.value.conversionAllowed)
             val crossfedEnd=withTimeout(15000){owner.snapshot.first {it.state in listOf(UsbPlaybackState.ENDED,UsbPlaybackState.ERROR)}}
             check(crossfedEnd.state==UsbPlaybackState.ENDED && crossfedEnd.stats?.let {it.clippedSamples==0L && it.transferErrors==0L && it.framesQueued==192000L}==true)
             check(owner.setCrossfeed(Crossfeed.OFF,profile.identity.key))
             check(owner.play() && owner.snapshot.value.stream?.let {!it.processed && it.bitPerfect}==true)
             val directEnd=withTimeout(15000){owner.snapshot.first {it.state in listOf(UsbPlaybackState.ENDED,UsbPlaybackState.ERROR)}}
             check(directEnd.state==UsbPlaybackState.ENDED && directEnd.stats?.clippedSamples==0L)
-            observations+="crossfeed Strict refusal, converted zero-PCM processing flags/zero clips and Off exact bypass; physical sound unmeasured"
+            observations+="crossfeed plays in Strict with processing flags/zero clips and Off exact bypass; physical sound unmeasured"
         }finally{check(owner.close()){"USB cleanup failed; reconnect before retrying"}}
         "Direct USB silent music startup/restart, bounded gain up/down and absolute slider target with readback, and stale-command refusal passed: ${observations.joinToString("; ")}. No calibration record, nonzero PCM, Android audio output or saved queue/grant change."
     }

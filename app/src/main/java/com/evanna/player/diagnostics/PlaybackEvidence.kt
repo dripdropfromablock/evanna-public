@@ -16,7 +16,16 @@ internal fun playbackSignalFields(snapshot: UsbPlaybackSnapshot?): Map<ReportFie
     snapshot?.let {
         it.source?.let { source -> put(ReportField.RATE, source.sampleRate.toString()); put(ReportField.BITS, source.sourceBits?.toString() ?: "UNKNOWN"); put(ReportField.CHANNELS, source.channels.toString()) }
         put(ReportField.SOURCE_FRAMES_ACCEPTED, it.framesAccepted.toString())
-        it.plan?.let { plan -> put(ReportField.PLANNED_RATE, plan.outputRate.toString()); put(ReportField.PLANNED_BITS, plan.dacBits.toString()) }
+        it.plan?.let { plan ->
+            put(ReportField.PLANNED_RATE, plan.outputRate.toString()); put(ReportField.PLANNED_BITS, plan.dacBits.toString())
+            put(ReportField.PLANNED_PROCESSED, plan.processed.toString())
+        }
+        // Crossfeed works on Direct USB only, so Android audio reports none of it.
+        if (!android) {
+            put(ReportField.CROSSFEED, it.crossfeed.name)
+            put(ReportField.CROSSFEED_PROCESSED, it.crossfeedProcessed.toString())
+        }
+        put(ReportField.EQ_PROCESSED, it.eqProcessed.toString())
         it.stream?.let { stream ->
             put(ReportField.OUTPUT_RATE, stream.outputRate.toString()); put(ReportField.OUTPUT_BITS, stream.format.bitResolution.toString())
             put(ReportField.DEVICE_RATE, if (stream.deviceRate > 0) stream.deviceRate.toString() else "UNKNOWN")

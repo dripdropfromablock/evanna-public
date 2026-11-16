@@ -241,7 +241,7 @@ internal class UsbPlaybackController(
                 planFailure(source,plan,true,maxUsbRate)?.let {return@prepareCommand fail(it)}
                 if(plan!=null && plan.processed!=crossfed)return@prepareCommand fail(UsbPlaybackFailure.STREAM_MISMATCH)
                 mutableSnapshot.value = mutableSnapshot.value.copy(plan = plan)
-                planFailure(source, plan, allowConversion || usbPolicy == UsbPlaybackPolicy.COMPATIBILITY,maxUsbRate)?.let { return@prepareCommand fail(it) }
+                planFailure(source, plan, allowConversion || usbPolicy == UsbPlaybackPolicy.COMPATIBILITY,maxUsbRate,crossfed)?.let { return@prepareCommand fail(it) }
                 usb.startVolumeDb = startVolumeDb
                 usb.volumeLimitDb = volumeLimitDb
                 if (!usb.prepareVolume()) return@prepareCommand fail(UsbPlaybackFailure.VOLUME_UNVERIFIED)
@@ -264,7 +264,8 @@ internal class UsbPlaybackController(
             if(track?.gaplessEligible==true && continuation!=null && (usb==null || plan?.resampled==false)) {
                 val decisions=java.util.concurrent.ConcurrentHashMap<String,Pair<LoudnessTags,LevelingDecision>>().apply {put(continuation.queueId,track.loudnessTags to streamLeveling)}
                 val continuous=GaplessReader(continuation.queueId,track,checkNotNull(reader),continuation.queue,continuation.focused,
-                    { next -> if(usb==null)!androidBitPerfect || next.strictEligible else usbPolicy==UsbPlaybackPolicy.COMPATIBILITY || (next.strictEligible && plan?.bitPerfect==true) },
+                    { next -> if(usb==null)!androidBitPerfect || next.strictEligible else usbPolicy==UsbPlaybackPolicy.COMPATIBILITY ||
+                        (next.strictEligible && (plan?.bitPerfect==true || onlyCrossfeed(source,plan))) },
                     {owned.stats().framesCompleted},positionUs,historyPlayId,successorAllowed={id,next ->
                         if(usb==null || levelingMode==LevelingMode.OFF)true else {
                             val cached=decisions[id]
@@ -745,17 +746,27 @@ internal class UsbPlaybackController(
         }
     }
 
-    private fun planFailure(source: PcmFormat, plan: PlaybackPlan?, allowConversion: Boolean, maxRate:Int?=null): UsbPlaybackFailure? {
+    private fun planFailure(source: PcmFormat, plan: PlaybackPlan?, allowConversion: Boolean, maxRate:Int?=null,
+        crossfed:Boolean=false): UsbPlaybackFailure? {
         if (plan == null || plan.outputRate <= 0 || plan.dacBits !in 1..32) return UsbPlaybackFailure.UNSUPPORTED_FORMAT
         if(source is TrackPcmFormat && maxRate!=null && plan.outputRate>maxRate)return UsbPlaybackFailure.UNSUPPORTED_FORMAT
         val resampled = plan.outputRate != source.sampleRate
         val unchanged = !resampled && plan.dacBits >= source.significantBits && !plan.processed
         if (plan.resampled != resampled || plan.bitPerfect != unchanged) return UsbPlaybackFailure.STREAM_MISMATCH
+        // The saved Crossfeed setting is the user's own change to the sound, like the EQ: Strict plays it and reports it as
+        // processed. It authorizes only that processing; a rate or precision change still needs permission.
+        val chosenFeed = plan.processed && crossfed
+        val ownProcessing = !plan.processed || chosenFeed
         // The saved "Follow song rate: off" choice authorizes only the rate reduction; other conversions still need permission.
         val chosenRate = maxRate!=null && source is TrackPcmFormat && source.sampleRate>maxRate && plan.outputRate < source.sampleRate &&
-            plan.outputRate <= maxRate && plan.dacBits >= source.significantBits && !plan.processed
-        return if (!allowConversion && (!(unchanged || chosenRate) || !source.strictEligible)) UsbPlaybackFailure.CONVERSION_REQUIRED else null
+            plan.outputRate <= maxRate && plan.dacBits >= source.significantBits && ownProcessing
+        val chosen = !resampled && plan.dacBits >= source.significantBits && ownProcessing
+        return if (!allowConversion && (!(chosen || chosenRate) || !source.strictEligible)) UsbPlaybackFailure.CONVERSION_REQUIRED else null
     }
+
+    /** The stream changes nothing but the user's own Crossfeed: Strict still treats songs of this format as playable. */
+    private fun onlyCrossfeed(source: PcmFormat, plan: PlaybackPlan?): Boolean = plan != null && plan.processed &&
+        crossfeed != Crossfeed.OFF && source.channels == 2 && !plan.resampled && plan.dacBits >= source.significantBits
 
     private fun streamFailure(source: PcmFormat, plan: PlaybackPlan, stream: StreamInfo): UsbPlaybackFailure? {
         val format = stream.format

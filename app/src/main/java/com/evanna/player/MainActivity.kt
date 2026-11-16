@@ -1593,7 +1593,7 @@ class MainActivity : ComponentActivity() {
                 item(key = "crossfeed:$profile") {
                     val levels = com.evanna.player.equalizer.Crossfeed.entries
                     SettingsSection("Crossfeed", footer = "Blends left and right slightly for a softer stereo effect in headphones. Direct USB only. " +
-                        "Strict USB asks before changing the audio. Press Play after changing the setting.") {
+                        "Strict USB plays it too, like the EQ; Sound path then shows the song as changed. Press Play after changing the setting.") {
                         row { SettingsCell(vertical = 4.dp) {
                             SingleChoiceSegmentedButtonRow(levels.map { it.label }, levels.indexOf(crossfeed), { chooseCrossfeed(levels[it], profile) },
                                 enabled = mediaController != null && profile != null && !modeChanging)

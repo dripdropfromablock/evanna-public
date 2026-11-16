@@ -17,7 +17,10 @@ class CrossfeedPlaybackTest {
         var level=Crossfeed.OFF;var starts=0
         private fun processed(source:PcmFormat)=!dropsCrossfeed && level!=Crossfeed.OFF && source.channels==2
         override fun setCrossfeed(level:Crossfeed){this.level=level}
-        override fun plan(source:PcmFormat)=PlaybackPlan(48000,24,false,!processed(source),processed(source))
+        override fun plan(source:PcmFormat):PlaybackPlan {
+            val resampled=source.sampleRate!=48000
+            return PlaybackPlan(48000,24,resampled,!resampled && !processed(source),processed(source))
+        }
         override fun prepareVolume()=true
         override fun start(source:PcmFormat):StreamInfo {
             starts++
@@ -31,9 +34,9 @@ class CrossfeedPlaybackTest {
         override fun stop()=true
         override fun close()=Unit
     }
-    private fun track(channels:Int=2)=object:PcmTrack {
+    private fun track(channels:Int=2,rate:Int=48000)=object:PcmTrack {
         override val id="crossfeed-fixture"
-        override val format=TrackPcmFormat(48000,24,channels,24,"FLAC",true,1_000_000)
+        override val format=TrackPcmFormat(rate,24,channels,24,"FLAC",true,1_000_000)
         override fun open():PcmReader {val pcm=format;return object:PcmReader {
             override val format=pcm
             override fun read(target:ByteBuffer,maxFrames:Int):Int {target.putLong(0,0L);return 1}
@@ -52,17 +55,26 @@ class CrossfeedPlaybackTest {
         assertTrue(playbackSignalStatus(UsbPlaybackSnapshot(route=PlaybackRoute.ANDROID,crossfeed=Crossfeed.STRONG)).contains("Crossfeed: Off on Android audio"))
     }
 
-    @Test fun strictAsksFirstAndAuthorizedOrCompatibilityPlayIsReportedAsProcessed()=runBlocking {
+    @Test fun strictPlaysTheSavedCrossfeedLikeTheEqAndReportsItAsProcessed()=runBlocking {
         val output=Output();val controller=UsbPlaybackController {output}
         try {
-            controller.open(7,profile());assertFalse(controller.start(track()))
-            assertEquals(UsbPlaybackFailure.CONVERSION_REQUIRED,controller.snapshot.value.failure);assertEquals(0,output.starts)
+            // The saved setting is the user's own change: no one-play permission is needed, and none is recorded.
+            controller.open(7,profile());assertTrue(controller.start(track()))
+            assertNull(controller.snapshot.value.failure);assertEquals(1,output.starts);assertFalse(controller.snapshot.value.conversionAllowed)
             assertEquals(Crossfeed.STRONG,output.level);assertTrue(controller.snapshot.value.crossfeedProcessed)
-            assertTrue(controller.start(track(),true));assertFalse(controller.snapshot.value.eqProcessed)
             assertTrue(controller.snapshot.value.stream!!.processed);assertFalse(controller.snapshot.value.stream!!.bitPerfect)
+            assertFalse(controller.snapshot.value.usbSamplePathEligible())
             assertTrue(playbackSignalStatus(controller.snapshot.value).contains("crossfeed strong · 700 Hz · 4.5 dB"))
             assertTrue(controller.setUsbPolicy(UsbPlaybackPolicy.COMPATIBILITY));assertTrue(controller.start(track()))
             assertTrue(controller.snapshot.value.stream!!.processed);assertFalse(controller.snapshot.value.conversionAllowed)
+        }finally {controller.close()}
+    }
+
+    @Test fun crossfeedNeverAuthorizesARateChangeInStrict()=runBlocking {
+        val output=Output();val controller=UsbPlaybackController {output}
+        try {
+            controller.open(7,profile());assertFalse(controller.start(track(rate=44100)))
+            assertEquals(UsbPlaybackFailure.CONVERSION_REQUIRED,controller.snapshot.value.failure);assertEquals(0,output.starts)
         }finally {controller.close()}
     }
 

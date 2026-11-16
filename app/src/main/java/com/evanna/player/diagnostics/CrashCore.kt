@@ -19,7 +19,9 @@ internal enum class ReportField {
     APP_VERSION, APP_VERSION_CODE, APP_SHA256, NATIVE_USBAUDIO_BUILD_ID, NATIVE_LIBUSB_BUILD_ID,
     NATIVE_DECODER_BUILD_ID, NATIVE_AVFORMAT_BUILD_ID, NATIVE_AVCODEC_BUILD_ID, NATIVE_AVUTIL_BUILD_ID, NATIVE_SWRESAMPLE_BUILD_ID,
     MANUFACTURER, MODEL, ANDROID_VERSION, SDK, ABI, EXIT_REASON, EXIT_STATUS, EXIT_PSS_KB, EXIT_RSS_KB,
-    TRACE_STATUS, NATIVE_STACK, ANR_STACK
+    TRACE_STATUS, NATIVE_STACK, ANR_STACK,
+    // What changes the sound on the way: the saved Crossfeed level, whether it and the EQ changed this stream, and the plan's verdict.
+    CROSSFEED, CROSSFEED_PROCESSED, EQ_PROCESSED, PLANNED_PROCESSED
 }
 
 /** No free-form messages, paths, media metadata, descriptors or system descriptions cross this boundary. */
@@ -95,7 +97,9 @@ internal data class Incident(val id: String, val kind: IncidentKind, val timesta
                 ReportField.THREAD -> if (value == "main") "main" else "other"
                 ReportField.FOREGROUND, ReportField.VOLUME_VERIFIED, ReportField.CLOCK_CONFIGURED, ReportField.FEEDBACK_READY,
                 ReportField.USB_PERMISSION, ReportField.FOCUS_HELD, ReportField.TRUNCATED, ReportField.RESAMPLED,
-                ReportField.BIT_PERFECT_ELIGIBLE, ReportField.SOURCE_STRICT_ELIGIBLE, ReportField.CONVERSION_AUTHORIZED, ReportField.USB_INPUT_ENDED -> if (value == "true" || value == "false") value else "UNKNOWN"
+                ReportField.BIT_PERFECT_ELIGIBLE, ReportField.SOURCE_STRICT_ELIGIBLE, ReportField.CONVERSION_AUTHORIZED, ReportField.USB_INPUT_ENDED,
+                ReportField.CROSSFEED_PROCESSED, ReportField.EQ_PROCESSED, ReportField.PLANNED_PROCESSED -> if (value == "true" || value == "false") value else "UNKNOWN"
+                ReportField.CROSSFEED -> value.takeIf { it in listOf("OFF", "LIGHT", "MEDIUM", "STRONG") } ?: "UNKNOWN"
                 ReportField.ROUTE -> value.takeIf { it in listOf("NONE", "DIRECT_USB", "ANDROID", "UNKNOWN") } ?: "REDACTED"
                 ReportField.POLICY -> value.takeIf { it in listOf("STRICT", "COMPATIBILITY", "ANDROID_SYSTEM", "UNKNOWN") } ?: "REDACTED"
                 ReportField.OUTPUT_ENCODING -> value.takeIf { it == "PCM_FLOAT" } ?: "UNKNOWN"

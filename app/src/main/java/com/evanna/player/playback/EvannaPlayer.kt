@@ -42,10 +42,9 @@ internal class EvannaPlayer(private val owner: UsbSessionOwner) : SimpleBasePlay
             owner.sourceSelectionFailed -> "The local file could not be opened or released. Select it again, or close the output and retry."
             owner.focusDenied -> "Audio focus was not granted. Try again with Evanna visible."
             snapshot.failure == UsbPlaybackFailure.VOLUME_UNVERIFIED -> "USB volume could not be verified. A controllable, unmuted DAC is required for music; analysis signals require measured calibration."
-            snapshot.failure == UsbPlaybackFailure.CONVERSION_REQUIRED -> when {
-                snapshot.crossfeedProcessed -> "Crossfeed changes audio samples. Turn crossfeed off for Strict playback, or choose Compatibility USB or Play converted once."
-                else -> "Strict playback is unavailable. Choose Compatibility USB, or Play converted once for this play."
-            }
+            // Crossfeed alone no longer stops Strict; this is a rate or precision change, or a compressed file.
+            snapshot.failure == UsbPlaybackFailure.CONVERSION_REQUIRED ->
+                "Strict playback is unavailable. Choose Compatibility USB, or Play converted once for this play."
             snapshot.failure == UsbPlaybackFailure.ROUTE_CHANGED -> "The audio output changed. Select an output again before playing."
             snapshot.failure != null -> "Playback stopped: ${snapshot.failure.name.lowercase().replace('_', ' ')}."
             else -> null
