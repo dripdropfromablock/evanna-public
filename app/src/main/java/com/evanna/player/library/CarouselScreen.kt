@@ -28,6 +28,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.PagerSnapDistance
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -208,6 +209,7 @@ internal fun CarouselScreen(
     onPlayNext: (String, (Boolean) -> Unit) -> Unit,
     onPlaylistSong: (String) -> Unit,
     nowPlaying: NowPlayingMark? = null,
+    onScrolled: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val database = remember(context) { LocalLibrary.database(context) }
@@ -234,7 +236,7 @@ internal fun CarouselScreen(
     if (loaded != null && albums != null && albums.total > 0) {
         key(revision, albums.total) {
             CarouselBrowser(database, artwork, albums, revision, active, loaded.start, { place = it },
-                bottomInset, onSelect, onAdd, onPlayNext, onPlaylistSong, nowPlaying)
+                bottomInset, onSelect, onAdd, onPlayNext, onPlaylistSong, nowPlaying, onScrolled)
         }
     } else {
         Column(Modifier.fillMaxSize().statusBarsPadding().padding(bottom = bottomInset)) {
@@ -263,12 +265,16 @@ private fun CarouselBrowser(
     active: Boolean, initialAlbum: Int, onSettled: (CarouselPlace) -> Unit, bottomInset: Dp,
     onSelect: (LibraryContextRequest, (Boolean) -> Unit) -> Unit,
     onAdd: (String, (Boolean) -> Unit) -> Unit, onPlayNext: (String, (Boolean) -> Unit) -> Unit,
-    onPlaylistSong: (String) -> Unit, nowPlaying: NowPlayingMark?,
+    onPlaylistSong: (String) -> Unit, nowPlaying: NowPlayingMark?, onScrolled: () -> Unit,
 ) {
     val count = albums.total
     val pager = rememberPagerState(initialPage = carouselStartPage(initialAlbum, count)) {
         if (count == 1) 1 else Int.MAX_VALUE
     }
+    // A finger moving the covers tells the app, which then gives the clock's row to the covers.
+    val swiped by pager.interactionSource.collectIsDraggedAsState()
+    val latestScrolled by rememberUpdatedState(onScrolled)
+    LaunchedEffect(swiped) { if (swiped) latestScrolled() }
     val scope = rememberCoroutineScope()
     val reducedMotion = scope.coroutineContext[MotionDurationScale]?.scaleFactor == 0f
     val flingBehavior = PagerDefaults.flingBehavior(
@@ -305,6 +311,8 @@ private fun CarouselBrowser(
     val centered = albumAt(settledIndex)
     val centeredAlbum = centered?.identity()
     val trackList = key(centeredAlbum) { rememberLazyListState() }
+    val listScrolled by trackList.interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(listScrolled) { if (listScrolled) latestScrolled() }
     suspend fun animateHeaderTo(target: Float) {
         if (target > 0f && (rolling || pager.isScrollInProgress || selection?.album != centeredAlbum)) return
         if (target != albumHeaderProgress) animate(albumHeaderProgress, target, animationSpec = EvannaMotion.exit) { value, _ ->
@@ -602,7 +610,7 @@ private fun CarouselBrowser(
             Column(Modifier.fillMaxSize().statusBarsPadding()) {
                 Box(Modifier.fillMaxWidth().height(lerpDp(browseHeight, pinnedHeight, progress)).clipToBounds()
                     .draggable(headerDrag, Orientation.Vertical, enabled = active && !rolling,
-                        onDragStopped = { settleHeader(it) })) {
+                        onDragStarted = { latestScrolled() }, onDragStopped = { settleHeader(it) })) {
                     if (progress < 1f) Column(Modifier.fillMaxWidth().graphicsLayer { alpha = 1f - progress }
                         .then(if (progress > 0f) Modifier.clearAndSetSemantics {} else Modifier)) {
                         CarouselHeader(enabled = progress == 0f && count > 1 && active && !rolling && !pager.isScrollInProgress, onRoll = ::roll)

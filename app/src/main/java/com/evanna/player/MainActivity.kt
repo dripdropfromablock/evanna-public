@@ -438,6 +438,8 @@ class MainActivity : ComponentActivity() {
                 val dockInset = if (keyboard) 0.dp else with(LocalDensity.current) { dockHeight.toDp() }
                 val openNotices = { licenseIndex = null; navigate(PlayerScreen.NOTICES) }
                 // Tabs stay alive side by side, so a tab keeps its scroll spot and loaded lists.
+                // Set by the first scroll on the Carousel; cleared when the Carousel is left (see the system bars below).
+                var carouselScrolled by remember { mutableStateOf(false) }
                 val tabContent: @Composable (PlayerScreen) -> Unit = { tab ->
                     if (tab == PlayerScreen.OUTPUT) SettingsScreen(tab, null, dockInset, openNotices)
                     else if (tab == PlayerScreen.CAROUSEL) com.evanna.player.library.CarouselScreen(
@@ -450,6 +452,7 @@ class MainActivity : ComponentActivity() {
                         nowPlaying = playerUi.takeIf { it.hasSong }?.let {
                             com.evanna.player.library.NowPlayingMark(it.title, it.album, it.playing)
                         },
+                        onScrolled = { carouselScrolled = true },
                     )
                     else LibraryScreen(
                         bottomInset = dockInset,
@@ -513,10 +516,18 @@ class MainActivity : ComponentActivity() {
                 // until a swipe in from an edge shows them for a moment (Settings → Appearance).
                 val carouselShown = pushed == null && dockTab == PlayerScreen.CAROUSEL
                 val fullScreen = fullScreenSideways && sideways && (playerVisible || carouselShown)
-                LaunchedEffect(fullScreen) {
+                // Upright, the first scroll on the Carousel hides the clock's row too, and the covers move up into it. It comes
+                // back when the Carousel is left or Now Playing opens; a swipe down from the top edge shows it for a moment.
+                LaunchedEffect(carouselShown) { if (!carouselShown) carouselScrolled = false }
+                val statusAway = carouselShown && carouselScrolled && !sideways && !playerVisible
+                LaunchedEffect(fullScreen, statusAway) {
                     val bars = WindowCompat.getInsetsController(window, window.decorView)
                     bars.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                    if (fullScreen) bars.hide(WindowInsetsCompat.Type.systemBars()) else bars.show(WindowInsetsCompat.Type.systemBars())
+                    when {
+                        fullScreen -> bars.hide(WindowInsetsCompat.Type.systemBars())
+                        statusAway -> { bars.show(WindowInsetsCompat.Type.navigationBars()); bars.hide(WindowInsetsCompat.Type.statusBars()) }
+                        else -> bars.show(WindowInsetsCompat.Type.systemBars())
+                    }
                 }
                 // Scrolling a tab down folds the dock into one row; scrolling up, a new tab or a new screen opens it again.
                 // On its side the Carousel's dock leaves the screen instead, and comes back the same way.
