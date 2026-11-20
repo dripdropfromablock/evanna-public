@@ -2,9 +2,35 @@
 
 ![Evanna — Offline hi-res music player for Android](docs/assets/evanna-banner.png)
 
-Evanna is an offline high-resolution music player for Android. Browse music from your phone or SD card, tune it with graphic or parametric EQ, and listen through Android audio or a compatible USB DAC.
+Evanna is a high-resolution music player for Android. Browse music from your phone or SD card, tune it with graphic or parametric EQ, and listen through Android audio or a compatible USB DAC.
 
 **Android 9+** · ARM64, ARMv7, x86 and x86-64
+
+[Download v1.5](https://github.com/dripdropfromablock/evanna-public/releases/tag/v1.5) · [All releases](https://github.com/dripdropfromablock/evanna-public/releases)
+
+## Showcase
+
+Screenshots from the v1.6 development build on an Android emulator.
+
+| Carousel | Album actions | Now Playing |
+| --- | --- | --- |
+| <img src="docs/assets/showcase/carousel.jpg" width="235" alt="Album artwork and track list in the Carousel"> | <img src="docs/assets/showcase/album-actions.jpg" width="235" alt="Album cover with its Add to Playlist and Share Album menu open"> | <img src="docs/assets/showcase/now-playing.jpg" width="235" alt="Now Playing with cover artwork, playback controls, and the source format"> |
+
+| Queue | Music Tags | Connected sources |
+| --- | --- | --- |
+| <img src="docs/assets/showcase/queue.jpg" width="235" alt="Queue showing the current song, shuffle and repeat controls, and upcoming tracks"> | <img src="docs/assets/showcase/music-tags.jpg" width="235" alt="Music Tags showing missing metadata and bulk edit options"> | <img src="docs/assets/showcase/sources.jpg" width="235" alt="Sources screen for adding music servers and audio links"> |
+
+| Sound path | Equalizer |
+| --- | --- |
+| <img src="docs/assets/showcase/audio-quality.jpg" width="235" alt="Sound path sheet tracing the music file through Evanna, Android, and the phone speaker"> | <img src="docs/assets/showcase/equalizer.jpg" width="235" alt="Evanna equalizer with a response curve and band controls"> |
+
+## v1.6 preview
+
+- **Album actions.** Open the three-dot menu on the cover to add the whole album to a playlist or share it. Play and Shuffle sit below the album title.
+- **Music tags.** Find missing metadata in **Settings → Music Tags**, review online suggestions, and make bulk edits by album, artist or selected tracks. Evanna saves edits in sidecar files beside the songs.
+- **Lyrics.** Find missing lyrics by album, artist or library. The Now Playing preview can follow individual words when the lyrics include word timing.
+- **Connected music.** Open **Library → Sources** to browse UPnP/DLNA, Plex, Jellyfin, Navidrome/OpenSubsonic, WebDAV or SMB2/3. The same screen accepts direct audio links, radio stations and M3U/PLS station lists.
+- **Network playback.** Play server tracks, add them to the queue and save individual tracks for offline listening. **Audio output → Choose a network speaker** selects a DLNA renderer. HTTPS is available where supported, and local HTTP requires opt-in.
 
 ## Features
 
@@ -21,7 +47,7 @@ Evanna is an offline high-resolution music player for Android. Browse music from
 
 ### Playback and queue
 
-- Now Playing sheet with swipeable Lyrics, Song and Queue pages, plus a floating mini-player.
+- Now Playing sheet with swipeable Lyrics, Song and Queue pages, a floating mini-player, and a choice of framed or full-cover artwork.
 - Editable queue with play next, add, reorder and remove, alongside History and Playing Next views; shuffle and repeat off/song/queue.
 - Gapless continuation across compatible tracks; the queue and position restore paused after a restart.
 - Sleep timer: 15/30/45/60/90 minutes, end of this song, or end of this album.
@@ -30,15 +56,23 @@ Evanna is an offline high-resolution music player for Android. Browse music from
 ### Lyrics and artwork
 
 - Embedded synced lyrics with auto-scroll and tap-a-line-to-seek, word-by-word karaoke fill where word timestamps exist, and a plain-text fallback.
+- Read a `.lrc` file beside a song, or find missing lyrics through optional LRCLIB search.
 - Embedded covers in lists and the player; the Now Playing backdrop recolours from the album art.
 
-### EQ and sound processing (Direct USB)
+### Share lyrics and albums
 
-- Graphic EQ with 5–32 bands plus bass and treble, and a live response curve.
-- Parametric EQ with up to 34 bands, six filter types, per-band channel routing, and a preamp with automatic headroom.
-- Named presets with per-DAC links and import of your own `ParametricEQ.txt`.
-- Headphone crossfeed: off, light, medium or strong.
-- Loudness leveling (off/album/track) through the DAC's hardware gain, with an offline library measurement pass.
+- Pick up to four lyric lines and make a 1080 × 1920 story picture. Choose Card, Big words, Cover, Lyrics page, Poster, Quote or Colour. Lyrics page includes the lines around your selection.
+- Share album artwork as Card, Floating, Full cover, Cover Flow, Record, Gallery print, Poster, Liner notes or Big type. Liner notes is available from the album page and lists its first six songs and any remaining count.
+- Swipe through real picture previews. The look you used last opens first, saved separately for lyrics and albums.
+- Save to Photos, send to another app, or open Instagram Stories when Instagram is installed. Card shares use a movable sticker in Instagram; the other looks use the complete picture.
+
+### EQ and sound processing
+
+- Built-in EQ for Android audio and Direct USB, with 15 graphic bands and a live response curve.
+- Parametric EQ with up to 16 bands, eight filter types, a preamp and an output limiter.
+- Bass, Air and stereo Width controls, named presets, AutoEq headphone search and `ParametricEQ.txt` import.
+- Direct USB headphone crossfeed: off, light, medium or strong.
+- Direct USB loudness leveling (off/album/track) through the DAC's hardware gain, with an offline library measurement pass.
 
 ### USB DAC and outputs
 
@@ -51,19 +85,19 @@ Evanna is an offline high-resolution music player for Android. Browse music from
 
 - Audio quality window showing the source format, any processing and what Evanna observed at the output, with minimal and advanced signal-path views.
 - On-device crash and ANR reports: review, share a copy, or delete; nothing is uploaded.
-- Playback and library browsing work offline. Release builds check GitHub for available app updates.
+- Playback and library browsing work offline. Optional lyrics and AutoEq searches use the internet; release builds check GitHub for app updates and can install them from Settings.
 
 ### Comfort and accessibility
 
-- Three looks (Evanna dark, Dark, Light) and adjustable animation speed that honours the system animator scale.
-- TalkBack labels on controls, 48 dp touch targets, and layouts verified at 200% font scale.
+- Dark and Light looks, an Increase contrast setting, and adjustable animation speed that honours the system animator scale.
+- TalkBack labels and selection states, touch targets of at least 48 dp, and support for larger text.
 - Searchable settings.
 
 ## Get started
 
 Download the APK for your device from [GitHub Releases](https://github.com/dripdropfromablock/evanna-public/releases). Choose arm64-v8a for most phones or x86_64 for most Android emulators.
 
-1. Install the debug APK on an ARM64 device running Android 9 or newer.
+1. Install the signed release APK for your device on Android 9 or newer. Existing release-signed Evanna installations can update in place without clearing their data.
 2. Open **Library**, add a music folder, and grant access in Android’s folder picker. Repeat for any other folders you want in the library.
 3. Select a track and choose an audio output when prompted. For direct USB playback, connect a compatible DAC, grant USB access, and set a low starting volume.
 
@@ -77,7 +111,7 @@ Download the APK for your device from [GitHub Releases](https://github.com/dripd
 Install JDK 17, Android SDK 36, NDK `28.2.13676358`, and CMake `3.22.1`. Configure the SDK in Android Studio or set `ANDROID_HOME`.
 
 ```powershell
-git clone https://github.com/dripdropfromablock/evanna-public.git
+git clone --branch v1.5 https://github.com/dripdropfromablock/evanna-public.git
 cd evanna-public
 .\gradlew.bat :app:assembleDebug
 ```
@@ -116,7 +150,7 @@ Android instrumentation requires an explicitly selected test device. See [fixtur
 
 ### Notes
 
-- The repo is Kotlin-first for UI and logic, but the entire audio path (decode → loudness → SRC → EQ/crossfeed → USB UAC) is native C/C++ over vendored libraries.
+- Kotlin handles UI, playback orchestration and the built-in EQ. Native C/C++ handles decoding, loudness measurement, sample-rate conversion and USB transport over vendored libraries.
 - FFmpeg is consumed as prebuilt libraries per ABI under `third_party/ffmpeg/android/`, rebuilt with `scripts/build-ffmpeg.sh` from the bundled `ffmpeg-9.0.2.tar.xz`; it is not compiled in-tree by Gradle.
 
 ## License
@@ -131,13 +165,16 @@ Distribute the matching complete source and build materials alongside APK releas
 
 Bump Android's version code and version name, build the supported APKs, and sign them using the same release signing key as the previous build. Run `aapt dump badging` on the final APKs to confirm the package is `com.evanna.player` and record each APK's exact version code, version name, and native ABI. Verify that a previous release installation upgrades in place.
 
-Attach the APKs and `evanna-update.json` to the same stable release on [Evanna's public GitHub repository](https://github.com/dripdropfromablock/evanna-public/releases). Use a tag such as `v0.2.0`. The updater matches the asset names exactly and picks the first matching entry in the phone's supported ABI order. For example, with a single ARM64 APK:
+Attach the APKs, matching source archive, `evanna-update.json` and `SHA256SUMS.txt` to the same stable release on [Evanna's public GitHub repository](https://github.com/dripdropfromablock/evanna-public/releases). The updater matches the asset names exactly and picks the first matching entry in the phone's supported ABI order. The v1.5 manifest is:
 
 ```json
 {
-  "versionName": "0.2.0",
+  "versionName": "1.5",
   "apks": {
-    "arm64-v8a": { "assetName": "Evanna-0.2.0-arm64-v8a.apk", "versionCode": 2 }
+    "arm64-v8a": { "assetName": "evanna-1.5-arm64-v8a.apk", "versionCode": 6 },
+    "armeabi-v7a": { "assetName": "evanna-1.5-armeabi-v7a.apk", "versionCode": 6 },
+    "x86": { "assetName": "evanna-1.5-x86.apk", "versionCode": 6 },
+    "x86_64": { "assetName": "evanna-1.5-x86_64.apk", "versionCode": 6 }
   }
 }
 ```
