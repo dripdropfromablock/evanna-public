@@ -6,7 +6,7 @@ Evanna is a high-resolution music player for Android. Browse music from your pho
 
 **Android 9+** · ARM64, ARMv7, x86 and x86-64
 
-[Download v1.5](https://github.com/dripdropfromablock/evanna-public/releases/tag/v1.5) · [All releases](https://github.com/dripdropfromablock/evanna-public/releases)
+[Download the latest release](https://github.com/dripdropfromablock/evanna-public/releases/latest) · [All releases](https://github.com/dripdropfromablock/evanna-public/releases)
 
 ## Showcase
 
@@ -24,7 +24,7 @@ Screenshots from the v1.6 development build on an Android emulator.
 | --- | --- |
 | <img src="docs/assets/showcase/audio-quality.jpg" width="235" alt="Sound path sheet tracing the music file through Evanna, Android, and the phone speaker"> | <img src="docs/assets/showcase/equalizer.jpg" width="235" alt="Evanna equalizer with a response curve and band controls"> |
 
-## v1.6 preview
+## New in v1.6
 
 - **Album actions.** Open the three-dot menu on the cover to add the whole album to a playlist or share it. Play and Shuffle sit below the album title.
 - **Music tags.** Find missing metadata in **Settings → Music Tags**, review online suggestions, and make bulk edits by album, artist or selected tracks. Evanna saves edits in sidecar files beside the songs.
@@ -111,7 +111,7 @@ Download the APK for your device from [GitHub Releases](https://github.com/dripd
 Install JDK 17, Android SDK 36, NDK `28.2.13676358`, and CMake `3.22.1`. Configure the SDK in Android Studio or set `ANDROID_HOME`.
 
 ```powershell
-git clone --branch v1.5 https://github.com/dripdropfromablock/evanna-public.git
+git clone --branch v1.6 https://github.com/dripdropfromablock/evanna-public.git
 cd evanna-public
 .\gradlew.bat :app:assembleDebug
 ```
@@ -165,16 +165,16 @@ Distribute the matching complete source and build materials alongside APK releas
 
 Bump Android's version code and version name, build the supported APKs, and sign them using the same release signing key as the previous build. Run `aapt dump badging` on the final APKs to confirm the package is `com.evanna.player` and record each APK's exact version code, version name, and native ABI. Verify that a previous release installation upgrades in place.
 
-Attach the APKs, matching source archive, `evanna-update.json` and `SHA256SUMS.txt` to the same stable release on [Evanna's public GitHub repository](https://github.com/dripdropfromablock/evanna-public/releases). The updater matches the asset names exactly and picks the first matching entry in the phone's supported ABI order. The v1.5 manifest is:
+Attach the APKs, matching source archive, `evanna-update.json` and `SHA256SUMS.txt` to the same stable release on [Evanna's public GitHub repository](https://github.com/dripdropfromablock/evanna-public/releases). The updater matches the asset names exactly and picks the first matching entry in the phone's supported ABI order. Here is the v1.6 manifest.
 
 ```json
 {
-  "versionName": "1.5",
+  "versionName": "1.6",
   "apks": {
-    "arm64-v8a": { "assetName": "evanna-1.5-arm64-v8a.apk", "versionCode": 6 },
-    "armeabi-v7a": { "assetName": "evanna-1.5-armeabi-v7a.apk", "versionCode": 6 },
-    "x86": { "assetName": "evanna-1.5-x86.apk", "versionCode": 6 },
-    "x86_64": { "assetName": "evanna-1.5-x86_64.apk", "versionCode": 6 }
+    "arm64-v8a": { "assetName": "evanna-1.6-arm64-v8a.apk", "versionCode": 7 },
+    "armeabi-v7a": { "assetName": "evanna-1.6-armeabi-v7a.apk", "versionCode": 7 },
+    "x86": { "assetName": "evanna-1.6-x86.apk", "versionCode": 7 },
+    "x86_64": { "assetName": "evanna-1.6-x86_64.apk", "versionCode": 7 }
   }
 }
 ```
