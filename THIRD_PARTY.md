@@ -15,13 +15,6 @@ Original Evanna application code is GPL-3.0-only. Third-party components retain 
 | Gradle wrapper | 8.14.3 | Wrapper files retain their original notices and the distribution checksum. |
 | JUnit | 4.13.2, test dependency | EPL-1.0. Test-only dependency. |
 | EasyList ad-server domains | [Pinned EasyList source](https://github.com/easylist/easylist/blob/096b9a690e709ef13c2ffb9549654162470e6218/easylist/easylist_adservers.txt) | GPL-3.0-or-later. The EasyList authors are credited in the bundled notices and the domain list. Evanna extracted unqualified hostname rules and added three common ad domains. |
-| libtorrent4j and libtorrent | [libtorrent4j 2.1.0-39 on Maven Central](https://repo.maven.apache.org/maven2/org/libtorrent4j/libtorrent4j/2.1.0-39/) and [libtorrent 2.1.0 source](https://github.com/arvidn/libtorrent/tree/24a3adf35d3e689bde700371337aad61b160bafa) | MIT and BSD-3-Clause. The Java wrapper and Android native library provide optional BitTorrent downloads. Both notices are bundled in the app. |
-| OpenSSL and Boost in the BitTorrent library | [OpenSSL 3.5.9](https://github.com/openssl/openssl/tree/openssl-3.5.9), [Boost 1.90.0](https://www.boost.org/releases/1.90.0/) | Apache-2.0 and BSL-1.0. OpenSSL has thread support enabled. |
-| WebRTC components in the BitTorrent library | [libdatachannel](https://github.com/paullouisageneau/libdatachannel/tree/a4d3211da33bc1114ae50d2dd12f4186b67aaba4), [libjuice](https://github.com/paullouisageneau/libjuice/tree/5948a4162d37bc213d6051b67ee2876ccc5a99a6), [usrsctp](https://github.com/paullouisageneau/usrsctp/tree/fec583d54493f879d2ae44a743423bf8a04371ab), [plog](https://github.com/SergiusTheBest/plog/tree/94899e0b926ac1b0f4750bfbd495167b4a6ae9ef), [try_signal](https://github.com/arvidn/try_signal/tree/105cce59972f925a33aa6b1c3109e4cd3caf583d) | MPL-2.0, BSD-3-Clause and MIT. The corresponding licence and source notices are bundled with the app. |
-
-The ARM64, ARMv7 and x86-64 BitTorrent binaries come from the same published build. [Pinned inputs and build records](https://github.com/shibicb72-design/Orbis/tree/b205c1a5d82eacf4baba8af89376fd9d2fc084c7/native/libtorrent4j), [Published run](https://github.com/shibicb72-design/Orbis/actions/runs/43144313707)
-
-Evanna built the 32-bit x86 binary from the same inputs using NDK r29, `i686-linux-android28-clang`, the `linux-elf` OpenSSL target and the upstream `clang-x86` Boost.Build configuration. OpenSSL's configuration defined `OPENSSL_THREADS`. Its SHA-256 is `49a639359b5f5da6d459f8699283264cd7ceb24121fd28d3340d7d957fcd8c95`. [Upstream x86 build settings](https://github.com/aldenml/libtorrent4j/blob/v2.1.0-39/.github/workflows/android.yml#L152-L209)
 
 ## USB module modifications
 

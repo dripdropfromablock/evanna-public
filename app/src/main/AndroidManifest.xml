@@ -40,8 +40,6 @@
         <activity android:name=".webmusic.WebMusicActivity" android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:label="Download audio" android:windowSoftInputMode="adjustResize" />
-        <service android:name=".webmusic.P2pTorrentJob" android:exported="true"
-            android:permission="android.permission.BIND_JOB_SERVICE" />
         <service android:name=".playback.PlaybackService" android:exported="true" android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />

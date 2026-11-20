@@ -73,21 +73,6 @@ License: licenses/Bouncy-Castle.txt.
 Source and license: https://www.bouncycastle.org/about/license/
 Used for cancellable server metadata and audio byte requests.
 
-libtorrent4j 2.1.0-39 and libtorrent 2.1
-Copyright Alden Torres, Arvid Norberg and their contributors.
-Sources: https://github.com/aldenml/libtorrent4j and https://github.com/arvidn/libtorrent
-Licenses: MIT and BSD-3-Clause (licenses/libtorrent4j-MIT.txt and licenses/libtorrent-BSD.txt).
-Android build inputs: https://github.com/shibicb72-design/Orbis/tree/b205c1a5d82eacf4baba8af89376fd9d2fc084c7/native/libtorrent4j
-OpenSSL 3.5.9 and Boost 1.90.0 use Apache-2.0 and the Boost Software License
-(licenses/Apache-2.0.txt and licenses/Boost-1.0.txt).
-Sources: https://github.com/openssl/openssl/tree/openssl-3.5.9 and https://www.boost.org/releases/1.90.0/
-libdatachannel and libjuice use MPL-2.0 (licenses/MPL-2.0.txt).
-Sources: https://github.com/paullouisageneau/libdatachannel/tree/a4d3211da33bc1114ae50d2dd12f4186b67aaba4
-https://github.com/paullouisageneau/libjuice/tree/5948a4162d37bc213d6051b67ee2876ccc5a99a6
-usrsctp and try_signal use BSD-3-Clause, and plog uses MIT.
-See licenses/usrsctp-BSD-3-Clause.txt, licenses/try-signal-BSD-3-Clause.txt and licenses/plog-MIT.txt.
-Pinned source links are in THIRD_PARTY.md in the Evanna source repository.
-
 Kotlin standard library and kotlinx.coroutines
 Copyright JetBrains s.r.o. and Kotlin Programming Language contributors.
 Sources: https://github.com/JetBrains/kotlin and https://github.com/Kotlin/kotlinx.coroutines

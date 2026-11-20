@@ -219,6 +219,6 @@ internal fun SearchDownloadsScreen(onBack: () -> Unit, bottomInset: Dp) {
                 }
             }
         }
-        item { P2pDownloads() }
+        item { SoulseekDownloads() }
     }
 }

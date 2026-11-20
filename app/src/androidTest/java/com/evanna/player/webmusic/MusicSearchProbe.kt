@@ -116,61 +116,6 @@ internal object MusicSearchProbe {
         return "PASS: found the ccMixter recording in Search and opened its exact upload page"
     }
 
-    fun torrentInputs(instrumentation: Instrumentation, documentName: String): String {
-        val ui = SearchDriver(instrumentation)
-        ui.tap("Search")
-        ui.input("my first jazz album")
-        ui.tap("Peer-to-peer")
-        ui.tap("Open .torrent file", scroll = true)
-        ui.see("Show roots")
-        if (!ui.contains(documentName)) {
-            ui.tap("Show roots")
-            ui.tap("Downloads")
-        }
-        ui.tap(documentName, scroll = true)
-        val selectedFile = "Select JazzAlbumThreaded/$SECOND.mp3"
-        ui.see(selectedFile, scroll = true)
-        ui.tap(selectedFile, scroll = true)
-        ui.see("Download 1 selected", scroll = true)
-        ui.tap("Select all", scroll = true, scrollUp = true)
-        ui.see("Download 2 selected", scroll = true)
-        return "PASS: opened a local .torrent and switched between one file and the whole release"
-    }
-
-    fun magnet(instrumentation: Instrumentation, address: String): String {
-        val context = instrumentation.targetContext
-        val folder = checkNotNull(searchMusicFolder(context))
-        val ui = SearchDriver(instrumentation)
-        val release = P2pTorrent.fromMagnet(address, context.cacheDir, CancelScope())
-        val parsed = release.bytes.inputStream().use(P2pTorrent::fromDocument)
-        check(parsed.hash == release.hash && release.files.size == 2)
-        val track = release.files.single { it.path.endsWith("$SECOND.mp3") }
-        P2pTransfers.enqueue(context, release, setOf(track.index), folder)
-        val task = checkNotNull(P2pTransfers.read(context, release.hash))
-        val started = instrumentation.uiAutomation.executeShellCommand("cmd jobscheduler run -f ${context.packageName} ${task.slot}")
-            .use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).bufferedReader().readText().trim() }
-        var lastProgress: String? = null
-        try {
-            await("selected track from magnet", 110_000) {
-                val current = P2pTransfers.read(context, release.hash)
-                val progress = P2pTransfers.progress[release.hash]
-                if (progress != lastProgress) {
-                    android.util.Log.i("EvannaTorrentProbe", "${current?.state}, $progress")
-                    lastProgress = progress
-                }
-                check(current?.state?.startsWith("Stopped") != true) { current?.state.orEmpty() }
-                current?.state == "Saved to Library" && current.saved == setOf(track.index)
-            }
-        } catch (failure: IllegalStateException) {
-            error("${failure.message}. Scheduler: $started. Progress: $lastProgress. Network allowed: ${P2pTransfers.allowedNetwork(context)}.")
-        }
-        ui.tap("Search")
-        ui.tap("Downloads")
-        ui.see(release.name)
-        ui.see("Saved to Library")
-        return "PASS: opened a magnet from the local BitTorrent peer, parsed its .torrent metadata and transferred only $SECOND"
-    }
-
     fun soulseek(instrumentation: Instrumentation, address: String): String {
         val context = instrumentation.targetContext
         val settings = SoulseekSettings(address, "evanna-local-test-key-only", localHttp = true)
@@ -221,11 +166,10 @@ internal object MusicSearchProbe {
                 await(label, 24_000) {
                     val visible = nodes()
                     val found = visible.any {
-                        if (label.startsWith("Download ") && it.text?.startsWith("Download ") == true) it.refresh()
                         it.matches(label) || partial && it.text?.contains(label, ignoreCase = true) == true
                     }
                     if (!found && scroll && SystemClock.elapsedRealtime() >= nextScroll) {
-                        scrollPage(visible, up = false)
+                        scrollPage(visible)
                         nextScroll = SystemClock.elapsedRealtime() + 800
                     }
                     found
@@ -238,7 +182,7 @@ internal object MusicSearchProbe {
             }
         }
 
-        fun tap(label: String, scroll: Boolean = false, resultRow: Boolean = false, scrollUp: Boolean = false) {
+        fun tap(label: String, scroll: Boolean = false, resultRow: Boolean = false) {
             var nextScroll = SystemClock.elapsedRealtime() + 2_000
             await(label, 26_000) {
                 val nodes = nodes()
@@ -253,7 +197,7 @@ internal object MusicSearchProbe {
                         ancestors.firstOrNull { it.isClickable && it.isEnabled }?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
                 }
                 if (!hit && scroll && SystemClock.elapsedRealtime() >= nextScroll) {
-                    scrollPage(nodes, scrollUp)
+                    scrollPage(nodes)
                     nextScroll = SystemClock.elapsedRealtime() + 800
                 }
                 hit
@@ -261,9 +205,8 @@ internal object MusicSearchProbe {
         }
 
 
-        private fun scrollPage(nodes: List<AccessibilityNodeInfo>, up: Boolean) {
-            val action = if (up) AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP
-                else AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN
+        private fun scrollPage(nodes: List<AccessibilityNodeInfo>) {
+            val action = AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN
             nodes.firstOrNull { action in it.actionList }?.performAction(action.id)
         }
 

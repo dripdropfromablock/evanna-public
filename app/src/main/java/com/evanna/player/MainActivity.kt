@@ -1842,8 +1842,6 @@ private val licenseFiles = listOf(
     LicenseFile("SMB encryption · Bouncy Castle", "licenses/Bouncy-Castle.txt", "https://www.bouncycastle.org/about/license/"),
     LicenseFile("MBassador · MIT", "licenses/MBassador-MIT.txt", "https://github.com/bennidi/mbassador"),
     LicenseFile("SLF4J · MIT", "licenses/SLF4J-MIT.txt", "https://github.com/qos-ch/slf4j"),
-    LicenseFile("libtorrent4j · MIT", "licenses/libtorrent4j-MIT.txt", "https://github.com/aldenml/libtorrent4j"),
-    LicenseFile("libtorrent · BSD 3-Clause", "licenses/libtorrent-BSD.txt", "https://github.com/arvidn/libtorrent"),
     LicenseFile("libebur128 · MIT", "licenses/libebur128-MIT.txt", "https://github.com/jiixyj/libebur128/tree/67b33abe1558160ed76ada1322329b0e9e058b02"),
     LicenseFile("libebur128 queue · BSD 3-Clause", "licenses/libebur128-queue-BSD-3-Clause.txt"),
     LicenseFile("C++ runtime · LLVM notices", "licenses/NDK-libcxx.txt", "https://developer.android.com/ndk/downloads"),

@@ -11,6 +11,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -128,6 +129,13 @@ internal class SoulseekCompanion(address: String, private val key: String, local
 }
 
 private fun validSoulseekPeer(peer: String) = peer != "." && peer != ".." && peer.none { it in "/\\?#%" }
+
+private fun safePeerPath(path: String): Boolean {
+    if (path.length !in 1..1024 || path.any(Char::isISOControl) || ':' in path) return false
+    return path.replace('\\', '/').split('/').all { it.isNotBlank() && it != "." && it != ".." }
+}
+
+private fun peerAudio(path: String) = path.substringAfterLast('.', "").lowercase(Locale.ROOT) in setOf("mp3", "flac")
 
 internal data class SoulseekSettings(val address: String, val key: String, val localHttp: Boolean) {
     fun client() = SoulseekCompanion(address, key, localHttp)

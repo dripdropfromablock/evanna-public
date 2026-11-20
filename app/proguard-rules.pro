@@ -14,4 +14,3 @@
 -keepclassmembers class com.hierynomus.smbj.** {
     @net.engio.mbassy.listener.Handler <methods>;
 }
--keep class org.libtorrent4j.swig.** { *; }

@@ -300,7 +300,7 @@ internal fun MusicSearchScreen(
                         go(SearchPage.Album(listOf(it)))
                     }
                 }
-                SearchPage.Peers -> item { P2pSearch(query = input) }
+                SearchPage.Peers -> item { SoulseekSearch(query = input) }
                 else -> Unit
             }
         }

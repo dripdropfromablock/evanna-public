@@ -17,8 +17,8 @@ android {
         applicationId = "com.evanna.player"
         minSdk = 28
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.7"
         testInstrumentationRunner = "com.evanna.player.playback.UsbAdapterProbe"
         if (!splitApks) ndk { abiFilters += if (sourcesQa) "x86_64" else "arm64-v8a" }
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_shared" } }
@@ -68,6 +68,5 @@ dependencies {
     implementation(libs.androidx.webkit)
     implementation(libs.okhttp)
     implementation(libs.smbj)
-    implementation("org.libtorrent4j:libtorrent4j:2.1.0-39")
     testImplementation(libs.junit)
 }

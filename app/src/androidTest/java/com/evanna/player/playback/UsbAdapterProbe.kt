@@ -31,16 +31,13 @@ class UsbAdapterProbe : Instrumentation() {
                 finish(Activity.RESULT_OK, result)
                 return
             }
-            if (probe in listOf("music-search-online", "music-search-offline", "music-search-magnet",
-                    "music-search-soulseek", "music-search-ccmixter", "music-search-torrent-inputs")) {
+            if (probe in listOf("music-search-online", "music-search-offline", "music-search-soulseek", "music-search-ccmixter")) {
                 val search = com.evanna.player.webmusic.MusicSearchProbe
                 val report = when (probe) {
                     "music-search-online" -> search.online(this)
                     "music-search-offline" -> search.offline(this)
                     "music-search-soulseek" -> search.soulseek(this, checkNotNull(fixture))
-                    "music-search-magnet" -> search.magnet(this, checkNotNull(fixture))
                     "music-search-ccmixter" -> search.ccMixter(this)
-                    "music-search-torrent-inputs" -> search.torrentInputs(this, checkNotNull(fixture))
                     else -> error("Unknown music search probe")
                 }
                 result.putString("report", report)
