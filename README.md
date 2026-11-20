@@ -2,11 +2,35 @@
 
 ![Evanna — Offline hi-res music player for Android](docs/assets/evanna-banner.png)
 
-Evanna is an offline high-resolution music player for Android. Browse music from your phone or SD card, tune it with graphic or parametric EQ, and listen through Android audio or a compatible USB DAC.
+Evanna is a high-resolution music player for Android. Browse music from your phone or SD card, tune it with graphic or parametric EQ, and listen through Android audio or a compatible USB DAC.
 
 **Android 9+** · ARM64, ARMv7, x86 and x86-64
 
-[Download v1.5](https://github.com/dripdropfromablock/evanna-public/releases/tag/v1.5). This release adds lyric and album share looks, a swipeable preview picker, sidecar lyrics and optional lyric search.
+[Download v1.5](https://github.com/dripdropfromablock/evanna-public/releases/tag/v1.5) · [All releases](https://github.com/dripdropfromablock/evanna-public/releases)
+
+## Showcase
+
+Screenshots from the v1.6 development build on an Android emulator.
+
+| Carousel | Album actions | Now Playing |
+| --- | --- | --- |
+| <img src="docs/assets/showcase/carousel.jpg" width="235" alt="Album artwork and track list in the Carousel"> | <img src="docs/assets/showcase/album-actions.jpg" width="235" alt="Album cover with its Add to Playlist and Share Album menu open"> | <img src="docs/assets/showcase/now-playing.jpg" width="235" alt="Now Playing with cover artwork, playback controls, and the source format"> |
+
+| Queue | Music Tags | Connected sources |
+| --- | --- | --- |
+| <img src="docs/assets/showcase/queue.jpg" width="235" alt="Queue showing the current song, shuffle and repeat controls, and upcoming tracks"> | <img src="docs/assets/showcase/music-tags.jpg" width="235" alt="Music Tags showing missing metadata and bulk edit options"> | <img src="docs/assets/showcase/sources.jpg" width="235" alt="Sources screen for adding music servers and audio links"> |
+
+| Sound path | Equalizer |
+| --- | --- |
+| <img src="docs/assets/showcase/audio-quality.jpg" width="235" alt="Sound path sheet tracing the music file through Evanna, Android, and the phone speaker"> | <img src="docs/assets/showcase/equalizer.jpg" width="235" alt="Evanna equalizer with a response curve and band controls"> |
+
+## v1.6 preview
+
+- **Album actions.** Open the three-dot menu on the cover to add the whole album to a playlist or share it. Play and Shuffle sit below the album title.
+- **Music tags.** Find missing metadata in **Settings → Music Tags**, review online suggestions, and make bulk edits by album, artist or selected tracks. Evanna saves edits in sidecar files beside the songs.
+- **Lyrics.** Find missing lyrics by album, artist or library. The Now Playing preview can follow individual words when the lyrics include word timing.
+- **Connected music.** Open **Library → Sources** to browse UPnP/DLNA, Plex, Jellyfin, Navidrome/OpenSubsonic, WebDAV or SMB2/3. The same screen accepts direct audio links, radio stations and M3U/PLS station lists.
+- **Network playback.** Play server tracks, add them to the queue and save individual tracks for offline listening. **Audio output → Choose a network speaker** selects a DLNA renderer. HTTPS is available where supported, and local HTTP requires opt-in.
 
 ## Features
 
@@ -87,7 +111,7 @@ Download the APK for your device from [GitHub Releases](https://github.com/dripd
 Install JDK 17, Android SDK 36, NDK `28.2.13676358`, and CMake `3.22.1`. Configure the SDK in Android Studio or set `ANDROID_HOME`.
 
 ```powershell
-git clone https://github.com/dripdropfromablock/evanna-public.git
+git clone --branch v1.5 https://github.com/dripdropfromablock/evanna-public.git
 cd evanna-public
 .\gradlew.bat :app:assembleDebug
 ```

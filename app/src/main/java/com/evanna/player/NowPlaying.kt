@@ -52,6 +52,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import com.evanna.player.ui.*
 import androidx.compose.runtime.*
@@ -62,6 +63,7 @@ import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
@@ -75,6 +77,7 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -91,6 +94,8 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.layout
@@ -105,9 +110,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.ResolvedTextDirection
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -288,7 +295,7 @@ internal fun NowPlayingScreen(state: PlayerPresentation, cover: Bitmap?, actionE
                 shareCard = ShareCard.AlbumCard(state.album?.takeIf { it.isNotBlank() } ?: state.title.ifBlank { "Local audio file" },
                     state.artist?.takeIf { it.isNotBlank() } ?: "Unknown artist")
             })
-            add("Sleep timer" to { showSleep = true })
+            if(state.route!="DLNA")add("Sleep timer" to { showSleep = true })
             if (onConvert != null) add("Play converted once" to onConvert)
             if (page == PlayerPage.QUEUE && state.connected && state.queue.isNotEmpty()) add("Save queue as playlist" to onSavePlaylist)
         })
@@ -691,7 +698,7 @@ private fun PlayerControls(state: PlayerPresentation, actionError: String?, page
     val volumeEnabled = androidVolume && state.connected && !outputSheetOpen
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 32.dp, end = 32.dp, top = 8.dp, bottom = 10.dp)) {
         // Sideways, the panel has no room for the line of lyrics; the lyrics button opens them in the panel.
-        if (!lyricsOn && !sideways) LyricsPreview(lyrics, state.positionMs, lyricsSearching, toggleLyrics)
+        if (!lyricsOn && !sideways) LyricsPreview(lyrics, state, lyricsSearching, toggleLyrics)
         SeekBar(state, onSeek, onSignal)
         Row(Modifier.fillMaxWidth().padding(top = 12.dp).height(68.dp), horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically) {
@@ -748,14 +755,19 @@ private fun PlayerControls(state: PlayerPresentation, actionError: String?, page
 }
 
 @Composable
-private fun LyricsPreview(load: LyricsLoad, positionMs: Long, searching: Boolean, onClick: () -> Unit) {
+private fun LyricsPreview(load: LyricsLoad, state: PlayerPresentation, searching: Boolean, onClick: () -> Unit) {
     val lyrics = (load as? LyricsLoad.Ready)?.lyrics
-    val current = lyrics?.lines?.getOrNull(lyrics.lineAt(positionMs))?.text?.takeIf(String::isNotBlank)
+    val reducedMotion = rememberCoroutineScope().coroutineContext[MotionDurationScale]?.scaleFactor == 0f
+    val position = key(state.id, lyrics) {
+        rememberLyricPosition(state.positionMs, lyrics?.timed == true && state.playing && !reducedMotion)
+    }
+    val index by remember(lyrics, position) { derivedStateOf { lyrics?.lineAt(position.value) ?: -1 } }
+    val current = lyrics?.lines?.getOrNull(index)?.takeIf { it.text.isNotBlank() }
     val label = when (load) {
         LyricsLoad.Loading -> "Loading lyrics…"
         LyricsLoad.None -> if (searching) "Looking for lyrics online…" else "No lyrics"
         LyricsLoad.Failed -> "Lyrics unavailable"
-        is LyricsLoad.Ready -> current ?: "Lyrics"
+        is LyricsLoad.Ready -> current?.text ?: "Lyrics"
     }
     // With no lyrics it still opens the Lyrics page, which can find them online.
     val action = if (load == LyricsLoad.None) "Find lyrics online" else "Show lyrics"
@@ -774,10 +786,58 @@ private fun LyricsPreview(load: LyricsLoad, positionMs: Long, searching: Boolean
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.Bottom,
     ) {
-        Text(label, style = Route, color = if (pressed) EvannaDesign.colorScheme.primary else if (lyrics != null) Pv1 else Pv2,
-            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+        val color = if (pressed) EvannaDesign.colorScheme.primary else if (lyrics != null) Pv1 else Pv2
+        val text = Modifier.weight(1f, fill = false)
+        if (current != null && current.words.isNotEmpty() && !reducedMotion) {
+            val next = lyrics?.lines?.getOrNull(index + 1)?.timeMs
+            PreviewLyricWords(current, position, next, if (pressed) color else Color.White, text)
+        } else {
+            Text(label, style = Route, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = text)
+        }
         if (available) Text(" ›", style = Route, color = Pv2)
     }
+}
+
+/** Mask the shaped text so the preview still ellipsizes as a single line. */
+@Composable
+private fun PreviewLyricWords(line: LyricLine, position: State<Long>, next: Long?, color: Color, modifier: Modifier) {
+    val text = remember(line) { line.words.joinToString("") { it.text } }
+    var layout by remember(line) { mutableStateOf<TextLayoutResult?>(null) }
+    BasicText(text, style = Route.copy(color = color), maxLines = 1, overflow = TextOverflow.Ellipsis,
+        onTextLayout = { layout = it }, modifier = modifier.graphicsLayer {
+            compositingStrategy = CompositingStrategy.Offscreen
+        }.drawWithCache {
+            data class WordMask(val path: Path, val bounds: Rect, val rtl: Boolean, val start: Long, val end: Long)
+            val masks = layout?.let { measured ->
+                val visibleEnd = measured.getLineEnd(0, visibleEnd = true)
+                var offset = 0
+                buildList {
+                    line.words.forEachIndexed { index, word ->
+                        val from = offset
+                        offset += word.text.length
+                        val to = minOf(offset, visibleEnd)
+                        if (from < to) {
+                            val path = measured.getPathForRange(from, to)
+                            val bounds = path.getBounds()
+                            if (bounds.width > 0f) add(WordMask(path, bounds,
+                                measured.getBidiRunDirection(from) == ResolvedTextDirection.Rtl,
+                                word.timeMs, line.wordEnd(index, next)))
+                        }
+                    }
+                }
+            }.orEmpty()
+            val feather = 8.dp.toPx()
+            onDrawWithContent {
+                drawContent()
+                if (masks.isNotEmpty()) {
+                    val now = position.value
+                    for (word in masks) clipPath(word.path) {
+                        val width = word.bounds.width
+                        drawLyricFill(now, word.start, word.end, word.bounds.left, width, feather, word.rtl, resting = Pv2)
+                    }
+                }
+            }
+        })
 }
 
 internal fun shortSourceQuality(source: String): String {
@@ -1009,6 +1069,23 @@ internal fun lyricFramePosition(previous: Long, elapsedMs: Long, target: Long): 
     return predicted + (drift / 4).coerceIn(-minOf(elapsedMs, 14L), 14L)
 }
 
+@Composable
+private fun rememberLyricPosition(positionMs: Long, running: Boolean): State<Long> {
+    val sample by rememberUpdatedState(positionMs)
+    return produceState(sample, running, if (running) null else sample) {
+        value = sample
+        if (!running) return@produceState
+        var base = sample
+        var sampledAt = 0L
+        var lastFrame: Long? = null
+        while (true) withFrameMillis { now ->
+            if (lastFrame == null || base != sample) { base = sample; sampledAt = now }
+            value = lyricFramePosition(value, now - (lastFrame ?: now), base + now - sampledAt)
+            lastFrame = now
+        }
+    }
+}
+
 /**
  * Page 0: big lyrics. The current line is bright and sits 30 % down the page; the others are faint and a little smaller.
  * Word-timed lines fill word by word with a 30 dp soft edge, and sung words lift 2 dp. Tap a line to play from it.
@@ -1048,20 +1125,7 @@ private fun LyricsPage(load: LyricsLoad, state: PlayerPresentation, onSeek: (Str
         // New lyrics start fresh: the scroll spot, first jump and hand-scroll time belong to one song's text.
         key(state.id, lyrics) {
             val list = rememberLazyListState()
-            val running = lyrics.timed && state.playing && !reducedMotion
-            val sample by rememberUpdatedState(state.positionMs)
-            val position = produceState(sample, running, if (running) null else sample) {
-                value = sample
-                if (!running) return@produceState
-                var base = sample
-                var sampledAt = 0L
-                var lastFrame: Long? = null
-                while (true) withFrameMillis { now ->
-                    if (lastFrame == null || base != sample) { base = sample; sampledAt = now }
-                    value = lyricFramePosition(value, now - (lastFrame ?: now), base + now - sampledAt)
-                    lastFrame = now
-                }
-            }
+            val position = rememberLyricPosition(state.positionMs, lyrics.timed && state.playing && !reducedMotion)
             val current by remember(lyrics, position) { derivedStateOf { lyrics.lineAt(position.value) } }
             val intro = lyrics.timed && (lyrics.lines.firstOrNull()?.timeMs ?: 0) >= DOTS_BREAK_MS
             val offset = if (intro) 1 else 0
@@ -1203,8 +1267,7 @@ private fun LyricWords(line: LyricLine, timed: Boolean, current: Boolean, browsi
             }, horizontalArrangement = if (small) Arrangement.Center else Arrangement.Start) {
                 line.words.forEachIndexed { i, word ->
                     if (current && !browsing) {
-                        val end = line.words.getOrNull(i + 1)?.timeMs ?: next ?: (word.timeMs + 1_000)
-                        SungWord(word.text, position, word.timeMs, end, style, lit)
+                        SungWord(word.text, position, word.timeMs, line.wordEnd(i, next), style, lit)
                     } else Text(word.text, style = style, color = lit)
                 }
             }
@@ -1255,6 +1318,9 @@ private fun PickBar(count: Int, refused: Int, onCancel: () -> Unit, onShare: () 
     }
 }
 
+private fun LyricLine.wordEnd(index: Int, next: Long?): Long =
+    words.getOrNull(index + 1)?.timeMs ?: next ?: (words[index].timeMs + 1_000)
+
 /** One word: text masked from bright (sung) to faint (to come), with a 30 dp soft edge, lifted 2 dp once reached. */
 @Composable
 private fun SungWord(text: String, position: State<Long>, start: Long, end: Long, style: TextStyle = LyricsLine, sung: Color = Pv1) {
@@ -1265,19 +1331,26 @@ private fun SungWord(text: String, position: State<Long>, start: Long, end: Long
         translationY = lift.toPx(); compositingStrategy = CompositingStrategy.Offscreen
     }.drawWithContent {
         drawContent()
-        val progress = ((position.value - start).toFloat() / (end - start).coerceAtLeast(1)).coerceIn(0f, 1f)
-        val feather = 30.dp.toPx()
-        val brush = when {
-            progress <= 0f -> SolidColor(Pv3)
-            progress >= 1f -> SolidColor(Pv1)
-            else -> {
-                val edge = progress * (size.width + feather) - feather / 2
-                Brush.horizontalGradient(0f to Pv1, ((edge - feather / 2) / size.width).coerceIn(0f, 1f) to Pv1,
-                    ((edge + feather / 2) / size.width).coerceIn(0f, 1f) to Pv3, 1f to Pv3)
-            }
-        }
-        drawRect(brush, blendMode = BlendMode.DstIn)
+        drawLyricFill(position.value, start, end, 0f, size.width, 30.dp.toPx())
     })
+}
+
+private fun DrawScope.drawLyricFill(now: Long, start: Long, end: Long, left: Float, width: Float, feather: Float,
+    rtl: Boolean = false, resting: Color = Pv3) {
+    if (width <= 0f) return
+    val progress = ((now - start).toFloat() / (end - start).coerceAtLeast(1)).coerceIn(0f, 1f)
+    val brush = when {
+        progress <= 0f -> SolidColor(resting)
+        progress >= 1f -> SolidColor(Pv1)
+        else -> {
+            val edge = progress * (width + feather) - feather / 2
+            val right = left + width
+            Brush.horizontalGradient(0f to Pv1, ((edge - feather / 2) / width).coerceIn(0f, 1f) to Pv1,
+                ((edge + feather / 2) / width).coerceIn(0f, 1f) to resting, 1f to resting,
+                startX = if (rtl) right else left, endX = if (rtl) left else right)
+        }
+    }
+    drawRect(brush, topLeft = Offset(left, 0f), size = Size(width, size.height), blendMode = BlendMode.DstIn)
 }
 
 /**

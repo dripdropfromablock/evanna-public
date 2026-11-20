@@ -114,7 +114,7 @@ internal fun rememberAddMusicFolder(): () -> Unit {
 internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) -> Unit, onAdd: (String, (Boolean) -> Unit) -> Unit,
     onPlayNext: (String, (Boolean) -> Unit) -> Unit, bottomInset: Dp,
     searchMode: Boolean = false,onPlaylists:()->Unit={},onPlaylistSong:(String)->Unit={},onPlaylistAlbum:(LibraryFilter)->Unit={},onFavorites:()->Unit={},
-    onRecent:()->Unit={},onMostPlayed:()->Unit={}, nowPlaying: NowPlayingMark? = null) {
+    onRecent:()->Unit={},onMostPlayed:()->Unit={}, nowPlaying: NowPlayingMark? = null,onSources:()->Unit={}) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val preferences = remember(context) { context.getSharedPreferences(UI_SETTINGS, 0) }
@@ -372,6 +372,10 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
             val dark = LocalLookStyle.current.look.dark
             val barScrim = if (dark) Color.Black else Color.White
             val backInk = if (dark) Color.White else Color.Black
+            val canPlayAlbum = !busy && !loading && (shown?.total ?: 0) > 0
+            var menuOpen by remember(selectedAlbum) { mutableStateOf(false) }
+            var sharing by remember(selectedAlbum) { mutableStateOf<ShareCard.AlbumCard?>(null) }
+            var preparingShare by remember(selectedAlbum) { mutableStateOf(false) }
             Column(Modifier.fillMaxWidth()) {
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val heroHeight = minOf(maxWidth, windowHeight * 0.68f).coerceAtLeast(140.dp)
@@ -382,7 +386,39 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                         0f to barScrim.copy(alpha = 0.85f), 0.25f to barScrim.copy(alpha = 0.65f),
                         0.62f to Color.Transparent, 1f to colors.background,
                     )))
-                    BackButton(backLabel, ::back, Modifier.statusBarsPadding().padding(start = 4.dp), tint = backInk)
+                    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 4.dp, end = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        BackButton(backLabel, ::back, Modifier.weight(1f, fill = false), tint = backInk)
+                        Box(contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(36.dp).background(backInk.copy(alpha = 0.14f), CircleShape))
+                            IconButton(onClick = { menuOpen = true }) {
+                                Icon(PlayerIcons.More, "Album actions", tint = backInk, modifier = Modifier.size(18.dp))
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                DropdownMenuItem(text = { Text("Add to Playlist") }, enabled = canPlayAlbum, onClick = {
+                                    menuOpen = false
+                                    onPlaylistAlbum(filter)
+                                })
+                                DropdownMenuItem(text = { Text("Share Album") }, enabled = !preparingShare, onClick = {
+                                    menuOpen = false
+                                    val shareName = groupName
+                                    preparingShare = true
+                                    personalScope.launch {
+                                        try {
+                                            sharing = withContext(Dispatchers.IO) {
+                                                val shareFilter = LibraryFilter(kind = LibraryGroupKind.ALBUM,
+                                                    value = selectedAlbum.title, albumArtist = selectedAlbum.albumArtist)
+                                                // shortcut: duration is omitted above 1,000 tracks; use an aggregate if large albums need it.
+                                                albumShareCard(shareName, database.albumSummary(selectedAlbum), database.page(limit = 1000, filter = shareFilter))
+                                            }
+                                        } catch (cancelled: CancellationException) { throw cancelled }
+                                        catch (_: Exception) { LocalLibrary.status = "The album could not be prepared. Try sharing again." }
+                                        finally { preparingShare = false }
+                                    }
+                                })
+                            }
+                        }
+                    }
                 }
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                     Text(groupName, style = EvannaDesign.typography.headlineSmall, fontWeight = FontWeight.Bold,
@@ -398,31 +434,12 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                             style = EvannaDesign.typography.bodyMedium,
                             color = muted, modifier = Modifier.padding(bottom = 8.dp))
                     }
-                    PlayShuffleButtons(enabled = !busy && !loading && (shown?.total ?: 0) > 0, stacked = stackAlbumActions,
+                    PlayShuffleButtons(enabled = canPlayAlbum, stacked = stackAlbumActions,
                         onPlay = { onSelect(LibraryContextRequest(filter, null, LibraryContextAction.PLAY_FIRST)) { selectionFailed = !it } },
                         onShuffle = { onSelect(LibraryContextRequest(filter, null, LibraryContextAction.SHUFFLE)) { selectionFailed = !it } })
-                    TextButton(onClick = { onPlaylistAlbum(filter) }, enabled = !busy && !loading && (shown?.total ?: 0) > 0,
-                        modifier = Modifier.heightIn(min = 48.dp)) { Text("Add album to playlist") }
-                    var sharing by remember(selectedAlbum) { mutableStateOf<ShareCard.AlbumCard?>(null) }
-                    var preparingShare by remember(selectedAlbum) { mutableStateOf(false) }
-                    TextButton(onClick = {
-                        val shareName = groupName
-                        preparingShare = true
-                        personalScope.launch {
-                            try {
-                                sharing = withContext(Dispatchers.IO) {
-                                    val shareFilter = LibraryFilter(kind = LibraryGroupKind.ALBUM,
-                                        value = selectedAlbum.title, albumArtist = selectedAlbum.albumArtist)
-                                    // shortcut: duration is omitted above 1,000 tracks; use an aggregate if large albums need it.
-                                    albumShareCard(shareName, database.albumSummary(selectedAlbum), database.page(limit = 1000, filter = shareFilter))
-                                }
-                            } catch (cancelled: CancellationException) { throw cancelled }
-                            catch (_: Exception) { LocalLibrary.status = "The album could not be prepared. Try sharing again." }
-                            finally { preparingShare = false }
-                        }
-                    }, enabled = !preparingShare, modifier = Modifier.heightIn(min = 48.dp)) { Text("Share album") }
-                    sharing?.let { card -> ShareSheet(card,
-                        { artwork.album(selectedAlbum, ArtworkSize.LARGE) }) { sharing = null } }
+                }
+                sharing?.let { card ->
+                    ShareSheet(card, { artwork.album(selectedAlbum, ArtworkSize.LARGE) }) { sharing = null }
                 }
             }
         } else line {
@@ -488,6 +505,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
                 modifier = Modifier.fillMaxWidth())
         }
         if (!oneRow && (libraryHome || (searchMode && kind == null && !searchHome))) line { CollectionPicker(compact = false) }
+        if(libraryHome)line {SettingsLink("Sources","Music servers and audio links",onClick=onSources)}
         if (searchHome) {
             line {
                 Text("Quick access", style = EvannaDesign.typography.titleSmall, modifier = Modifier.semantics { heading() })
@@ -495,6 +513,7 @@ internal fun LibraryScreen(onSelect: (LibraryContextRequest, (Boolean) -> Unit) 
             line { SettingsLink("Favorites", onClick = onFavorites) }
             line { SettingsLink("Recently played", onClick = onRecent) }
             line { SettingsLink("Most played", onClick = onMostPlayed) }
+            line { SettingsLink("Sources", "Music servers and audio links", onClick = onSources) }
             line {
                 Text("Browse", style = EvannaDesign.typography.titleSmall, modifier = Modifier.semantics { heading() })
             }

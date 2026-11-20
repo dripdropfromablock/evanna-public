@@ -3,6 +3,9 @@ package com.evanna.player.library
 import java.io.IOException
 import java.util.UUID
 import com.evanna.player.decoder.MusicTags
+import com.evanna.player.metadata.TagSidecar
+import com.evanna.player.metadata.TAG_SIDECAR_SUFFIX
+import com.evanna.player.metadata.tagSidecarName
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -15,19 +18,19 @@ private val playlistMimeTypes = setOf("audio/x-mpegurl", "audio/mpegurl", "audio
 private val audioExtensions = setOf("flac", "alac", "wav", "wave", "aif", "aiff", "aifc", "mp3", "m4a", "aac", "ogg", "oga", "opus", "wv", "ape", "tta", "dsf", "dff")
 internal enum class LibraryRootState { SCANNING, READY, PAUSED, UNAVAILABLE }
 internal data class LibraryDocument(val id: String, val key: String, val uri: String, val name: String,
-    val mime: String, val size: Long?, val modified: Long?)
+    val mime: String, val size: Long?, val modified: Long?, val tagDigest: String? = null, val tagSidecar: TagSidecar? = null)
 internal data class LibraryAudio(val title: String?, val artist: String?, val album: String?, val durationUs: Long?,
     val codec: String, val rate: Int, val bits: Int?, val channels: Int, val musicTags: MusicTags = MusicTags(),
     val sortTags:com.evanna.player.decoder.SortTags=com.evanna.player.decoder.SortTags())
 internal data class LibraryCached(val document: LibraryDocument, val audio: LibraryAudio?, val tagsVersion: Int = 1,
     val present: Boolean = true, val cueHidden: Boolean = false) {
     fun fingerprint() = LibraryFingerprint(document.uri, document.name, document.size, document.modified,
-        present, audio != null, tagsVersion, cueHidden)
+        present, audio != null, tagsVersion, cueHidden, document.tagDigest)
 }
 internal data class LibraryFingerprint(val uri: String, val name: String, val size: Long?, val modified: Long?,
-    val present: Boolean, val readable: Boolean, val tagsVersion: Int, val cueHidden: Boolean) {
+    val present: Boolean, val readable: Boolean, val tagsVersion: Int, val cueHidden: Boolean, val tagDigest: String? = null) {
     fun matches(document: LibraryDocument) = uri == document.uri && name == document.name &&
-        size == document.size && modified == document.modified
+        size == document.size && modified == document.modified && tagDigest == document.tagDigest
 
     fun canReuse(document: LibraryDocument) = readable && tagsVersion >= LIBRARY_TAGS_VERSION &&
         size != null && size > 0 && modified != null && modified > 0 && matches(document)
@@ -54,6 +57,7 @@ internal interface LibraryScanSource {
     suspend fun root(): LibraryDocument
     suspend fun children(id: String): List<LibraryDocument>
     suspend fun inspect(document: LibraryDocument): LibraryAudio
+    suspend fun withTagSidecar(audio: LibraryDocument, sidecar: LibraryDocument): LibraryDocument = audio
     /** At most [CUE_SHEET_MAX_BYTES]; larger or unreadable sheets throw IOException. */
     suspend fun readSheet(document: LibraryDocument): ByteArray = throw IOException("CUE_UNREADABLE")
 }
@@ -115,6 +119,9 @@ internal suspend fun scanLibrary(root: String, index: LibraryScanIndex, source: 
             visited += children.size
             if (visited > 100000 || depth > 128) throw ScanLimit()
             if (children.any { it.mime != DIRECTORY_MIME && it.name == ".nomedia" }) continue
+            val sidecars = children.filter {
+                it.mime != DIRECTORY_MIME && it.name.removeSuffix(".bak").endsWith(TAG_SIDECAR_SUFFIX)
+            }.groupBy { it.name }
             for (document in children) {
                 currentCoroutineContext().ensureActive()
                 if (!seen.add(document.id)) continue
@@ -125,9 +132,14 @@ internal suspend fun scanLibrary(root: String, index: LibraryScanIndex, source: 
                 val extension = document.name.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
                 val mime = document.mime.lowercase(java.util.Locale.ROOT)
                 if (extension == "cue") { sheets += document; continue }
+                if (document.name in sidecars) continue
                 if (extension in playlistExtensions || mime in playlistMimeTypes) continue
                 // A WavPack correction file is not playable on its own.
-                if (extension != "wvc" && (mime.startsWith("audio/") || extension in audioExtensions)) candidates += document
+                if (extension != "wvc" && (mime.startsWith("audio/") || extension in audioExtensions)) {
+                    val name = tagSidecarName(document.name)
+                    val sidecar = (sidecars[name] ?: sidecars[name + ".bak"])?.singleOrNull()
+                    candidates += if (sidecar == null) document else source.withTagSidecar(document, sidecar)
+                }
             }
             val siblings = hashMapOf<String, Pair<LibraryDocument, LibraryAudio>>()
             val hiddenBases = hashSetOf<String>()

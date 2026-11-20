@@ -45,6 +45,7 @@ internal interface PcmTrack : Closeable {
     /** Decoder boundaries verified for this codec/container; unknown trimming uses ordinary EOF. */
     val gaplessEligible: Boolean get() = false
     fun open(): PcmReader
+    fun open(cancel:com.evanna.player.network.CancelScope):PcmReader {cancel.checkActive();return open()}
     /** Release prepared resources while retaining a saved direct-file read grant for process restoration. */
     fun closeForRestore() = close()
 }

@@ -147,6 +147,9 @@ internal class UsbPlaybackController(
     private var output: PlaybackOutput? = null
     private var writer: Job? = null
     private var reader: PcmReader? = null
+    @Volatile private var openingSource:com.evanna.player.network.CancelScope?=null
+    private val sourceCancellationEpoch=java.util.concurrent.atomic.AtomicLong()
+    fun cancelPendingSource(){sourceCancellationEpoch.incrementAndGet();openingSource?.cancel()}
     private var sequence:GaplessReader?=null
     val completedTrack:PcmTrack? get()=sequence?.completed(mutableSnapshot.value.stats?.framesCompleted ?: 0)?.track
     private var transportStarted = false
@@ -195,17 +198,19 @@ internal class UsbPlaybackController(
     }
 
     suspend fun start(source: PcmFixture, allowConversion: Boolean = false): Boolean =
-        startSource(source, null, { FixtureReader(source) }, allowConversion)
+        startSource(source, null, { _ -> FixtureReader(source) }, allowConversion)
 
     suspend fun start(track: PcmTrack, allowConversion: Boolean = false, positionUs: Long = 0,continuation:GaplessPlayback?=null,
         historyPlayId:String=java.util.UUID.randomUUID().toString()): Boolean {
         require(positionUs >= 0 && (positionUs == 0L || track.seekable))
-        return startSource(track.format, track.id, track::open, allowConversion, positionUs,track,continuation,historyPlayId)
+        return startSource(track.format, track.id, {track.open(it)}, allowConversion, positionUs,track,continuation,historyPlayId)
     }
 
-    private suspend fun startSource(source: PcmFormat, trackId: String?, openReader: () -> PcmReader,
+    private suspend fun startSource(source: PcmFormat, trackId: String?, openReader: (com.evanna.player.network.CancelScope) -> PcmReader,
         allowConversion: Boolean, positionUs: Long = 0,track:PcmTrack?=null,continuation:GaplessPlayback?=null,
-        historyPlayId:String=java.util.UUID.randomUUID().toString()): Boolean = prepareCommand(releaseOnCancellation = false) {
+        historyPlayId:String=java.util.UUID.randomUUID().toString()): Boolean {
+        val requestedEpoch=sourceCancellationEpoch.get()
+        return prepareCommand(releaseOnCancellation = false) {
         if (quarantined) return@prepareCommand false
         val owned = output ?: return@prepareCommand fail(UsbPlaybackFailure.NOT_OPEN)
         invalidate()
@@ -221,6 +226,8 @@ internal class UsbPlaybackController(
             readiness = UsbPlaybackReadiness(), failure = null,queueId=null,sourceStartFrame=0,usbVolume=null,
             historyStream=++historyStream,historyPlayId=historyPlayId,historyQueueId=continuation?.queueId,leveling=LevelingDecision(),appliedGainDb=null,eqProcessed=false,eqPreampDb=0f,
             crossfeedProcessed=false)
+        val opening=com.evanna.player.network.CancelScope()
+        var unregisterReader:()->Unit={}
         try {
             currentCoroutineContext().ensureActive()
             val usb = owned as? UsbPlaybackOutput
@@ -250,17 +257,28 @@ internal class UsbPlaybackController(
             val androidBitPerfect=(owned as? AndroidAudioOutput)?.bitPerfect==true
             if(androidBitPerfect && !source.strictEligible)return@prepareCommand fail(UsbPlaybackFailure.UNSUPPORTED_FORMAT)
             currentCoroutineContext().ensureActive()
+            openingSource=opening
+            if(sourceCancellationEpoch.get()!=requestedEpoch)opening.cancel()
             try {
-                reader = openReader()
-                val actual = reader!!.format
+                opening.checkActive()
+                reader = openReader(opening)
+                val input=checkNotNull(reader)
+                unregisterReader=opening.watch {input.requestCancel()}
+                val actual = input.format
                 check(actual.sampleRate == source.sampleRate && actual.significantBits == source.significantBits &&
                     actual.channels == source.channels && actual.sourceBits == source.sourceBits &&
                     actual.codec == source.codec && actual.strictEligible == source.strictEligible)
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { return@prepareCommand abortStart(UsbPlaybackFailure.SOURCE_OPEN_FAILED) }
+            catch (_: Exception) {
+                return@prepareCommand if(sourceCancellationEpoch.get()!=requestedEpoch)abortCancelledStart()
+                else abortStart(UsbPlaybackFailure.SOURCE_OPEN_FAILED)
+            }
             try { if (positionUs > 0) reader!!.seekTo(positionUs) }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { return@prepareCommand abortStart(UsbPlaybackFailure.SOURCE_SEEK_FAILED) }
+            catch (_: Exception) {
+                return@prepareCommand if(sourceCancellationEpoch.get()!=requestedEpoch)abortCancelledStart()
+                else abortStart(UsbPlaybackFailure.SOURCE_SEEK_FAILED)
+            }
             if(track?.gaplessEligible==true && continuation!=null && (usb==null || plan?.resampled==false)) {
                 val decisions=java.util.concurrent.ConcurrentHashMap<String,Pair<LoudnessTags,LevelingDecision>>().apply {put(continuation.queueId,track.loudnessTags to streamLeveling)}
                 val continuous=GaplessReader(continuation.queueId,track,checkNotNull(reader),continuation.queue,continuation.focused,
@@ -282,6 +300,7 @@ internal class UsbPlaybackController(
                 mutableSnapshot.value=mutableSnapshot.value.copy(queueId=continuation.queueId)
             }
             currentCoroutineContext().ensureActive()
+            opening.checkActive()
             // A throwing start may still own partially submitted native transfers.
             transportStarted = true
             when (val started = owned.startOutput(source)) {
@@ -299,6 +318,7 @@ internal class UsbPlaybackController(
             currentCoroutineContext().ensureActive()
             healthFailure(owned)?.let { return@prepareCommand abortStart(it) }
             currentCoroutineContext().ensureActive()
+            opening.checkActive()
             mutableSnapshot.value = mutableSnapshot.value.copy(state = UsbPlaybackState.PLAYING)
             val session = generation
             val input = checkNotNull(reader)
@@ -310,9 +330,16 @@ internal class UsbPlaybackController(
                 if (stopWriter()) mutableSnapshot.value = mutableSnapshot.value.copy(state = UsbPlaybackState.PAUSED)
             }
             throw cancelled
+        } catch (_: AndroidOutputRouteChanged) {
+            if (sourceCancellationEpoch.get() != requestedEpoch) abortCancelledStart() else abortStart(UsbPlaybackFailure.ROUTE_CHANGED)
         } catch (_: Exception) {
-            abortStart(UsbPlaybackFailure.OUTPUT_FAILED)
+            if(sourceCancellationEpoch.get()!=requestedEpoch)abortCancelledStart()else abortStart(UsbPlaybackFailure.OUTPUT_FAILED)
+        } finally {
+            unregisterReader()
+            if(openingSource===opening)openingSource=null
         }
+    }
+
     }
 
     private suspend fun prepareCommand(releaseOnCancellation: Boolean, prepare: suspend () -> Boolean): Boolean {
@@ -342,6 +369,7 @@ internal class UsbPlaybackController(
     }
 
     suspend fun pause(): Boolean = withContext(Dispatchers.IO) {
+        cancelPendingSource()
         commands.withLock {
             if (quarantined) return@withLock false
             withContext(NonCancellable) {
@@ -550,6 +578,7 @@ internal class UsbPlaybackController(
     }
 
     suspend fun close(): Boolean = withContext(Dispatchers.IO) {
+        cancelPendingSource()
         commands.withLock {
             withContext(NonCancellable) {
                 invalidate()
@@ -577,6 +606,11 @@ internal class UsbPlaybackController(
 
     private suspend fun abortStart(reason: UsbPlaybackFailure): Boolean = withContext(NonCancellable) {
         if (stopWriter()) fail(reason) else false
+    }
+
+    private suspend fun abortCancelledStart():Boolean = withContext(NonCancellable) {
+        if(stopWriter())mutableSnapshot.value=mutableSnapshot.value.copy(state=UsbPlaybackState.PAUSED,failure=null)
+        false
     }
 
     private suspend fun stopWriter(): Boolean {
@@ -673,16 +707,19 @@ internal class UsbPlaybackController(
             var accepted = 0L
             while (currentCoroutineContext().isActive) {
                 val count = try { input.read(buffer, frames) } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { failure = UsbPlaybackFailure.SOURCE_READ_FAILED; break }
+                    catch (_: Exception) { -1 }
                 currentCoroutineContext().ensureActive()
-                if (count !in 0..frames) { failure = UsbPlaybackFailure.SOURCE_READ_FAILED; break }
-                if (count == 0) {
+                val readFailed = count !in 0..frames
+                if (readFailed) failure = UsbPlaybackFailure.SOURCE_READ_FAILED
+                if (count == 0 || readFailed) {
+                    if (readFailed && accepted == 0L) break
                     pcmBlocks.withLock {
                         currentCoroutineContext().ensureActive()
+                        // A bad read cannot invalidate PCM that was already checked and queued.
                         mutableSnapshot.update { if (it.generation == session) it.copy(state = UsbPlaybackState.DRAINING) else it }
                         val drained = owned.drain()
                         currentCoroutineContext().ensureActive()
-                        failure = healthFailure(owned, session) ?: if (drained) null else UsbPlaybackFailure.DRAIN_UNVERIFIED
+                        failure = healthFailure(owned, session) ?: failure ?: if (drained) null else UsbPlaybackFailure.DRAIN_UNVERIFIED
                         currentCoroutineContext().ensureActive()
                         ended = failure == null
                     }
@@ -719,7 +756,7 @@ internal class UsbPlaybackController(
         } catch (_: CancellationException) {
             // The command lane already owns stop/join and the next state.
         } catch (_: Exception) {
-            failure = UsbPlaybackFailure.OUTPUT_FAILED
+            if (failure == null) failure = UsbPlaybackFailure.OUTPUT_FAILED
         }
         if (failure == null && !ended) return
         // runCatching: JVM tests run without Android's Log.

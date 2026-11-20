@@ -3,10 +3,16 @@ package com.evanna.player.playback
 import com.evanna.player.decoder.MusicTags
 
 internal data class QueueSource(val libraryId: String?, val title: String, val artist: String?, val album: String?,
-    val durationUs: Long?, val fileUri: String? = null, val musicTags:MusicTags=MusicTags(),val create: () -> PcmTrack)
+    val durationUs: Long?, val fileUri: String? = null, val musicTags:MusicTags=MusicTags(),
+    val sourceRef:com.evanna.player.sources.SourceReference?=null,
+    val prepare:((com.evanna.player.network.CancelScope)->PcmTrack)?=null,val create: () -> PcmTrack) {
+    init {require(sourceRef==null || libraryId==null && fileUri==null)}
+    val personalId get()=sourceRef?.personalId ?: libraryId
+}
 internal data class QueueItem(val id: String, val title: String, val artist: String?, val album: String?, val durationUs: Long?,
     val musicTags:MusicTags=MusicTags())
 internal enum class QueueRepeat { OFF, SONG, QUEUE }
+internal enum class SearchQueueAction { PLAY, NEXT, APPEND }
 internal data class PlaybackQueue(val items: List<QueueItem> = emptyList(), val index: Int = -1,
     val saveFailed: Boolean = false, val restoreFailed: Boolean = false,
     val shuffleEnabled:Boolean=false, val repeat:QueueRepeat=QueueRepeat.OFF,

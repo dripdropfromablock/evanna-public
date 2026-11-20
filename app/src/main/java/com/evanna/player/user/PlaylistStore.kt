@@ -11,9 +11,10 @@ internal fun UserDatabase.playlist(id:Long,expectedRevision:Long?=null):Playlist
     try {
         val head=db.rawQuery("SELECT name,revision FROM playlists WHERE id=?",arrayOf(id.toString())).use {if(it.moveToFirst())it.getString(0) to it.getLong(1) else null} ?: return null
         if(expectedRevision!=null && expectedRevision!=head.second)return null
-        val items=db.rawQuery("SELECT track_id,title,artist,album,duration_us,file_name FROM playlist_items WHERE playlist_id=? ORDER BY position LIMIT 1001",arrayOf(id.toString())).use {cursor ->
+        val items=db.rawQuery("SELECT track_id,title,artist,album,duration_us,file_name,source_ref FROM playlist_items WHERE playlist_id=? ORDER BY position LIMIT 1001",arrayOf(id.toString())).use {cursor ->
             buildList {while(cursor.moveToNext())add(PlaylistEntry(if(cursor.isNull(0))null else cursor.getString(0),cursor.getString(1),cursor.getString(2),cursor.getString(3),
-                if(cursor.isNull(4))null else cursor.getLong(4),cursor.getString(5)))}
+                if(cursor.isNull(4))null else cursor.getLong(4),cursor.getString(5),
+                if(cursor.isNull(6))null else checkNotNull(com.evanna.player.sources.SourceReference.parse(cursor.getString(6)))))}
         }
         check(items.size<=PLAYLIST_LIMIT)
         db.setTransactionSuccessful();return Playlist(id,head.first,head.second,items)
@@ -39,6 +40,7 @@ internal fun UserDatabase.savePlaylist(id:Long?,name:String,items:List<PlaylistE
         items.forEachIndexed {index,item ->db.insertOrThrow("playlist_items",null,ContentValues().apply {
             put("playlist_id",key);put("position",index);put("track_id",item.trackId);put("title",item.title)
             put("artist",item.artist);put("album",item.album);put("duration_us",item.durationUs);put("file_name",item.fileName)
+            put("source_ref",item.sourceRef?.encoded)
         })}
         db.setTransactionSuccessful();key
     }finally {db.endTransaction()}

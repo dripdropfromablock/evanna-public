@@ -13,9 +13,11 @@ import kotlinx.coroutines.runBlocking
 @UnstableApi
 class UsbAdapterProbe : Instrumentation() {
     private var probe: String? = null
+    private var fixture: String? = null
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         probe = arguments?.getString("probe")
+        fixture = arguments?.getString("fixture")
         start()
     }
 
@@ -24,6 +26,90 @@ class UsbAdapterProbe : Instrumentation() {
         waitForIdleSync()
         val result = Bundle()
         try {
+            if (probe == "sources-playback") {
+                result.putString("report", com.evanna.player.sources.SourcesPlaybackProbe.run(this))
+                finish(Activity.RESULT_OK, result)
+                return
+            }
+            if (probe in listOf("music-search-online", "music-search-offline", "music-search-magnet",
+                    "music-search-soulseek", "music-search-ccmixter", "music-search-torrent-inputs")) {
+                val search = com.evanna.player.webmusic.MusicSearchProbe
+                val report = when (probe) {
+                    "music-search-online" -> search.online(this)
+                    "music-search-offline" -> search.offline(this)
+                    "music-search-soulseek" -> search.soulseek(this, checkNotNull(fixture))
+                    "music-search-magnet" -> search.magnet(this, checkNotNull(fixture))
+                    "music-search-ccmixter" -> search.ccMixter(this)
+                    "music-search-torrent-inputs" -> search.torrentInputs(this, checkNotNull(fixture))
+                    else -> error("Unknown music search probe")
+                }
+                result.putString("report", report)
+                finish(Activity.RESULT_OK, result)
+                return
+            }
+            if (probe == "web-site-lists") {
+                result.putString("report", com.evanna.player.webmusic.WebMusicProbe.siteLists(this))
+                finish(Activity.RESULT_OK, result)
+                return
+            }
+            if (probe == "web-site-lists-ui") {
+                result.putString("report", com.evanna.player.webmusic.WebSiteListUiProbe.run(this, checkNotNull(fixture)))
+                finish(Activity.RESULT_OK, result)
+                return
+            }
+            if (probe == "web-music-catalog") {
+                val catalog = com.evanna.player.webmusic.MusicCatalog.search("Hallelujah Leonard Cohen",
+                    com.evanna.player.network.CancelScope())
+                val recording = catalog.recordings.firstOrNull {
+                    it.title.contains("Hallelujah", ignoreCase = true) &&
+                        it.artist.contains("Leonard Cohen", ignoreCase = true)
+                } ?: error("${catalog.provider} returned ${catalog.recordings.size} recordings without a match. " +
+                    catalog.recordings.take(3).joinToString { "${it.title} / ${it.artist}" })
+                check(catalog.recordings.distinctBy { it.id }.size == catalog.recordings.size)
+                check(com.evanna.player.webmusic.CatalogSite.entries.all { it.searchUrl(recording).isHttps })
+                result.putString("report", "PASS: ${catalog.provider} returned the recording and both site links")
+                finish(Activity.RESULT_OK, result)
+                return
+            }
+            if (probe == "web-music-seek") {
+                result.putString("report", com.evanna.player.webmusic.WebMusicProbe.seekStream(this))
+                finish(Activity.RESULT_OK, result)
+                return
+            }
+            if (probe == "web-music" || probe == "web-music-browser") {
+                result.putString("report", com.evanna.player.webmusic.WebMusicProbe.run(this, probe == "web-music-browser"))
+                finish(Activity.RESULT_OK, result)
+                return
+            }
+            if(probe=="radio") {
+                result.putString("report","PASS: "+com.evanna.player.sources.radio.RadioProbe.run(this))
+                finish(Activity.RESULT_OK,result);return
+            }
+            if(probe=="connected-adapters") {
+                result.putString("report","PASS: "+listOf(
+                    com.evanna.player.sources.upnp.UpnpProbe.run(),
+                    com.evanna.player.sources.plex.PlexProbe.run(),
+                    com.evanna.player.sources.jellyfin.JellyfinProbe.run(),
+                    com.evanna.player.sources.subsonic.SubsonicProbe.run(),
+                    com.evanna.player.sources.webdav.WebDavProbe.run(),
+                    com.evanna.player.casting.RendererProbe.run(),
+                ).joinToString("\n"))
+                finish(Activity.RESULT_OK,result);return
+            }
+            if(probe=="connected-foundation") {
+                result.putString("report",com.evanna.player.sources.ConnectedFoundationProbe.run(this))
+                finish(Activity.RESULT_OK,result);return
+            }
+            if (probe == "network-usb" || probe == "network-usb-disconnect") {
+                result.putString("report", com.evanna.player.decoder.NetworkUsbProbe.run(this, probe == "network-usb-disconnect"))
+                finish(Activity.RESULT_OK, result)
+                return
+            }
+            if (probe == "network-streaming" || probe == "network-https") {
+                result.putString("report", com.evanna.player.decoder.NetworkStreamingProbe.run(this, probe == "network-https"))
+                finish(Activity.RESULT_OK, result)
+                return
+            }
             if (probe == "share-cards") {
                 result.putString("report", com.evanna.player.ShareCardsProbe.run(this))
                 finish(Activity.RESULT_OK, result)

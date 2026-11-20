@@ -1,7 +1,7 @@
 package com.evanna.player.user
 
 internal data class PlayedSong(val eventId:String,val trackId:String,val playedAt:Long) {
-    init {require(eventId.length in 1..100 && validLibraryId(trackId) && playedAt>=0)}
+    init {require(eventId.length in 1..100 && validPersonalId(trackId) && playedAt>=0)}
 }
 internal enum class PersonalView(val label:String) { FAVORITES("Favorites"), RECENT("Recently played"), MOST("Most played") }
 internal data class PersonalSong(val id:String,val plays:Long)
@@ -36,7 +36,7 @@ internal fun UserDatabase.personalWindow(view:PersonalView,startId:String?):List
     try {
         val base=personalQuery(view)
         val offset=if(startId==null)0 else {
-            if(!validLibraryId(startId))return emptyList()
+            if(!validPersonalId(startId))return emptyList()
             val anchor=db.rawQuery("SELECT plays,sort_time FROM ($base) WHERE track_id=?",arrayOf(startId)).use {c ->
                 if(!c.moveToFirst())return emptyList()
                 c.getLong(0) to c.getLong(1)

@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <memory>
 #include <mutex>
+#include <poll.h>
 #include <stdexcept>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -35,6 +36,8 @@ bool wavpackHybrid(const AVPacket* packet) {
 struct Decoder {
     int fd = -1;
     int64_t size = 0, position = 0, bytesLeft = 0;
+    bool sequential = false;
+    bool fastRangeSeek = false;
     std::shared_ptr<std::atomic<bool>> cancelled = std::make_shared<std::atomic<bool>>(false);
     JNIEnv* scanEnv = nullptr;
     jobject scanSignal = nullptr;
@@ -76,7 +79,21 @@ struct Decoder {
         if (self.interrupted()) return AVERROR_EXIT;
         if (count <= 0 || count > self.bytesLeft) { self.bytesLeft = -1; return AVERROR(EFBIG); }
         ssize_t result;
-        do { result = pread(self.fd, buffer, count, self.position); } while (result < 0 && errno == EINTR && !self.interrupted());
+        if (self.sequential) {
+            pollfd pipe{self.fd, POLLIN, 0};
+            for (;;) {
+                if (self.interrupted()) return AVERROR_EXIT;
+                const int ready = poll(&pipe, 1, 50);
+                if (ready < 0 && errno == EINTR) continue;
+                if (ready < 0) return AVERROR(errno);
+                if (ready == 0) continue;
+                result = ::read(self.fd, buffer, count);
+                if (result < 0 && errno == EINTR) continue;
+                break;
+            }
+        } else {
+            do { result = pread(self.fd, buffer, count, self.position); } while (result < 0 && errno == EINTR && !self.interrupted());
+        }
         if (result < 0) return AVERROR(errno);
         if (result == 0) return AVERROR_EOF;
         self.position += result;
@@ -158,32 +175,37 @@ struct Decoder {
         return true;
     }
 
-    void open(int borrowedFd, bool metadataOnly = false) {
+    void open(int borrowedFd, bool metadataOnly = false, bool pipe = false) {
         fd = fcntl(borrowedFd, F_DUPFD_CLOEXEC, 0);
         require(fd >= 0, "DECODER_DESCRIPTOR_ERROR");
         struct stat status{};
-        require(fstat(fd, &status) == 0 && S_ISREG(status.st_mode) && status.st_size > 0, "DECODER_LOCAL_REGULAR_FILE_REQUIRED");
+        require(fstat(fd, &status) == 0, "DECODER_DESCRIPTOR_ERROR");
+        require(pipe ? S_ISFIFO(status.st_mode) : S_ISREG(status.st_mode) && status.st_size > 0,
+            pipe ? "DECODER_PIPE_REQUIRED" : "DECODER_LOCAL_REGULAR_FILE_REQUIRED");
+        sequential = pipe;
         size = status.st_size;
         beginOperation();
-        validateChunkExtents();
+        if (!sequential) validateChunkExtents();
         auto* buffer = static_cast<uint8_t*>(av_malloc(32768));
         require(buffer != nullptr, "DECODER_ALLOCATION_FAILED");
-        io = avio_alloc_context(buffer, 32768, 0, this, read, nullptr, seek);
+        io = avio_alloc_context(buffer, 32768, 0, this, read, nullptr, sequential ? nullptr : seek);
         if (!io) { av_free(buffer); throw Failure{"DECODER_ALLOCATION_FAILED"}; }
         format = avformat_alloc_context();
         require(format != nullptr, "DECODER_ALLOCATION_FAILED");
         format->pb = io;
         format->flags |= AVFMT_FLAG_CUSTOM_IO;
+        // shortcut: streamed MP3 seeks use FFmpeg's approximate index to avoid downloading preceding audio.
+        if (fastRangeSeek) format->flags |= AVFMT_FLAG_FAST_SEEK;
         format->interrupt_callback = {interrupt, this};
         format->io_open = rejectSecondary;
-        format->probesize = 1024 * 1024;
-        format->max_analyze_duration = AV_TIME_BASE;
+        format->probesize = sequential ? 64 * 1024 : 1024 * 1024;
+        format->max_analyze_duration = sequential ? AV_TIME_BASE / 2 : AV_TIME_BASE;
         format->max_streams = 8;
         format->max_index_size = 1024 * 1024;
         format->error_recognition = AV_EF_CRCCHECK | AV_EF_EXPLODE;
         // DSF and DSDIFF ("iff") decode to float PCM at 1/8 of the DSD rate; that is always a conversion.
-        format->format_whitelist = av_strdup("wav,aiff,flac,mov,mp3,aac,ogg,wv,ape,tta,dsf,iff");
-        format->codec_whitelist = av_strdup(codecs);
+        format->format_whitelist = av_strdup(sequential ? "mp3,aac,ogg" : "wav,aiff,flac,mov,mp3,aac,ogg,wv,ape,tta,dsf,iff");
+        format->codec_whitelist = av_strdup(sequential ? "mp3float,aac,vorbis,opus" : codecs);
         require(format->format_whitelist && format->codec_whitelist, "DECODER_ALLOCATION_FAILED");
         int result = avformat_open_input(&format, nullptr, nullptr, nullptr);
         check();
@@ -200,7 +222,8 @@ struct Decoder {
         if (metadataOnly && readHeaderMetadata()) return;
         const auto* parameters = format->streams[stream]->codecpar;
         const auto* implementation = avcodec_find_decoder(parameters->codec_id);
-        require(implementation != nullptr, "DECODER_NO_SUPPORTED_AUDIO");
+        require(implementation && (!sequential || av_match_list(implementation->name, format->codec_whitelist, ',')),
+            "DECODER_NO_SUPPORTED_AUDIO");
         codec = avcodec_alloc_context3(implementation);
         require(codec != nullptr, "DECODER_ALLOCATION_FAILED");
         require(avcodec_parameters_to_context(codec, parameters) >= 0, "DECODER_CORRUPT_OR_UNSUPPORTED");
@@ -231,12 +254,12 @@ struct Decoder {
             (channels == 1 ? AV_CH_LAYOUT_MONO : AV_CH_LAYOUT_STEREO)), "DECODER_UNSUPPORTED_LAYOUT");
         const auto duration = format->streams[stream]->duration;
         const char* demuxer = format->iformat->name;
-        const bool timed = duration != AV_NOPTS_VALUE && duration > 0;
+        const bool timed = !sequential && duration != AV_NOPTS_VALUE && duration > 0;
         // FFmpeg applies packet skip/discard metadata; raw ADTS and untagged MP3 lack exact boundaries.
-        gaplessEligible = lossless || (timed && (
+        gaplessEligible = !sequential && (lossless || (timed && (
             (codec->codec_id == AV_CODEC_ID_MP3 && !strcmp(demuxer, "mp3") && format->streams[stream]->start_time > 0) ||
-            ((codec->codec_id == AV_CODEC_ID_OPUS || codec->codec_id == AV_CODEC_ID_VORBIS) && !strcmp(demuxer, "ogg"))));
-        if (duration != AV_NOPTS_VALUE && duration >= 0) {
+            ((codec->codec_id == AV_CODEC_ID_OPUS || codec->codec_id == AV_CODEC_ID_VORBIS) && !strcmp(demuxer, "ogg")))));
+        if (!sequential && duration != AV_NOPTS_VALUE && duration >= 0) {
             durationUs = av_rescale_q(duration, format->streams[stream]->time_base, AV_TIME_BASE_Q);
             if (lossless && format->duration_estimation_method != AVFMT_DURATION_FROM_BITRATE) {
                 expectedFrames = av_rescale_q(duration, format->streams[stream]->time_base, AVRational{1, rate});
@@ -458,9 +481,10 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM*, void*) {
     av_max_alloc(16 * 1024 * 1024);
     return JNI_VERSION_1_6;
 }
-static jlongArray openDecoder(JNIEnv* env, jint fd, jobject signal) {
+static jlongArray openDecoder(JNIEnv* env, jint fd, jobject signal, bool pipe = false, bool fastRangeSeek = false) {
     return guarded(env, [&]() -> jlongArray {
         auto decoder = std::make_shared<Decoder>();
+        decoder->fastRangeSeek = fastRangeSeek;
         if (signal) {
             auto type = env->GetObjectClass(signal);
             if (!type) return nullptr;
@@ -470,25 +494,38 @@ static jlongArray openDecoder(JNIEnv* env, jint fd, jobject signal) {
             decoder->scanEnv = env;
             decoder->scanSignal = signal;
         }
-        decoder->open(fd, signal != nullptr);
+        decoder->open(fd, signal != nullptr && !pipe, pipe);
         if (signal) decoder->check();
         decoder->scanSignal = nullptr;
         decoder->scanEnv = nullptr;
-        auto array = env->NewLongArray(8);
+        bool hasArtwork = false;
+        for (unsigned index = 0; index < decoder->format->nb_streams; ++index) {
+            const auto* stream = decoder->format->streams[index];
+            if ((stream->disposition & AV_DISPOSITION_ATTACHED_PIC) && stream->attached_pic.data && stream->attached_pic.size > 0) {
+                hasArtwork = true;
+                break;
+            }
+        }
+        auto array = env->NewLongArray(9);
         if (!array) return nullptr;
         std::lock_guard<std::mutex> lock(handlesMutex);
         require(nextHandle > 0 && nextHandle < INT64_MAX, "DECODER_HANDLE_LIMIT");
         const jlong id = nextHandle++;
-        const jlong info[] = {id, decoder->rate, decoder->bits, decoder->channels, decoder->durationUs, decoder->lossless, decoder->quantized, decoder->gaplessEligible};
-        env->SetLongArrayRegion(array, 0, 8, info);
+        const jlong info[] = {id, decoder->rate, decoder->bits, decoder->channels, decoder->durationUs, decoder->lossless,
+            decoder->quantized, decoder->gaplessEligible, hasArtwork};
+        env->SetLongArrayRegion(array, 0, 9, info);
         if (env->ExceptionCheck()) return nullptr;
         handles.emplace(id, std::move(decoder));
         return array;
     });
 }
 extern "C" JNIEXPORT jlongArray JNICALL
-Java_com_evanna_player_decoder_NativeDecoder_nativeOpen(JNIEnv* env, jclass, jint fd) {
-    return openDecoder(env, fd, nullptr);
+Java_com_evanna_player_decoder_NativeDecoder_nativeOpen(JNIEnv* env, jclass, jint fd, jboolean fastRangeSeek) {
+    return openDecoder(env, fd, nullptr, false, fastRangeSeek == JNI_TRUE);
+}
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_evanna_player_decoder_NativeDecoder_nativeOpenStream(JNIEnv* env, jclass, jint fd, jobject signal) {
+    return openDecoder(env, fd, signal, true);
 }
 extern "C" JNIEXPORT jlongArray JNICALL
 Java_com_evanna_player_decoder_NativeDecoder_nativeInspect(JNIEnv* env, jclass, jint fd, jobject signal) {
@@ -654,12 +691,13 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_evanna_player_decoder_NativeDecoder_nativeSeek(JNIEnv* env, jclass, jlong id, jlong positionUs) {
     guarded(env, [&] {
         auto original = lookup(id);
-        require(positionUs >= 0 && !original->failed, "DECODER_INVALID_SEEK");
+        require(positionUs >= 0 && !original->failed && !original->sequential, "DECODER_INVALID_SEEK");
         require(!original->cancelled->load(), "DECODER_CANCELLED");
         const int64_t target = av_rescale_rnd(positionUs, original->rate, AV_TIME_BASE, AV_ROUND_UP);
         require(target >= 0 && target < INT64_MAX, "DECODER_INVALID_SEEK");
         auto replacement = std::make_shared<Decoder>();
         replacement->cancelled = original->cancelled;
+        replacement->fastRangeSeek = original->fastRangeSeek;
         replacement->open(original->fd);
         require(replacement->rate == original->rate && replacement->bits == original->bits &&
             replacement->channels == original->channels && replacement->representation == original->representation &&

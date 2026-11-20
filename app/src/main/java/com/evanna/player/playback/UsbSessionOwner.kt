@@ -26,7 +26,7 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
     private val record: (DiagnosticEvent) -> Unit = {},
     private val persistence: QueuePersistence? = null,
     private val restoreSource: (SavedQueueEntry) -> QueueSource = { saved ->
-        QueueSource(saved.libraryId,saved.title,saved.artist,saved.album,saved.durationUs,saved.fileUri,saved.musicTags) { error("SOURCE_RESELECTION_REQUIRED") }
+        QueueSource(saved.libraryId,saved.title,saved.artist,saved.album,saved.durationUs,saved.fileUri,saved.musicTags,saved.sourceRef) { error("SOURCE_RESELECTION_REQUIRED") }
     },
     private val releaseSavedSource: (String) -> Unit = {},
     private val shuffleOrder: (List<String>) -> List<String> = {it.shuffled()},
@@ -36,7 +36,10 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
     val snapshot = controller.snapshot
     private val commands = Mutex()
     private val librarySelection = java.util.concurrent.atomic.AtomicLong()
-    fun nextLibrarySelection(): Long = librarySelection.incrementAndGet()
+    @Volatile private var preparingSource:com.evanna.player.network.CancelScope?=null
+    private val mutableSourcePreparing=MutableStateFlow(false)
+    val sourcePreparing=mutableSourcePreparing.asStateFlow()
+    fun nextLibrarySelection(): Long {controller.cancelPendingSource();preparingSource?.cancel();return librarySelection.incrementAndGet()}
     private val entries = mutableListOf<OwnedQueueEntry>()
     private val mutableQueue = MutableStateFlow(PlaybackQueue())
     val queue = mutableQueue.asStateFlow()
@@ -63,10 +66,28 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
     var sourceSelectionFailed = false
         private set
     private var fileMode = false
+    @Volatile private var rendererSelected = false
+
+    suspend fun enterRendererRoute(): Boolean = command(interruptSelection = true) {
+        if (rendererSelected) return@command true
+        if (!pauseLocked() || !controller.close()) return@command false
+        rendererSelected = true
+        mutableSleepTimer.value = SleepTimerState()
+        publishQueue()
+        true
+    }
+
+    suspend fun leaveRendererRoute() = command(save = false) { rendererSelected = false }
+
+    suspend fun saveRendererPosition(id: String, positionMs: Long) = command {
+        if (rendererSelected && queue.value.current?.id == id && positionMs in 0..Long.MAX_VALUE / 1000)
+            pendingPositionUs = positionMs * 1000
+    }
 
     suspend fun initialize() = command(save=false) { }
     suspend fun checkpoint() = command { }
     suspend fun setSleepTimer(mode:SleepMode,minutes:Int=0):Boolean=command(save=false) {
+        if (rendererSelected) return@command false
         if(mode==SleepMode.MINUTES && minutes !in 1..180 || mode!=SleepMode.MINUTES && minutes!=0)return@command false
         if(mode==SleepMode.OFF) {mutableSleepTimer.value=SleepTimerState();publishQueue();return@command true}
         if(mode==SleepMode.MINUTES) {
@@ -98,7 +119,7 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
     suspend fun queueSource(id: String): QueueSource? = command(save=false) { entries.firstOrNull { it.item.id == id }?.source }
     suspend fun favoriteCurrent(id:String,save:(String)->Boolean):Boolean=command(save=false) {
         if(queue.value.current?.id!=id)return@command false
-        val key=entries.firstOrNull {it.item.id==id}?.source?.libraryId?.takeIf {com.evanna.player.user.validLibraryId(it)}
+        val key=entries.firstOrNull {it.item.id==id}?.source?.personalId?.takeIf {com.evanna.player.user.validPersonalId(it)}
             ?: return@command false
         withContext(NonCancellable+Dispatchers.IO){save(key)}
     }
@@ -149,7 +170,7 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
     }
     private fun continuation()=entries.getOrNull(queueIndex)?.let {
         GaplessPlayback(it.item.id,{continuousQueue.get()},{focus.held},entries.mapNotNull {entry ->
-            entry.source.libraryId?.takeIf {id->com.evanna.player.user.validLibraryId(id)}?.let {id->entry.item.id to id}
+            entry.source.personalId?.takeIf {id->com.evanna.player.user.validPersonalId(id)}?.let {id->entry.item.id to id}
         }.toMap())
     }
     private suspend fun pauseForEdit():Boolean? {
@@ -166,7 +187,7 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
         try {
             val saved=SavedQueue(entries.map { entry ->
                 SavedQueueEntry(entry.item.id,entry.source.libraryId,entry.source.fileUri,entry.item.title,entry.item.artist,entry.item.album,
-                    entry.track?.format?.durationUs ?: entry.item.durationUs,entry.item.musicTags)
+                    entry.track?.format?.durationUs ?: entry.item.durationUs,entry.item.musicTags,entry.source.sourceRef)
             },queueIndex,if(entries.isEmpty() || snapshot.value.state==UsbPlaybackState.ENDED) 0 else positionOverride ?: positionUs,
                 shuffleEnabled,repeat,playOrder.toList())
             if(saved!=lastSaved) withContext(NonCancellable+Dispatchers.IO){store.save(saved)}
@@ -209,6 +230,7 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
 
     suspend fun open(deviceId: Int, onlyIfUnselected: Boolean = false, profileLoader: suspend () -> DacProfile? = { null }): Boolean =
         command(interruptSelection = !onlyIfUnselected, save = !onlyIfUnselected) {
+        if (rendererSelected) return@command false
         if (onlyIfUnselected && snapshot.value.route != null) return@command false
         record(DiagnosticEvent.OPEN)
         focusDenied = false
@@ -225,6 +247,7 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
 
     suspend fun openAndroid(bitPerfect: Boolean = false, onlyIfUnselected: Boolean = false): Boolean =
         command(interruptSelection = !onlyIfUnselected, save = !onlyIfUnselected) {
+        if (rendererSelected) return@command false
         if (onlyIfUnselected && snapshot.value.route != null) return@command false
         openAndroidLocked(bitPerfect)
     }
@@ -303,6 +326,7 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
     suspend fun play(allowConversion: Boolean = false): Boolean = command(interruptSelection=true) { playLocked(allowConversion) }
 
     private suspend fun playLocked(allowConversion: Boolean = false): Boolean {
+        if (rendererSelected) return false
         record(DiagnosticEvent.PLAY)
         if (selectedTrack == null && queueIndex in entries.indices) {
             if(!selectQueueLocked(queueIndex,false,pendingPositionUs)) return false
@@ -336,23 +360,31 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
         }
     }
 
-    suspend fun enqueue(source: QueueSource): Boolean = command { enqueueLocked(source) }
+    suspend fun enqueue(source: QueueSource): Boolean = command { enqueueLocked(listOf(source)) }
+
+    suspend fun enqueueSelection(next: Boolean, resolve: () -> List<QueueSource>?): Boolean = command {
+        val sources = withContext(Dispatchers.IO) { resolve() } ?: return@command false
+        enqueueLocked(sources, next)
+    }
 
     suspend fun libraryQueue(append: Boolean, next: Boolean = false, resolve: () -> QueueSource?): Boolean = command(interruptSelection=!append) {
         val source = withContext(Dispatchers.IO) { resolve() } ?: return@command false
-        if (append) enqueueLocked(source,next) else replaceQueueLocked(source)
+        if (append) enqueueLocked(listOf(source),next) else replaceQueueLocked(source)
     }
 
-    suspend fun libraryContext(request: Long = nextLibrarySelection(), resolve: () -> ContextQueue?): Boolean = command {
+    suspend fun libraryContext(request: Long = nextLibrarySelection(),
+        resolve: (Set<com.evanna.player.sources.SourceReference>) -> ContextQueue?): Boolean = command {
         if (request != librarySelection.get()) return@command false
-        val selection = withContext(Dispatchers.IO) { resolve() } ?: return@command false
+        val pinned = entries.mapNotNull { it.source.sourceRef }.toSet()
+        val selection = withContext(Dispatchers.IO) { resolve(pinned) } ?: return@command false
         currentCoroutineContext().ensureActive()
         if (request != librarySelection.get()) return@command false
         replaceQueueLocked(selection.sources,selection.startIndex,selection.shuffle,true,true) { request == librarySelection.get() }
     }
 
-    private suspend fun enqueueLocked(source: QueueSource, next: Boolean = false): Boolean {
-        if (entries.size >= 1000 || source.title.length !in 1..512) return false
+    private suspend fun enqueueLocked(sources: List<QueueSource>, next: Boolean = false): Boolean {
+        val currentSize = if (entries.isEmpty() && selectedTrack != null) 1 else entries.size
+        if (sources.size !in 1..(1000 - currentSize) || sources.any { it.title.length !in 1..512 }) return false
         val playing=snapshot.value
         val resume=pauseForEdit() ?: return false
         if (snapshot.value.state == UsbPlaybackState.ENDED) focus.abandon()
@@ -361,13 +393,10 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
             addEntry(QueueSource(null, "Local audio file", null, null, track.format.durationUs) { error("Source ownership lost") }, track)
             queueIndex = 0
         }
-        addEntry(source)
-        if (next && queueIndex >= 0) {
-            val inserted = entries.removeAt(entries.lastIndex)
-            entries.add(queueIndex+1,inserted)
-            playOrder.remove(inserted.item.id)
-            playOrder.add(playOrder.indexOf(entries[queueIndex].item.id)+1,inserted.item.id)
-        }
+        val afterCurrent = next && queueIndex >= 0
+        val at = if (afterCurrent) queueIndex + 1 else entries.size
+        val playAt = if (afterCurrent) playOrder.indexOf(entries[queueIndex].item.id) + 1 else playOrder.size
+        sources.forEachIndexed { offset, source -> addEntry(source, at = at + offset, playAt = playAt + offset) }
         return if (queueIndex < 0) { queueIndex = 0; publishQueue(); selectQueueLocked(0, false) }
         else { publishQueue();if(resume)playLocked(playing.conversionAllowed && playing.queueId==queue.value.current?.id) else true }
     }
@@ -510,11 +539,11 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
         false
     }
 
-    private fun addEntry(source: QueueSource, track: PcmTrack? = null) {
+    private fun addEntry(source: QueueSource, track: PcmTrack? = null, at: Int = entries.size, playAt: Int = playOrder.size) {
         restoreBlocked=false
         val item=QueueItem("evanna:local:queue:${UUID.randomUUID()}", source.title, source.artist, source.album, source.durationUs,source.musicTags)
-        entries += OwnedQueueEntry(source,item,track)
-        playOrder+=item.id
+        entries.add(at, OwnedQueueEntry(source,item,track))
+        playOrder.add(playAt, item.id)
     }
     private fun publishQueue() {
         val state=PlaybackQueue(entries.map { it.item },queueIndex,saveFailed,restoreBlocked,shuffleEnabled,repeat,playOrder.toList(),historySaveFailed)
@@ -522,8 +551,9 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
         if(timer.mode in listOf(SleepMode.SONG,SleepMode.ALBUM) &&
             (if(timer.mode==SleepMode.SONG || timer.albumKey==null)(state.current?.id ?: selectedTrack?.id)!=timer.targetId else state.current?.let(::sleepAlbumKey)!=timer.albumKey))
             mutableSleepTimer.value=SleepTimerState()
-        continuousQueue.set(GaplessQueue(state,entries.associate{it.item.id to it.source.create},
-            state.items.filter {mutableSleepTimer.value.blocks(state,it.id)}.map {it.id}.toSet()))
+        continuousQueue.set(GaplessQueue(state,entries.filter {it.source.sourceRef==null}.associate{it.item.id to it.source.create},
+            (state.items.filter {mutableSleepTimer.value.blocks(state,it.id)}.map {it.id}+
+                entries.filter {it.source.sourceRef!=null}.map {it.item.id}).toSet()))
         mutableQueue.value=state
     }
 
@@ -532,12 +562,26 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
         if (!continuePlaying) focus.abandon()
         focusDenied = false; fileMode = true; queueIndex = index; selectedTrack = null; historyPlayId=UUID.randomUUID().toString();publishQueue()
         pendingPositionUs=positionUs
+        if (rendererSelected) {
+            sourceSelectionFailed = false
+            return true
+        }
         val entry = entries[index]
         var acquired: PcmTrack? = null
+        val prepareEpoch=librarySelection.get()
+        val preparation=com.evanna.player.network.CancelScope()
+        preparingSource=preparation;mutableSourcePreparing.value=true
+        if(prepareEpoch!=librarySelection.get())preparation.cancel()
         try {
-            withContext(Dispatchers.IO) { acquired = entry.track ?: entry.source.create() }
+            withContext(Dispatchers.IO) {
+                preparation.checkActive()
+                acquired = entry.track ?: entry.source.prepare?.invoke(preparation) ?: entry.source.create()
+                preparation.checkActive()
+            }
             entry.track = checkNotNull(acquired); selectedTrack = acquired
-            if (!controller.setPausedPosition(selectedTrack!!, minOf(positionUs, selectedTrack!!.format.durationUs ?: Long.MAX_VALUE))) return false
+            val track=checkNotNull(selectedTrack)
+            pendingPositionUs=if(track.seekable)minOf(positionUs,track.format.durationUs ?: Long.MAX_VALUE)else 0L
+            if (!controller.setPausedPosition(track,pendingPositionUs)) return false
             sourceSelectionFailed = false
             record(DiagnosticEvent.SOURCE_SELECTED)
             return if (continuePlaying && focus.held) playLocked() else true
@@ -547,8 +591,10 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
             sourceSelectionFailed = true; focus.abandon(); throw cancelled
         } catch (_: Exception) {
             if (acquired != null) entry.track = acquired
-            sourceSelectionFailed = true; focus.abandon(); record(DiagnosticEvent.SOURCE_SELECTION_FAILED); return false
-        }
+            sourceSelectionFailed = !preparation.cancelled; focus.abandon()
+            if(sourceSelectionFailed)record(DiagnosticEvent.SOURCE_SELECTION_FAILED)
+            return false
+        } finally {if(preparingSource===preparation)preparingSource=null;mutableSourcePreparing.value=false}
     }
 
     private fun closeSources() {
@@ -564,6 +610,7 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
     suspend fun pause(): Boolean = command(interruptSelection=true) {pauseLocked()}
 
     private suspend fun pauseLocked():Boolean {
+        if (rendererSelected) return true
         record(DiagnosticEvent.PAUSE)
         val completed=snapshot.value.state==UsbPlaybackState.ENDED
         val anchor=positionUs
@@ -579,6 +626,7 @@ internal class UsbSessionOwner(val controller: UsbPlaybackController, private va
     }
 
     suspend fun seekTo(positionUs: Long): Boolean = command(interruptSelection=true) {
+        if (rendererSelected) return@command false
         val track = selectedTrack?.takeIf { it.seekable && !sourceSelectionFailed } ?: return@command false
         require(positionUs >= 0)
         val position = minOf(positionUs, track.format.durationUs ?: Long.MAX_VALUE)

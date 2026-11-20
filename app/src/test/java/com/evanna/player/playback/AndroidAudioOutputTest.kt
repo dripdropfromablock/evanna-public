@@ -227,4 +227,33 @@ class AndroidAudioOutputTest {
             assertTrue(sink.samples.all { it == 0f })
         } finally { controller.close() }
     }
+
+    @Test fun androidRouteChangingBetweenStartsIsReportedAndCanBeRetried() = runBlocking {
+        val requests = mutableListOf<Int?>()
+        var device = 7
+        val controller = UsbPlaybackController(openAndroidOutput = {
+            AndroidAudioOutput({ _, pinned -> requests += pinned; Sink(device) })
+        }) { error("No automatic USB fallback") }
+        val track = object : PcmTrack {
+            override val id = "android-startup-route"
+            override val format = this@AndroidAudioOutputTest.format
+            override fun open() = object : PcmReader {
+                override val format = this@AndroidAudioOutputTest.format
+                override fun read(target: ByteBuffer, maxFrames: Int) = 0
+                override fun requestCancel() = Unit
+                override fun close() = Unit
+            }
+            override fun close() = Unit
+        }
+        try {
+            assertTrue(controller.openAndroid())
+            assertTrue(controller.start(track))
+            assertTrue(controller.pause())
+            device = 8
+            assertFalse(controller.start(track))
+            assertEquals(UsbPlaybackFailure.ROUTE_CHANGED, controller.snapshot.value.failure)
+            assertTrue(controller.start(track))
+            assertEquals(listOf(null, 7, null), requests)
+        } finally { controller.close() }
+    }
 }

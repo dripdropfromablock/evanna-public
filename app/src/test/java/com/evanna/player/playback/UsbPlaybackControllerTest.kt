@@ -409,7 +409,7 @@ class UsbPlaybackControllerTest {
 
     @Test fun cancelledStartResultStopsTheWriterBeforeCancellationReturns() = runBlocking {
         for (quiescent in listOf(true, false)) {
-            val output = Output().apply { this.quiescent = quiescent }
+            val output = Output().apply { this.quiescent = quiescent;releaseStart=CountDownLatch(1) }
             val controller = UsbPlaybackController { output }
             val caller = QueuedCaller()
             var returnedNormally = false
@@ -417,6 +417,7 @@ class UsbPlaybackControllerTest {
                 controller.open(7)
                 val start = launch(caller) { controller.start(fixture); returnedNormally = true }
                 caller.next().run()
+                output.releaseStart!!.countDown()
                 val delivery = caller.next()
                 assertTrue(output.wrote.await(5, TimeUnit.SECONDS))
                 assertEquals(UsbPlaybackState.PLAYING, controller.snapshot.value.state)
@@ -430,12 +431,12 @@ class UsbPlaybackControllerTest {
                 assertEquals(if (quiescent) UsbPlaybackState.PAUSED else UsbPlaybackState.ERROR,
                     controller.snapshot.value.state)
                 if (!quiescent) assertEquals(UsbPlaybackFailure.STOP_FAILED, controller.snapshot.value.failure)
-            } finally { output.quiescent = true; controller.close() }
+            } finally { output.releaseStart!!.countDown();output.quiescent = true; controller.close() }
         }
     }
 
     @Test fun lateCancelledStartResultDoesNotStopAReplacementSession() = runBlocking {
-        val old = Output()
+        val old = Output().apply {releaseStart=CountDownLatch(1)}
         val next = Output()
         val controller = UsbPlaybackController { id -> if (id == 7) old else next }
         val caller = QueuedCaller()
@@ -443,6 +444,7 @@ class UsbPlaybackControllerTest {
             controller.open(7)
             val start = launch(caller) { controller.start(fixture) }
             caller.next().run()
+            old.releaseStart!!.countDown()
             val delivery = caller.next()
             assertTrue(old.wrote.await(5, TimeUnit.SECONDS))
             controller.open(8)
@@ -455,18 +457,20 @@ class UsbPlaybackControllerTest {
             assertEquals(UsbPlaybackState.PLAYING, controller.snapshot.value.state)
             assertFalse(next.calls.contains("stop"))
             assertFalse(next.calls.contains("close"))
-        } finally { controller.close() }
+        } finally { old.releaseStart!!.countDown();controller.close() }
     }
 
     @Test fun cancelledOpenResultReleasesItsAcquiredOutput() = runBlocking {
         val output = Output()
         val profile = processingProfile()
-        val controller = UsbPlaybackController { output }
+        val releaseOpen=CountDownLatch(1)
+        val controller = UsbPlaybackController { check(releaseOpen.await(5,TimeUnit.SECONDS));output }
         val caller = QueuedCaller()
         var returnedNormally = false
         try {
             val open = launch(caller) { controller.open(7, profile); returnedNormally = true }
             caller.next().run()
+            releaseOpen.countDown()
             val delivery = caller.next()
             assertEquals(UsbPlaybackState.OPEN, controller.snapshot.value.state)
             open.cancel()
@@ -476,6 +480,6 @@ class UsbPlaybackControllerTest {
             assertEquals(UsbPlaybackState.CLOSED, controller.snapshot.value.state)
             assertEquals(listOf("close"), output.calls.toList())
             assertProcessing(profile, controller.snapshot.value)
-        } finally { controller.close() }
+        } finally { releaseOpen.countDown();controller.close() }
     }
 }

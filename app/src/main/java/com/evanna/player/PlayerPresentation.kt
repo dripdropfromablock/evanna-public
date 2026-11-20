@@ -3,7 +3,7 @@ package com.evanna.player
 /** The queue is a page inside Now Playing (`PlayerPage.QUEUE`), not a screen of its own. */
 internal enum class PlayerScreen {
     LIBRARY, CAROUSEL, SEARCH, NOW_PLAYING, PLAYLISTS, FAVORITES, RECENT, MOST,
-    OUTPUT, AUDIO_OUTPUT, EQUALIZER, LIBRARY_SETTINGS, APPEARANCE, SETTINGS_TOOLS, DIAGNOSTICS, DECODE, NOTICES
+    OUTPUT, AUDIO_OUTPUT, EQUALIZER, LIBRARY_SETTINGS, APPEARANCE, SETTINGS_TOOLS, DIAGNOSTICS, DECODE, NOTICES, SOURCES, MUSIC_TAGS
 }
 /** Bottom-bar destinations. OUTPUT is labelled Settings. */
 internal val playerTabs = listOf(PlayerScreen.CAROUSEL, PlayerScreen.LIBRARY, PlayerScreen.SEARCH, PlayerScreen.OUTPUT)

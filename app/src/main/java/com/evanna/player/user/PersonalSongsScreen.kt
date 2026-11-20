@@ -26,7 +26,7 @@ internal fun PersonalSongsScreen(view:PersonalView,onBack:()->Unit,onPlay:(Strin
     val revision=LocalLibrary.scansFinished
     val scope=rememberCoroutineScope()
     var offset by remember(changes,revision){mutableIntStateOf(0)}
-    var songs by remember {mutableStateOf<List<Pair<PersonalSong,LibrarySong?>>>(emptyList())}
+    var songs by remember {mutableStateOf<List<Pair<PersonalSong,PersonalSourceInfo?>>>(emptyList())}
     var loaded by remember {mutableStateOf<Triple<Long,Int,Int>?>(null)}
     val request=Triple(changes,revision,offset)
     var more by remember {mutableStateOf(false)}
@@ -39,7 +39,7 @@ internal fun PersonalSongsScreen(view:PersonalView,onBack:()->Unit,onPlay:(Strin
         try {
             val result=withContext(Dispatchers.IO) {
                 val ids=store.personalPage(view,101,offset)
-                ids.take(100).map {it to LocalLibrary.database(context).song(it.id)} to (ids.size>100)
+                ids.take(100).map {it to personalSourceInfo(context,it.id)} to (ids.size>100)
             }
             songs=if(offset==0)result.first else songs+result.first
             more=result.second;loaded=request;message=null;failed=null

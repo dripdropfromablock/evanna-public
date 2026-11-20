@@ -62,6 +62,26 @@ internal object PlayerIcons {
             moveTo(12f, 13f); lineTo(18f, 10f); verticalLineTo(7f)
         }
     }
+    val Sources = icon("Sources") {
+        thin(1.8f) {
+            roundRect(4f, 3f, 20f, 15f, 2f)
+            moveTo(4f, 9f); horizontalLineTo(20f)
+            moveTo(11f, 6f); horizontalLineTo(16.5f)
+            moveTo(11f, 12f); horizontalLineTo(16.5f)
+            moveTo(12f, 15f); verticalLineTo(21f)
+            moveTo(5f, 21f); verticalLineTo(18f); horizontalLineTo(19f); verticalLineTo(21f)
+        }
+        path(fill = ink) {
+            for (y in listOf(6f, 12f)) {
+                moveTo(6.3f, y); arcToRelative(0.9f, 0.9f, 0f, true, true, 1.8f, 0f)
+                arcToRelative(0.9f, 0.9f, 0f, true, true, -1.8f, 0f); close()
+            }
+            for (x in listOf(5f, 12f, 19f)) {
+                moveTo(x - 1.2f, 21f); arcToRelative(1.2f, 1.2f, 0f, true, true, 2.4f, 0f)
+                arcToRelative(1.2f, 1.2f, 0f, true, true, -2.4f, 0f); close()
+            }
+        }
+    }
     val Pipeline = icon("Audio Pipeline") {
         line {
             moveTo(4f, 11f); verticalLineTo(13f)

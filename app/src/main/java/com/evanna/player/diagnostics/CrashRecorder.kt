@@ -111,10 +111,15 @@ internal object CrashRecorder {
         if (!enabled.get()) return
         val key = "${snapshot.generation}:${failure.name}"
         if (lastFailure.getAndSet(key) == key) return
-        event(DiagnosticEvent.PLAYBACK_FAILURE)
         val token = generation.get()
         worker.execute { safely {
             if (enabled.get() && generation.get() == token) {
+                // A physical USB removal has its own system event in the journal.
+                if (confirmedUsbDetach(snapshot) { deviceId ->
+                    val manager = app.getSystemService(android.hardware.usb.UsbManager::class.java)
+                    manager?.deviceList?.values?.any { it.deviceId == deviceId } != false
+                }) return@safely
+                event(DiagnosticEvent.PLAYBACK_FAILURE)
                 flush()
                 store.write(Incident("handled-${UUID.randomUUID()}", IncidentKind.HANDLED_FAILURE, System.currentTimeMillis(),
                     cached.get() + playbackFields(snapshot) + mapOf(ReportField.OPERATION to "PLAYBACK_FAILURE", ReportField.FAILURE to failure.name)))

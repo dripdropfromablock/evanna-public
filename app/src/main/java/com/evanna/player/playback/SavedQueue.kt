@@ -3,12 +3,14 @@ package com.evanna.player.playback
 import com.evanna.player.decoder.MusicTags
 
 internal data class SavedQueueEntry(val id: String, val libraryId: String?, val fileUri: String?, val title: String,
-    val artist: String?, val album: String?, val durationUs: Long?,val musicTags:MusicTags=MusicTags()) {
+    val artist: String?, val album: String?, val durationUs: Long?,val musicTags:MusicTags=MusicTags(),
+    val sourceRef:com.evanna.player.sources.SourceReference?=null) {
     init {
         require(id.startsWith("evanna:local:queue:") && id.length <= 100)
         require(libraryId == null || libraryId.matches(Regex("[0-9a-f]{64}")))
         require(fileUri == null || (fileUri.startsWith("content://") && fileUri.length <= 8192))
         require(libraryId == null || fileUri == null)
+        require(sourceRef == null || libraryId == null && fileUri == null)
         require(title.length in 1..512 && (artist?.length ?: 0) <= 512 && (album?.length ?: 0) <= 512)
         require(durationUs == null || durationUs >= 0)
         require(listOf(musicTags.albumArtist,musicTags.genre,musicTags.composer).all {(it?.length ?: 0)<=512})

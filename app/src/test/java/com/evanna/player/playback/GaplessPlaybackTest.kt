@@ -10,6 +10,27 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class GaplessPlaybackTest {
+    @Test fun aRemoteSuccessorIsOpenedOnlyAfterTheLocalTrackDrains()=runBlocking {
+        val output=Output()
+        val owner=UsbSessionOwner(UsbPlaybackController {output},Focus())
+        val ref=com.evanna.player.sources.SourceReference("a0000000-0000-0000-0000-000000000000","b0000000-0000-0000-0000-000000000000")
+        var remoteOpens=0
+        val remote=source("Remote",listOf(512))
+        try {
+            owner.enqueue(source("Local",listOf(256)))
+            owner.enqueue(remote.copy(sourceRef=ref,prepare={remoteOpens++;remote.create()},create={error("Unexpected gapless network open")}))
+            assertTrue(owner.open(7));assertTrue(owner.play())
+            val first=withTimeout(5000){owner.snapshot.first {it.state in listOf(UsbPlaybackState.ENDED,UsbPlaybackState.ERROR)}}
+            assertEquals(UsbPlaybackState.ENDED,first.state)
+            assertEquals(0,remoteOpens)
+            assertEquals(listOf(256),output.samples)
+            assertTrue(owner.onPlaybackState(first))
+            withTimeout(5000){owner.snapshot.first {it.generation!=first.generation && it.state==UsbPlaybackState.ENDED}}
+            assertEquals(1,remoteOpens)
+            assertEquals(listOf(256,512),output.samples)
+            assertEquals(2,output.starts)
+        }finally {owner.close()}
+    }
     @Test fun switchingABoundaryTimerToMinutesClearsTheContinuousPcmBarrier() = runBlocking {
         for (mode in listOf(SleepMode.SONG, SleepMode.ALBUM)) {
             val entered = CountDownLatch(1); val release = CountDownLatch(1)

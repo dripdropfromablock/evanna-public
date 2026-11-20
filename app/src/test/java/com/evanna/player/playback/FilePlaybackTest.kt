@@ -176,6 +176,25 @@ class FilePlaybackTest {
             } finally { controller.close() }
         }
     }
+    @Test fun readFailureDrainsPreviouslyAcceptedPcmAndKeepsTheSourceError() = runBlocking {
+        val alac = format.copy(codec = "ALAC")
+        val reader = Reader(alac)
+        val output = Output().apply {
+            afterWrite = { reader.failRead = true }
+            drainAction = { counters = StreamStats(4, 0, 0, false, 4, 4, true); true }
+        }
+        val controller = UsbPlaybackController { output }
+        try {
+            assertTrue(controller.open(7))
+            assertTrue(controller.start(Track(alac) { reader }))
+            val failed = terminal(controller)
+            assertEquals(UsbPlaybackFailure.SOURCE_READ_FAILED, failed.failure)
+            assertEquals(1, output.drains)
+            assertEquals(4L, failed.stats!!.framesCompleted)
+            assertEquals(90L, failed.positionUs)
+            assertEquals((1..8).map { it shl 8 }, output.samples)
+        } finally { controller.close() }
+    }
     @Test fun failedDrainPreservesTheActualTransportFailure() = runBlocking {
         for (disconnected in listOf(false, true)) {
             val output = Output()

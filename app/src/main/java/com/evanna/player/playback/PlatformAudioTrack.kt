@@ -54,8 +54,8 @@ private class PlatformAudioTrack(private val manager: AudioManager, source: PcmF
     }
 
     init {
-        if (pinned != null) check(manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { it.id == pinned }) {
-            "Select Android output again after a device change"
+        if (pinned != null && manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).none { it.id == pinned }) {
+            throw AndroidOutputRouteChanged()
         }
         val mask = if (source.channels == 1) AudioFormat.CHANNEL_OUT_MONO else AudioFormat.CHANNEL_OUT_STEREO
         var attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build()

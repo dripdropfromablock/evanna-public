@@ -1,11 +1,50 @@
 package com.evanna.player.library
 
 import java.io.IOException
+import com.evanna.player.metadata.MusicTagField
+import com.evanna.player.metadata.TagSidecar
+import com.evanna.player.metadata.tagSidecarName
 import kotlinx.coroutines.*
 import org.junit.Assert.*
 import org.junit.Test
 
 class LibraryScannerTest {
+    @Test fun sidecarEditsAndRemovalInvalidateOnlyTheMatchingAudioFingerprint() = runBlocking {
+        val index = Index()
+        val flac = doc("song")
+        val mp3 = doc("mp3", mime = "audio/mpeg").copy(name = "song.mp3")
+        val sidecar = doc("tags", mime = "application/octet-stream").copy(name = tagSidecarName(flac.name))
+        val backing = Source(listOf(flac, mp3))
+        var value = "New artist"
+        val source = object : LibraryScanSource by backing {
+            override suspend fun withTagSidecar(audio: LibraryDocument, sidecar: LibraryDocument): LibraryDocument {
+                assertEquals(flac.id, audio.id)
+                return audio.copy(tagDigest = value, tagSidecar = TagSidecar(mapOf(MusicTagField.ARTIST to value)))
+            }
+            override suspend fun inspect(document: LibraryDocument): LibraryAudio {
+                val embedded = backing.inspect(document)
+                return document.tagSidecar?.applyTo(embedded) ?: embedded
+            }
+        }
+        scanLibrary("root", index, source)
+        assertEquals(2, backing.inspections)
+        backing.files += sidecar
+        assertTrue(scanLibrary("root", index, source, silent = true).changed)
+        assertEquals("New artist", index.rows.getValue("song").audio?.artist)
+        assertEquals("Artist", index.rows.getValue("mp3").audio?.artist)
+        assertFalse(scanLibrary("root", index, source, silent = true).changed)
+        assertEquals(3, backing.inspections)
+
+        value = "Revised artist"
+        assertTrue(scanLibrary("root", index, source, silent = true).changed)
+        assertEquals("Revised artist", index.rows.getValue("song").audio?.artist)
+        backing.files = listOf(flac, mp3)
+        assertTrue(scanLibrary("root", index, source, silent = true).changed)
+        assertEquals("Artist", index.rows.getValue("song").audio?.artist)
+        assertEquals(5, backing.inspections)
+        assertEquals(setOf("song", "mp3"), index.rows.keys)
+    }
+
     @Test fun startupSkipsNomediaTreesAndPrunesTheirPreviouslyIndexedSongs() = runBlocking {
         val index = Index()
         var hidden = false

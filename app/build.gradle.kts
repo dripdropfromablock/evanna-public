@@ -6,6 +6,7 @@ plugins {
 
 val supportedAbis = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
 val splitApks = providers.gradleProperty("evannaAbiSplits").map(String::toBoolean).getOrElse(false)
+val sourcesQa = providers.gradleProperty("evannaSourcesQa").map(String::toBoolean).getOrElse(false)
 
 android {
     namespace = "com.evanna.player"
@@ -16,10 +17,10 @@ android {
         applicationId = "com.evanna.player"
         minSdk = 28
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.5"
+        versionCode = 7
+        versionName = "1.6"
         testInstrumentationRunner = "com.evanna.player.playback.UsbAdapterProbe"
-        if (!splitApks) ndk { abiFilters += "arm64-v8a" }
+        if (!splitApks) ndk { abiFilters += if (sourcesQa) "x86_64" else "arm64-v8a" }
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_shared" } }
     }
 
@@ -32,6 +33,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = if (sourcesQa) ".sourcesqa" else ".dev"
+            manifestPlaceholders["evannaDebugLabel"] = if (sourcesQa) "Evanna Sources QA" else "Evanna Dev"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -40,6 +45,7 @@ android {
     }
 
     buildFeatures { compose = true }
+    packaging.resources.excludes.add("META-INF/versions/9/OSGI-INF/MANIFEST.MF")
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -59,5 +65,9 @@ dependencies {
     implementation(libs.androidx.compose.icons)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.media3.session)
+    implementation(libs.androidx.webkit)
+    implementation(libs.okhttp)
+    implementation(libs.smbj)
+    implementation("org.libtorrent4j:libtorrent4j:2.1.0-39")
     testImplementation(libs.junit)
 }

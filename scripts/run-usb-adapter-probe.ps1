@@ -103,7 +103,7 @@ if ($Probe -ne 'Usb') {
     }
     $arguments += @('-e', 'probe', $mode)
 }
-$arguments += 'com.evanna.player.test/com.evanna.player.playback.UsbAdapterProbe'
+$arguments += 'com.evanna.player.dev.test/com.evanna.player.playback.UsbAdapterProbe'
 $reply = [System.Collections.Generic.List[string]]::new()
 # Show readiness immediately; keep the complete output for final result validation.
 & $adb @arguments 2>&1 | Tee-Object -FilePath (Join-Path $outputDir 'results.log') | ForEach-Object {

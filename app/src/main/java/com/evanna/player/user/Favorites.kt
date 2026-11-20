@@ -1,12 +1,13 @@
 package com.evanna.player.user
 
 internal fun validLibraryId(id:String)=id.matches(Regex("[0-9a-f]{64}"))
+internal fun validPersonalId(id:String)=validLibraryId(id) || com.evanna.player.sources.SourceReference.fromPersonalId(id)!=null
 internal fun UserDatabase.isFavorite(id:String):Boolean {
-    require(validLibraryId(id))
+    require(validPersonalId(id))
     return readableDatabase.rawQuery("SELECT 1 FROM favorites WHERE track_id=?",arrayOf(id)).use {it.moveToFirst()}
 }
 internal fun UserDatabase.setFavorite(id:String,selected:Boolean):Boolean=try {
-    require(validLibraryId(id))
+    require(validPersonalId(id))
     val db=writableDatabase;db.beginTransaction()
     try {
         if(selected) {

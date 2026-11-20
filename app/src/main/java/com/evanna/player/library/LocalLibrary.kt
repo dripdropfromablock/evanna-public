@@ -12,13 +12,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import com.evanna.player.decoder.*
+import com.evanna.player.metadata.decodeTagSidecar
+import com.evanna.player.metadata.readTagSidecarBytes
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 
 private const val IDLE_STATUS = "Saved on this device. Tap a song to queue this list and play from there."
 private const val READY_STATUS = "Scan complete. Saved songs are ready to browse."
@@ -93,6 +97,24 @@ internal object LocalLibrary {
 
     /** Main thread only. Adds or reconnects the folder before scanning it when [add] is true. */
     fun scan(context: Context, uri: Uri? = null, add: Boolean = false) {
+        startScan(context, uri, add, imported = false)
+    }
+
+    /** Called after the imported document is fully published. Retain requests during a busy scan. */
+    fun scanImportedFolder(context: Context, folder: Uri): Boolean {
+        val app = context.applicationContext
+        val newGrant = !hasTreeReadGrant(app, folder)
+        if (newGrant && runCatching {
+                app.contentResolver.takePersistableUriPermission(folder, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }.isFailure) return false
+        scans.launch {
+            while (scanning || managingFolders) snapshotFlow { !scanning && !managingFolders }.first { it }
+            startScan(app, folder, add = false, imported = true, newImportGrant = newGrant)
+        }
+        return true
+    }
+
+    private fun startScan(context: Context, uri: Uri?, add: Boolean, imported: Boolean, newImportGrant: Boolean = false) {
         if (scanning || managingFolders) return
         val app = context.applicationContext
         scanning = true
@@ -104,6 +126,7 @@ internal object LocalLibrary {
                         val store = database(app)
                         releaseRemovedGrants(app, store)
                         val selected = when {
+                            imported -> listOf(importedRoot(app, requireNotNull(uri), store, newImportGrant).toString())
                             add -> listOf(add(app, requireNotNull(uri), store).toString())
                             uri != null -> listOf(uri.toString())
                             else -> store.rootUris()
@@ -131,7 +154,47 @@ internal object LocalLibrary {
                 status = overlap.message.orEmpty()
             } catch (_: Exception) {
                 status = "The folder could not be indexed. Use a local phone or SD-card folder, or select it again to renew access. Saved songs were kept."
-            } finally { activeScanRoot = null; scanning = false; scansFinished++ }
+            } finally {
+                if (newImportGrant && uri != null) withContext(NonCancellable + Dispatchers.IO) {
+                    runCatching {
+                        if (uri.toString() !in database(app).rootUris()) {
+                            app.contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                    }
+                }
+                activeScanRoot = null
+                scanning = false
+                scansFinished++
+            }
+        }
+    }
+
+    fun refreshIndexedFolder(context: Context, folder: Uri) {
+        val app = context.applicationContext
+        scans.launch {
+            val root = withContext(Dispatchers.IO) { enclosingIndexedRoot(app, folder, database(app)) } ?: return@launch
+            while (scanning || managingFolders) snapshotFlow { !scanning && !managingFolders }.first { it }
+            startScan(app, root, add = false, imported = false)
+        }
+    }
+
+    private suspend fun importedRoot(context: Context, folder: Uri, store: LibraryDatabase, newGrant: Boolean): Uri {
+        val enclosing = enclosingIndexedRoot(context, folder, store) ?: add(context, folder, store, ownsGrant = newGrant)
+        if (newGrant && enclosing == folder) {
+            store.roots().firstOrNull { it.uri == folder.toString() }?.let {
+                store.addRoot(it.uri, it.name, owned = true)
+            }
+        }
+        return enclosing
+    }
+
+    private fun enclosingIndexedRoot(context: Context, folder: Uri, store: LibraryDatabase): Uri? {
+        val path = folderStoragePath(folder)
+        val roots = store.rootUris().map(Uri::parse).filter { isLocalTree(context, it) }
+        return roots.firstOrNull { root ->
+            hasTreeReadGrant(context, root) && (root == folder ||
+                folderStoragePath(root)?.let { parent -> path != null && folderPathContains(parent, path) } == true ||
+                root.authority == folder.authority && runCatching { treeContains(context, root, folder) }.getOrDefault(false))
         }
     }
 
@@ -201,7 +264,7 @@ internal object LocalLibrary {
         return complete
     }
 
-    private suspend fun add(context: Context, uri: Uri, store: LibraryDatabase): Uri {
+    private suspend fun add(context: Context, uri: Uri, store: LibraryDatabase, ownsGrant: Boolean = false): Uri {
         if (!isLocalTree(context, uri)) throw IOException("LOCAL_FOLDER_REQUIRED")
         val resolver = context.contentResolver
         val selectedId = DocumentsContract.getTreeDocumentId(uri)
@@ -223,7 +286,7 @@ internal object LocalLibrary {
                 val overlapping = roots.firstOrNull { foldersOverlap(context, tree, Uri.parse(it.uri)) }
                 if (overlapping != null) throw FolderOverlap("This folder overlaps ${overlapping.name}. Choose a separate folder.")
             }
-            store.addRoot(tree.toString(), root.name, !existing)
+            store.addRoot(tree.toString(), root.name, !existing || ownsGrant)
             return tree
         } catch (failure: Throwable) {
             if (!existing) runCatching { resolver.releasePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
@@ -327,13 +390,18 @@ internal class SafLibrarySource(context: Context, private val tree: Uri,override
             }
         } ?: throw IOException("FOLDER_UNAVAILABLE")
     }
-    override suspend fun inspect(document: LibraryDocument): LibraryAudio = providerCall { signal ->
-        resolver.openFileDescriptor(Uri.parse(document.uri), "r", signal)?.use { descriptor ->
-            val info = NativeDecoder.inspect(descriptor.fd, signal)
-            signal.throwIfCanceled()
-            LibraryAudio(info.title, info.artist, info.album, info.durationUs, sourceCodec(info.codec, info.sampleRate),
-                info.sampleRate, info.significantBits, info.channels, info.musicTags, info.sortTags)
-        } ?: throw IOException("DOCUMENT_UNAVAILABLE")
+    override suspend fun inspect(document: LibraryDocument): LibraryAudio {
+        val info = inspectLibraryDocument(resolver, Uri.parse(document.uri))
+        val audio = LibraryAudio(info.title, info.artist, info.album, info.durationUs, sourceCodec(info.codec, info.sampleRate),
+            info.sampleRate, info.significantBits, info.channels, info.musicTags, info.sortTags)
+        return document.tagSidecar?.applyTo(audio) ?: audio
+    }
+    override suspend fun withTagSidecar(audio: LibraryDocument, sidecar: LibraryDocument): LibraryDocument {
+        val bytes = try { readTagSidecarBytes(resolver, Uri.parse(sidecar.uri)) }
+            catch (_: IOException) { return audio }
+            catch (_: SecurityException) { return audio }
+        val tags = try { decodeTagSidecar(bytes) } catch (_: IOException) { return audio }
+        return audio.copy(tagDigest = MessageDigest.getInstance("SHA-256").digest(bytes).toHexString(), tagSidecar = tags)
     }
     override suspend fun readSheet(document: LibraryDocument): ByteArray = providerCall { signal ->
         resolver.openFileDescriptor(Uri.parse(document.uri), "r", signal)?.use { descriptor ->
@@ -353,6 +421,12 @@ internal class SafLibrarySource(context: Context, private val tree: Uri,override
     }
 }
 
+internal suspend fun inspectLibraryDocument(resolver: android.content.ContentResolver, uri: Uri) = providerCall { signal ->
+    resolver.openFileDescriptor(uri, "r", signal)?.use { descriptor ->
+        NativeDecoder.inspect(descriptor.fd, signal).also { signal.throwIfCanceled() }
+    } ?: throw IOException("DOCUMENT_UNAVAILABLE")
+}
+
 /** Providers own document ancestry; opaque IDs are never treated as filesystem prefixes. */
 private fun isDescendant(context:Context,parent:Uri,child:Uri):Boolean {
     if(Build.VERSION.SDK_INT>=29)return DocumentsContract.isChildDocument(context.contentResolver,parent,child)
@@ -363,7 +437,7 @@ private fun isDescendant(context:Context,parent:Uri,child:Uri):Boolean {
 }
 
 /** Blocking provider work stays on the caller's IO lane; cancellation signals Binder without leaking resources. */
-private suspend fun <T> providerCall(action: (CancellationSignal) -> T): T = suspendCancellableCoroutine { continuation ->
+internal suspend fun <T> providerCall(action: (CancellationSignal) -> T): T = suspendCancellableCoroutine { continuation ->
     val signal = CancellationSignal()
     continuation.invokeOnCancellation { signal.cancel() }
     try { continuation.resume(action(signal)) }

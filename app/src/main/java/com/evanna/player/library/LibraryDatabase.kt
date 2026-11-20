@@ -6,6 +6,8 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.evanna.player.decoder.MusicTags
+import com.evanna.player.metadata.MusicTagSource
+import com.evanna.player.metadata.TagFileStatus
 import com.evanna.player.user.PlaylistEntry
 import com.evanna.player.user.PlaylistFile
 import java.io.File
@@ -116,13 +118,32 @@ internal class LibraryDatabase(context: Context, name: String = "library.db",pri
         val total = db.rawQuery("SELECT COUNT(*) FROM tracks t WHERE $where", arguments.toTypedArray()).use { it.moveToFirst(); it.getInt(0) }
         return LibraryPage(roots(), songs, total)
     }
-    private fun songQuery(filter: LibraryFilter): String {
+    fun musicTagSources(): List<MusicTagSource> = readableDatabase.rawQuery(
+        songQuery(LibraryFilter(), includeTagSources = true), null
+    ).use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) {
+                val song = cursor.librarySong()
+                val status = when {
+                    cursor.getInt(25) == 0 || cursor.getString(27) == LibraryRootState.UNAVAILABLE.name -> TagFileStatus.UNAVAILABLE
+                    cursor.getInt(26) == 0 -> TagFileStatus.UNREADABLE
+                    song.startFrame != null -> TagFileStatus.CUE
+                    else -> TagFileStatus.READABLE
+                }
+                add(MusicTagSource(song.id, song.uri, song.title, song.artist, song.album, song.musicTags.albumArtist,
+                    cursor.getString(22), cursor.getString(23), cursor.getString(24), status, song.durationUs))
+            }
+        }
+    }
+
+    private fun songQuery(filter: LibraryFilter, includeTagSources: Boolean = false): String {
         val (where, _) = matching(filter)
         val available = "(f.present=1 AND f.readable=1 AND r.state!='UNAVAILABLE')"
         val choose = "SELECT f2.rowid FROM files f2 JOIN roots r2 ON r2.uri=f2.root WHERE f2.id=t.id ORDER BY (f2.present=1 AND f2.readable=1 AND r2.state!='UNAVAILABLE') DESC,f2.root LIMIT 1"
         val years = if (filter.kind == LibraryGroupKind.ARTIST)
             "LEFT JOIN (SELECT NULLIF(album,'') album_key,NULLIF(album_artist,'') artist_key,CASE WHEN MIN(year)=MAX(year) THEN MIN(year) END year,MIN(NULLIF(sort_album,'')) sort_album,MIN(NULLIF(sort_album_artist,'')) sort_artist FROM tracks WHERE cue_hidden=0 GROUP BY album_key,artist_key) ay ON ay.album_key IS NULLIF(t.album,'') AND ay.artist_key IS NULLIF(t.album_artist,'')" else ""
-        return "SELECT t.id,f.uri,t.title,t.artist,t.album,t.duration,t.codec,t.rate,$available AS available,$musicTagColumns,t.added_at,t.start_frame,t.end_frame,COALESCE(NULLIF(t.sort_title,''),t.title) AS sort_key FROM tracks t JOIN files f ON f.id=t.id JOIN roots r ON r.uri=f.root $years WHERE f.rowid=($choose) AND $where ORDER BY ${orderFor(filter)}"
+        val tagSources = if (includeTagSources) ",f.root,r.name,f.name,f.present,f.readable,r.state" else ""
+        return "SELECT t.id,f.uri,t.title,t.artist,t.album,t.duration,t.codec,t.rate,$available AS available,$musicTagColumns,t.added_at,t.start_frame,t.end_frame,COALESCE(NULLIF(t.sort_title,''),t.title) AS sort_key$tagSources FROM tracks t JOIN files f ON f.id=t.id JOIN roots r ON r.uri=f.root $years WHERE f.rowid=($choose) AND $where ORDER BY ${orderFor(filter)}"
     }
     /** Locate the anchor before applying the queue cap; all reads share one SQLite snapshot. */
     fun queueWindow(filter: LibraryFilter, startId: String?, limit: Int = 1000): LibraryQueueWindow? {
@@ -327,12 +348,12 @@ internal class LibraryDatabase(context: Context, name: String = "library.db",pri
     override fun cachedBatch(root: String, keys: List<String>): Map<String, LibraryCached> {
         require(keys.size in 1..SCAN_BATCH_SIZE)
         return readableDatabase.rawQuery(
-            "SELECT f.document_id,f.uri,f.name,f.size,f.modified,f.readable,t.title,t.artist,t.album,t.duration,t.codec,t.rate,t.bits,t.channels,$musicTagColumns,t.tags_version,t.sort_title,t.sort_artist,t.sort_album,t.sort_album_artist,f.id,f.present,t.cue_hidden FROM files f JOIN tracks t ON t.id=f.id WHERE f.root=? AND f.id IN (${placeholders(keys.size)})",
+            "SELECT f.document_id,f.uri,f.name,f.size,f.modified,f.readable,t.title,t.artist,t.album,t.duration,t.codec,t.rate,t.bits,t.channels,$musicTagColumns,t.tags_version,t.sort_title,t.sort_artist,t.sort_album,t.sort_album_artist,f.id,f.present,t.cue_hidden,f.tag_digest FROM files f JOIN tracks t ON t.id=f.id WHERE f.root=? AND f.id IN (${placeholders(keys.size)})",
             (listOf(root) + keys).toTypedArray()).use { c ->
             buildMap {
                 while (c.moveToNext()) {
                     val key = c.getString(28)
-                    val document = LibraryDocument(c.getString(0), key, c.getString(1), c.getString(2), "audio/", c.longOrNull(3), c.longOrNull(4))
+                    val document = LibraryDocument(c.getString(0), key, c.getString(1), c.getString(2), "audio/", c.longOrNull(3), c.longOrNull(4), c.stringOrNull(31))
                     val audio = if (c.getInt(5) == 0) null else LibraryAudio(c.getString(6), c.stringOrNull(7), c.stringOrNull(8), c.longOrNull(9), c.getString(10), c.getInt(11), c.longOrNull(12)?.toInt(), c.getInt(13), c.musicTags(14),
                         com.evanna.player.decoder.SortTags(c.stringOrNull(24), c.stringOrNull(25), c.stringOrNull(26), c.stringOrNull(27)))
                     put(key, LibraryCached(document, audio, c.getInt(23), c.getInt(29) != 0, c.getInt(30) != 0))
@@ -344,12 +365,12 @@ internal class LibraryDatabase(context: Context, name: String = "library.db",pri
     override fun fingerprints(root: String, keys: List<String>): Map<String, LibraryFingerprint> {
         require(keys.size in 1..SCAN_BATCH_SIZE)
         return readableDatabase.rawQuery(
-            "SELECT f.id,f.uri,f.name,f.size,f.modified,f.present,f.readable,t.tags_version,t.cue_hidden FROM files f JOIN tracks t ON t.id=f.id WHERE f.root=? AND f.id IN (${placeholders(keys.size)})",
+            "SELECT f.id,f.uri,f.name,f.size,f.modified,f.present,f.readable,t.tags_version,t.cue_hidden,f.tag_digest FROM files f JOIN tracks t ON t.id=f.id WHERE f.root=? AND f.id IN (${placeholders(keys.size)})",
             (listOf(root) + keys).toTypedArray()).use { cursor ->
             buildMap {
                 while (cursor.moveToNext()) put(cursor.getString(0), LibraryFingerprint(cursor.getString(1), cursor.getString(2),
                     cursor.longOrNull(3), cursor.longOrNull(4), cursor.getInt(5) != 0, cursor.getInt(6) != 0,
-                    cursor.getInt(7), cursor.getInt(8) != 0))
+                    cursor.getInt(7), cursor.getInt(8) != 0, cursor.stringOrNull(9)))
             }
         }
     }
@@ -384,6 +405,7 @@ internal class LibraryDatabase(context: Context, name: String = "library.db",pri
         val file = ContentValues().apply {
             put("root", root); put("id", document.key); put("document_id", document.id); put("uri", document.uri); put("name", document.name)
             put("size", document.size); put("modified", document.modified); put("token", token); put("present", 1); put("readable", if (audio == null) 0 else 1)
+            put("tag_digest", document.tagDigest)
         }
         db.insertWithOnConflict("files", null, file, SQLiteDatabase.CONFLICT_REPLACE).also { check(it >= 0) }
         // Shown again unless this scan's sheet pass still covers it.

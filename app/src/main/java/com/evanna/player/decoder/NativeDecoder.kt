@@ -20,6 +20,8 @@ internal data class DecoderInfo(
     val musicTags: MusicTags = MusicTags(),
     val sortTags:SortTags=SortTags(),
     val loudnessTags:com.evanna.player.loudness.LoudnessTags=com.evanna.player.loudness.LoudnessTags(),
+    val hasEmbeddedArtwork: Boolean = false,
+    val releaseDate: String? = null,
 )
 internal data class DecoderStats(val positionFrames: Long, val quantizedSamples: Long, val clippedSamples: Long)
 
@@ -51,7 +53,7 @@ internal class NativeDecoder private constructor(private var handle: Long, val i
 
     /** Exact decoded-timeline boundary, rounded up to the next source frame; work remains bounded. */
     fun seekTo(positionUs: Long) = synchronized(reader) {
-        require(positionUs >= 0)
+        require(positionUs >= 0 && info.seekable)
         lifetime.read { check(handle != 0L) { "Decoder is closed" }; nativeSeek(handle, positionUs) }
     }
 
@@ -89,10 +91,17 @@ internal class NativeDecoder private constructor(private var handle: Long, val i
 
         /** Borrows fd only during this call; native owns a duplicate when it returns. */
         @Throws(IOException::class)
-        fun open(fd: Int): NativeDecoder {
-            val values = nativeOpen(fd)
+        fun open(fd: Int, fastRangeSeek: Boolean = false): NativeDecoder =
+            fromOpen(nativeOpen(fd, fastRangeSeek), seekable = true)
+
+        /** Borrows a pipe read FD and observes cancellation before the decoder has a handle. */
+        @Throws(IOException::class)
+        fun openStream(fd: Int, signal: CancellationSignal): NativeDecoder =
+            fromOpen(nativeOpenStream(fd, signal), seekable = false)
+
+        private fun fromOpen(values: LongArray, seekable: Boolean): NativeDecoder {
             try {
-                return NativeDecoder(values[0], readInfo(values, playback = true))
+                return NativeDecoder(values[0], readInfo(values, playback = true, seekable = seekable))
             } catch (failure: Throwable) {
                 nativeClose(values[0])
                 throw failure
@@ -107,18 +116,21 @@ internal class NativeDecoder private constructor(private var handle: Long, val i
             finally { nativeClose(values[0]) }
         }
 
-        private fun readInfo(values: LongArray, playback: Boolean): DecoderInfo {
+        private fun readInfo(values: LongArray, playback: Boolean, seekable: Boolean = true): DecoderInfo {
             val rawTags = nativeTags(values[0])
             require(rawTags.size == 20) { "DECODER_TAGS_MISMATCH" }
             val loudness = if (playback) com.evanna.player.loudness.loudnessTagsFromText(
                 nativeGainTags(values[0]).map { it.toString(Charsets.UTF_8) }) else com.evanna.player.loudness.LoudnessTags()
             return DecoderInfo(nativeCodec(values[0]), values[1].toInt(), values[2].toInt().takeIf { it > 0 },
-                values[3].toInt(), values[4].takeIf { it >= 0 }, true, values[5] != 0L, values[6] != 0L,
+                values[3].toInt(), values[4].takeIf { it >= 0 }, seekable, values[5] != 0L, values[6] != 0L,
                 metadataText(rawTags[0]), metadataText(rawTags[1]), metadataText(rawTags[2]), playback && values[7] != 0L,
-                musicTagsFromBytes(rawTags.copyOfRange(0,16)), sortTagsFromBytes(rawTags.copyOfRange(16,20)), loudness)
+                musicTagsFromBytes(rawTags.copyOfRange(0,16)), sortTagsFromBytes(rawTags.copyOfRange(16,20)), loudness,
+                hasEmbeddedArtwork = values.getOrNull(8) == 1L,
+                releaseDate = rawTags.asSequence().drop(10).take(3).firstNotNullOfOrNull(::metadataText))
         }
 
-        @JvmStatic private external fun nativeOpen(fd: Int): LongArray
+        @JvmStatic private external fun nativeOpen(fd: Int, fastRangeSeek: Boolean): LongArray
+        @JvmStatic private external fun nativeOpenStream(fd: Int, signal: CancellationSignal): LongArray
         @JvmStatic private external fun nativeInspect(fd: Int, signal: CancellationSignal): LongArray
         @JvmStatic private external fun nativeCodec(handle: Long): String
         @JvmStatic private external fun nativeTags(handle: Long): Array<ByteArray>

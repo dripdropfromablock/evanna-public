@@ -63,7 +63,7 @@ internal fun AudioOutputSheet(
             OutputRow("This phone", if (android) "Android system output" else "Phone or Bluetooth",
                 PlayerIcons.Phone, selected = android, enabled = state.connected && !android, onClick = onAndroid)
             usbOutputs()
-            Surface(shape = rowShape, color = colors.surfaceContainerHigh.copy(alpha = 0.72f), modifier = Modifier.fillMaxWidth()) {
+            if(state.route!="DLNA")Surface(shape = rowShape, color = colors.surfaceContainerHigh.copy(alpha = 0.72f), modifier = Modifier.fillMaxWidth()) {
                 Box(Modifier.heightIn(min = 56.dp).padding(horizontal = 14.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
                     when {
                         state.route == "DIRECT_USB" -> UsbVolume(state, onUsbVolume, onUsbVolumeSet)

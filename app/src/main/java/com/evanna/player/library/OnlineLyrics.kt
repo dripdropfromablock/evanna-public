@@ -5,10 +5,14 @@ import java.io.IOException
 import java.net.URL
 import java.net.URLEncoder
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.HttpsURLConnection
 import kotlin.math.abs
+import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -18,7 +22,7 @@ internal data class LyricsQuery(val title: String, val artist: String?, val albu
 
 /** One LRCLIB lyrics record, as far as Evanna needs it. */
 internal data class LrcLibRecord(val trackName: String, val durationS: Double?, val instrumental: Boolean, val wordSync: Boolean,
-    val synced: String?, val plain: String?, val lyricsfile: String?)
+    val synced: String?, val plain: String?, val lyricsfile: String?, val artistName: String? = null, val albumName: String? = null)
 
 /** Where lyrics found online were kept. */
 internal enum class LyricsPlace { BESIDE_SONG, IN_APP }
@@ -31,7 +35,15 @@ internal sealed interface FoundLyrics {
 }
 
 /** LRCLIB answered 429 or 503: it wants a pause before the next request. */
-internal class LrcLibBusy : IOException("LRCLIB_BUSY")
+internal class LrcLibBusy(val retryAfterMs: Long = 30_000) : IOException("LRCLIB_BUSY")
+
+internal sealed interface LyricsLookup {
+    data class Match(val text: String, val lyrics: Lyrics) : LyricsLookup
+    data object NotFound : LyricsLookup
+    data object Instrumental : LyricsLookup
+}
+
+internal fun lrcLibClient(version: String): String = "Evanna $version (${com.evanna.player.EVANNA_REPOSITORY})"
 
 /** Word timings beat line timings, which beat plain text; 0 has nothing to show. */
 internal fun lrcLibTier(record: LrcLibRecord): Int = when {
@@ -53,6 +65,22 @@ internal fun bestLrcLibRecord(query: LyricsQuery, exact: LrcLibRecord?, candidat
         else record.trackName.trim().equals(query.title.trim(), ignoreCase = true)
     val pool = listOfNotNull(exact) + candidates.filter(::fits)
     return pool.maxByOrNull(::lrcLibTier)?.takeIf { lrcLibTier(it) > 0 } ?: pool.firstOrNull { it.instrumental }
+}
+
+/** Require identifying metadata before applying a match without a per-track review. */
+internal fun bulkLrcLibRecord(query: LyricsQuery, candidates: List<LrcLibRecord>): LrcLibRecord? {
+    val artist = query.artist?.takeIf { it.isNotBlank() } ?: return null
+    val album = query.album?.takeIf { it.isNotBlank() }
+    val seconds = query.durationMs?.takeIf { it > 0 }?.div(1000.0)
+    if (album == null && seconds == null) return null
+    val matches = candidates.filter { record ->
+        record.trackName.trim().equals(query.title.trim(), ignoreCase = true) &&
+            record.artistName?.trim().equals(artist.trim(), ignoreCase = true) &&
+            (album == null || record.albumName?.trim().equals(album.trim(), ignoreCase = true)) &&
+            (seconds == null || record.durationS?.let { abs(it - seconds) <= 2.0 } == true)
+    }
+    if (seconds == null && matches.map { it.durationS }.distinct().size > 1) return null
+    return bestLrcLibRecord(query, null, matches)
 }
 
 /**
@@ -119,25 +147,37 @@ internal fun lrcTime(ms: Long): String {
 internal object LrcLib {
     private const val HOST = "lrclib.net"
     private const val RESPONSE_LIMIT = 4 shl 20
+    private val requests = Mutex()
+    private var lastRequestAt: Long? = null
+    private var retryAt: Long? = null
+
+    suspend fun lookup(query: LyricsQuery, client: String, bulk: Boolean = false): LyricsLookup {
+        val record = find(query, client, bulk) ?: return LyricsLookup.NotFound
+        if (record.instrumental) return LyricsLookup.Instrumental
+        val text = lrcLibText(record, query) ?: return LyricsLookup.NotFound
+        val lyrics = parseLyrics(text) ?: return LyricsLookup.NotFound
+        return LyricsLookup.Match(text, lyrics)
+    }
 
     /**
      * LRCLIB's exact match first (title, artist, album and length). When it is missing or has no word timings, its search
      * by title and artist is checked for a better record of the same length. Null when nothing fits. [client] names Evanna
      * as LRCLIB asks every app to.
      */
-    suspend fun find(query: LyricsQuery, client: String): LrcLibRecord? = withContext(Dispatchers.IO) {
+    private suspend fun find(query: LyricsQuery, client: String, bulk: Boolean): LrcLibRecord? = withContext(Dispatchers.IO) {
         val title = query.title.trim().take(300)
         require(title.isNotEmpty())
         val artist = query.artist?.trim()?.take(300)?.takeIf { it.isNotEmpty() }
         val album = query.album?.trim()?.take(300)?.takeIf { it.isNotEmpty() }
         val seconds = query.durationMs?.let { (it + 500) / 1000 }?.takeIf { it in 1..3600 }
-        val exact = artist?.let {
+        // A bulk run searches LRCLIB's catalog without triggering its external-source fallback per song.
+        if (bulk && (artist == null || album == null && seconds == null)) return@withContext null
+        val exact = artist?.takeUnless { bulk }?.let {
             get("/api/get", listOfNotNull("track_name" to title, "artist_name" to it, album?.let { a -> "album_name" to a },
                 seconds?.let { s -> "duration" to s.toString() }), client)?.let { body -> json { record(JSONObject(body)) } }
         }
         if (exact != null && lrcLibTier(exact) == 3) return@withContext exact
         val found = try {
-            delay(300)  // LRCLIB asks clients to pause briefly between requests
             get("/api/search", if (artist != null) listOf("track_name" to title, "artist_name" to artist) else listOf("q" to title), client)
                 ?.let { body ->
                     json {
@@ -149,7 +189,8 @@ internal object LrcLib {
             // The exact match still counts when the search for a better one fails.
             if (exact != null && lrcLibTier(exact) > 0) emptyList() else throw failure
         }
-        bestLrcLibRecord(query.copy(title = title), exact, found)
+        val normalized = query.copy(title = title, artist = artist, album = album)
+        if (bulk) bulkLrcLibRecord(normalized, found) else bestLrcLibRecord(normalized, exact, found)
     }
 
     private inline fun <T> json(read: () -> T): T = try { read() } catch (_: org.json.JSONException) { throw IOException("LRCLIB_BAD_ANSWER") }
@@ -159,12 +200,28 @@ internal object LrcLib {
         durationS = json.optDouble("duration").takeIf { !it.isNaN() },
         instrumental = json.optBoolean("instrumental"),
         wordSync = json.optBoolean("hasWordSync"),
-        synced = json.text("syncedLyrics"), plain = json.text("plainLyrics"), lyricsfile = json.text("lyricsfile"))
+        synced = json.text("syncedLyrics"), plain = json.text("plainLyrics"), lyricsfile = json.text("lyricsfile"),
+        artistName = json.text("artistName"), albumName = json.text("albumName"))
 
     private fun JSONObject.text(name: String): String? = if (isNull(name)) null else optString(name).takeIf { it.isNotBlank() }
 
     /** The body of a 200 answer; null for 404 (no such lyrics). */
-    private fun get(path: String, parameters: List<Pair<String, String>>, client: String): String? {
+    private suspend fun get(path: String, parameters: List<Pair<String, String>>, client: String): String? = requests.withLock {
+        val now = System.nanoTime()
+        val wait = retryAt?.let { it - now } ?: 0
+        if (wait > 0) throw LrcLibBusy(TimeUnit.NANOSECONDS.toMillis(wait) + 1)
+        lastRequestAt?.let {
+            val elapsed = TimeUnit.NANOSECONDS.toMillis(now - it)
+            if (elapsed < 1_000) delay(1_000 - elapsed)
+        }
+        try {
+            fetch(path, parameters, client)
+        } finally {
+            lastRequestAt = System.nanoTime()
+        }
+    }
+
+    private fun fetch(path: String, parameters: List<Pair<String, String>>, client: String): String? {
         val query = parameters.joinToString("&") { (name, value) -> "$name=" + URLEncoder.encode(value, "UTF-8") }
         val connection = URL("https://$HOST$path?$query").openConnection() as HttpsURLConnection
         try {
@@ -177,7 +234,14 @@ internal object LrcLib {
             when (val code = connection.responseCode) {
                 200 -> Unit
                 404 -> return null
-                429, 503 -> throw LrcLibBusy()
+                429, 503 -> {
+                    val retrySeconds = connection.getHeaderField("Retry-After")?.trim()?.toLongOrNull()
+                        ?.coerceIn(1, 86_400) ?: 30
+                    val delayMs = TimeUnit.SECONDS.toMillis(retrySeconds)
+                    val retryAfter = delayMs + Random.nextLong(delayMs / 5 + 1)
+                    retryAt = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(retryAfter)
+                    throw LrcLibBusy(retryAfter)
+                }
                 else -> throw IOException("LRCLIB_HTTP_$code")
             }
             val bytes = ByteArrayOutputStream()

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" role="img" aria-labelledby="title">
+  <title id="title">Sources</title>
+  <g stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 3H18Q20 3 20 5V13Q20 15 18 15H6Q4 15 4 13V5Q4 3 6 3Z"/>
+    <path d="M4 9H20M11 6H16.5M11 12H16.5M12 15V21M5 21V18H19V21"/>
+  </g>
+  <g fill="currentColor">
+    <circle cx="7.2" cy="6" r="0.9"/>
+    <circle cx="7.2" cy="12" r="0.9"/>
+    <circle cx="5" cy="21" r="1.2"/>
+    <circle cx="12" cy="21" r="1.2"/>
+    <circle cx="19" cy="21" r="1.2"/>
+  </g>
+</svg>

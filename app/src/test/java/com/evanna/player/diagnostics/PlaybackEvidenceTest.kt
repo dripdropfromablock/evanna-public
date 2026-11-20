@@ -6,6 +6,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PlaybackEvidenceTest {
+    @Test fun ordinaryUsbDetachIsDistinctFromAnUnexpectedTransportDisconnect() {
+        val stopped = UsbPlaybackSnapshot(state = UsbPlaybackState.ERROR, deviceId = 7,
+            route = PlaybackRoute.DIRECT_USB, failure = UsbPlaybackFailure.DISCONNECTED,
+            stats = StreamStats(3, 0, 0, true))
+        assertTrue(confirmedUsbDetach(stopped) { false })
+        assertFalse(confirmedUsbDetach(stopped) { it == 7 })
+        assertFalse(confirmedUsbDetach(stopped.copy(deviceId = null)) { false })
+        assertFalse(confirmedUsbDetach(stopped.copy(failure = UsbPlaybackFailure.TRANSFER_FAILED)) { false })
+    }
     @Test fun androidEvidenceNeverClaimsUsbVerificationOrPhysicalPrecision() {
         val snapshot = UsbPlaybackSnapshot(route = PlaybackRoute.ANDROID, state = UsbPlaybackState.PLAYING,
             source = PcmFixture(48000, 24, 2), androidStream = AndroidOutputInfo(48000, 2, 2))

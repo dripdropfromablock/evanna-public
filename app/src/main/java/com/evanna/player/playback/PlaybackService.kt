@@ -7,6 +7,8 @@ import android.hardware.usb.UsbManager
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.*
 import com.evanna.player.MainActivity
@@ -22,8 +24,18 @@ import com.evanna.player.library.libraryContextRequest
 import com.evanna.player.library.hasTreeReadGrant
 import com.evanna.player.user.*
 import com.evanna.player.equalizer.*
+import com.evanna.player.sources.SourceCatalog
+import com.evanna.player.sources.SourceReference
+import com.evanna.player.webmusic.WebStreams
+import com.evanna.player.casting.DlnaRendererClient
+import com.evanna.player.casting.PrivateTrackRelay
+import com.evanna.player.casting.RemotePlaybackSession
+import com.evanna.player.casting.RendererPhase
 import com.google.common.util.concurrent.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 @UnstableApi
 class PlaybackService : MediaSessionService() {
@@ -45,7 +57,29 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         SoundSettings.load(this)
         owner = PlaybackRuntime.owner(this)
-        player = EvannaPlayer(owner)
+        val app = applicationContext
+        val remote = rendererOutput ?: RemotePlaybackSession { renderer, item, cancel ->
+            PrivateTrackRelay.open(app, renderer, item, cancel)
+        }.also { rendererOutput = it }
+        player = EvannaPlayer(owner, remote)
+        setMediaNotificationProvider(object : DefaultMediaNotificationProvider(this) {
+            override fun getNotificationContentText(metadata: MediaMetadata): CharSequence? {
+                val artist = super.getNotificationContentText(metadata)
+                return metadata.subtitle?.takeIf { it.startsWith("DLNA � ") }?.let {
+                    listOfNotNull(artist, it).joinToString(" � ")
+                } ?: artist
+            }
+        })
+        val castWakeLock = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Evanna:dlna-playback").apply { setReferenceCounted(false) }
+        scope.launch {
+            remote.state.map { it?.phase in setOf(RendererPhase.STARTING, RendererPhase.PLAYING) }
+                .distinctUntilChanged().collectLatest { active ->
+                    if (active) try {
+                        while (isActive) { castWakeLock.acquire(600_000); delay(300_000) }
+                    } finally { if (castWakeLock.isHeld) castWakeLock.release() }
+                }
+        }
         session = MediaSession.Builder(this, player).setCallback(object : MediaSession.Callback {
             override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
                 if (controller.uid != applicationInfo.uid && !controller.isTrusted) return MediaSession.ConnectionResult.reject()
@@ -58,7 +92,12 @@ class PlaybackService : MediaSessionService() {
                     commands.add(SessionCommand(SET_USB_VOLUME_LIMIT, Bundle.EMPTY))
                     commands.add(SessionCommand(SET_USB_KEY_STEP, Bundle.EMPTY))
                     commands.add(SessionCommand(OPEN_ANDROID, Bundle.EMPTY))
+                    commands.add(SessionCommand(OPEN_RENDERER, Bundle.EMPTY))
+                    commands.add(SessionCommand(STOP_RENDERER, Bundle.EMPTY))
+                    commands.add(SessionCommand(DISCONNECT_RENDERER, Bundle.EMPTY))
                     commands.add(SessionCommand(SELECT_FILE, Bundle.EMPTY))
+                        commands.add(SessionCommand(PLAY_WEB_STREAM, Bundle.EMPTY))
+                    commands.add(SessionCommand(SEARCH_QUEUE, Bundle.EMPTY))
                     commands.add(SessionCommand(PLAY_CONVERTED, Bundle.EMPTY))
                     commands.add(SessionCommand(SET_USB_POLICY, Bundle.EMPTY))
                     commands.add(SessionCommand(SET_FOLLOW_SONG_RATE, Bundle.EMPTY))
@@ -69,6 +108,7 @@ class PlaybackService : MediaSessionService() {
                     commands.add(SessionCommand(SAVE_QUEUE_PLAYLIST,Bundle.EMPTY))
                     commands.add(SessionCommand(SET_FAVORITE,Bundle.EMPTY))
                     commands.add(SessionCommand(ARTWORK_SOURCE, Bundle.EMPTY))
+                    for(action in listOf(SELECT_SOURCE,ENQUEUE_SOURCE,PLAY_NEXT_SOURCE))commands.add(SessionCommand(action,Bundle.EMPTY))
                     for (action in listOf(ENQUEUE_LIBRARY, PLAY_NEXT_LIBRARY, SELECT_LIBRARY, SELECT_LIBRARY_CONTEXT, MOVE_QUEUE, REMOVE_QUEUE, SELECT_QUEUE)) commands.add(SessionCommand(action, Bundle.EMPTY))
                 }
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
@@ -78,6 +118,20 @@ class PlaybackService : MediaSessionService() {
                 customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
                 if (controller.uid != applicationInfo.uid)
                     return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+                when (customCommand.customAction) {
+                    OPEN_RENDERER -> {
+                        val address = args.getString(RENDERER_ADDRESS)?.takeIf { it.length in 1..4096 }
+                            ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+                        val id = args.getString(RENDERER_UDN)
+                        if (id != null && (id.length !in 6..256 || !id.startsWith("uuid:") || id.any(Char::isISOControl)))
+                            return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+                        val allowHttp = args.getBoolean(RENDERER_ALLOW_HTTP)
+                        return result(player.openRenderer { cancel ->
+                            DlnaRendererClient.connect(applicationContext, address, allowHttp, id, cancel)
+                        })
+                    }
+                    STOP_RENDERER, DISCONNECT_RENDERER -> return result(player.stopRenderer(customCommand.customAction == DISCONNECT_RENDERER))
+                }
                 val profileKey=args.getString(EvannaPlayer.DAC_PROFILE_KEY)
                 if(customCommand.customAction==SET_FAVORITE) {
                     val id=args.getString(QUEUE_ID)?.takeIf {it.length in 1..100}
@@ -91,7 +145,7 @@ class PlaybackService : MediaSessionService() {
                         ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
                     return result(player.saveQueueAsPlaylist {sources ->
                         val items=sources.map {source ->source.libraryId?.let {playlistFile(applicationContext,it)?.entry}
-                            ?: PlaylistEntry(null,source.title.take(512),source.artist?.take(512),source.album?.take(512),source.durationUs?.takeIf {it in 0..604_800_000_000L})}
+                            ?: PlaylistEntry(null,source.title.take(512),source.artist?.take(512),source.album?.take(512),source.durationUs?.takeIf {it in 0..604_800_000_000L},sourceRef=source.sourceRef)}
                         UserData.database(applicationContext).savePlaylist(null,name,items)!=null
                     })
                 }
@@ -153,16 +207,13 @@ class PlaybackService : MediaSessionService() {
                     val personal=PersonalView.entries.firstOrNull {it.name==args.getString(CONTEXT_KIND)}
                     if(personal!=null) {
                         val start=args.getString(START_ID)
-                        if(start!=null && !validLibraryId(start))return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+                        if(start!=null && !validPersonalId(start))return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
                         val action=args.getString(CONTEXT_ACTION)
                         if(action !in listOf("PLAY_FIRST","SHUFFLE","PLAY_FROM"))return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
                         return result(player.libraryContext {
-                            val songs=UserData.database(applicationContext).personalWindow(personal,start).mapNotNull {id ->
-                                val file=playlistFile(applicationContext,id)
-                                if(file?.available==true && hasTreeReadGrant(applicationContext,android.net.Uri.parse(file.root)))LocalLibrary.database(applicationContext).song(id)?.takeIf {it.available} else null
-                            }
-                            if(songs.isEmpty() || start!=null && songs.first().id!=start)return@libraryContext null
-                            ContextQueue(songs.map(::librarySource),if(action=="SHUFFLE")songs.indices.random()else 0,action=="SHUFFLE")
+                            val songs=UserData.database(applicationContext).personalWindow(personal,start).mapNotNull(::personalSource)
+                            if(songs.isEmpty() || start!=null && songs.first().personalId!=start)return@libraryContext null
+                            ContextQueue(songs,if(action=="SHUFFLE")songs.indices.random()else 0,action=="SHUFFLE")
                         })
                     }
                     if(args.getString(CONTEXT_KIND)=="PLAYLIST") {
@@ -175,14 +226,10 @@ class PlaybackService : MediaSessionService() {
                             return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
                         return result(player.libraryContext {
                             val playlist=UserData.database(applicationContext).playlist(id,revision) ?: return@libraryContext null
-                            val available=playlist.items.mapIndexedNotNull {index,item ->item.trackId?.let {key ->
-                                val song=LocalLibrary.database(applicationContext).song(key)?.takeIf {it.available}
-                                val file=playlistFile(applicationContext,key)
-                                if(song!=null && file!=null && file.available && hasTreeReadGrant(applicationContext,android.net.Uri.parse(file.root)))index to song else null
-                            }}
+                            val available=playlist.items.mapIndexedNotNull {index,item ->item.personalId?.let(::personalSource)?.let {index to it}}
                             if(available.isEmpty())return@libraryContext null
                             val first=if(action=="SHUFFLE")available.indices.random()else available.indexOfFirst {it.first>=start}.takeIf {it>=0} ?: return@libraryContext null
-                            ContextQueue(available.map {librarySource(it.second)},first,action=="SHUFFLE")
+                            ContextQueue(available.map {it.second},first,action=="SHUFFLE")
                         })
                     }
                     val request=libraryContextRequest(args.getString(CONTEXT_KIND),args.getString(CONTEXT_VALUE),args.getString(ALBUM_ARTIST),
@@ -197,6 +244,20 @@ class PlaybackService : MediaSessionService() {
                         val start=if(shuffle)window.songs.indices.filter {window.songs[it].available}.random() else window.startIndex
                         ContextQueue(window.songs.map(::librarySource),start,shuffle)
                     }, { accepted -> SessionResult(if(accepted==true)SessionResult.RESULT_SUCCESS else SessionError.ERROR_UNKNOWN,extras) },Runnable::run)
+                }
+                if (customCommand.customAction == SEARCH_QUEUE) {
+                    val ids = args.getStringArrayList(SEARCH_IDS)
+                    val action = SearchQueueAction.entries.find { it.name == args.getString(CONTEXT_ACTION) }
+                    if (action == null || ids == null || ids.size !in 1..1000 || !ids.all(::validPersonalId))
+                        return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+                    return result(player.searchQueue(action) { ids.map { personalSource(it) ?: return@searchQueue null } })
+                }
+                if(customCommand.customAction in listOf(SELECT_SOURCE,ENQUEUE_SOURCE,PLAY_NEXT_SOURCE)) {
+                    val ref=SourceReference.parse(args.getString(SOURCE_REF))
+                        ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+                    return result(player.libraryQueue(customCommand.customAction!=SELECT_SOURCE,customCommand.customAction==PLAY_NEXT_SOURCE) {
+                        SourceCatalog(applicationContext).let {catalog->if(catalog.available(ref))catalog.queueSource(ref)else null}
+                    })
                 }
                 if (customCommand.customAction in listOf(ENQUEUE_LIBRARY, SELECT_LIBRARY, PLAY_NEXT_LIBRARY)) {
                     val id = args.getString(LIBRARY_ID)?.takeIf { it.matches(Regex("[0-9a-f]{64}")) }
@@ -247,6 +308,11 @@ class PlaybackService : MediaSessionService() {
                         ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
                     return result(player.libraryQueue(false) { inspectLocalQueueSource(applicationContext, android.net.Uri.parse(value)) })
                 }
+                if (customCommand.customAction == PLAY_WEB_STREAM) {
+                    val ref = SourceReference.parse(args.getString(SOURCE_REF))?.takeIf(WebStreams::owns)
+                        ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+                    return result(player.playWebStream { WebStreams[ref]?.source })
+                }
                 if (customCommand.customAction != OPEN_USB || !args.containsKey(DEVICE_ID))
                     return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
                 val id = args.getInt(DEVICE_ID, -1)
@@ -256,7 +322,9 @@ class PlaybackService : MediaSessionService() {
                     ?.takeIf {manager.hasPermission(it) && UsbAudioOutput.isUsbAudioOutput(it)}}.getOrNull()
                     ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
                 val identity=device.dacIdentity()
-                return Futures.transform(player.openDevice(id, args.getBoolean(ONLY_IF_UNSELECTED)) {PlaybackRuntime.profile(applicationContext,identity)},{success ->
+                return Futures.transform(player.openDevice(id,args.getBoolean(ONLY_IF_UNSELECTED),args.getBoolean(AUTO_ATTACH)) {
+                    PlaybackRuntime.profile(applicationContext,identity)
+                },{success ->
                     val saved=success!=true || rememberDac(applicationContext,identity)
                     SessionResult(if(success==true)SessionResult.RESULT_SUCCESS else SessionError.ERROR_UNKNOWN,
                         Bundle().apply {putBoolean(LAST_DAC_SAVED,saved)})
@@ -272,6 +340,16 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+
+    private fun personalSource(id:String):QueueSource? {
+        SourceReference.fromPersonalId(id)?.let {ref ->
+            val catalog=SourceCatalog(applicationContext)
+            return if(catalog.available(ref))catalog.queueSource(ref)else null
+        }
+        val file=playlistFile(applicationContext,id)
+        if(file?.available!=true || !hasTreeReadGrant(applicationContext,android.net.Uri.parse(file.root)))return null
+        return LocalLibrary.database(applicationContext).song(id)?.takeIf {it.available}?.let(::librarySource)
+    }
 
     private fun librarySource(song:LibrarySong)=QueueSource(song.id,song.title,song.artist,song.album,song.durationUs,musicTags=song.musicTags) {
         val current=LocalLibrary.database(applicationContext).song(song.id)?.takeIf {it.available}
@@ -295,6 +373,20 @@ class PlaybackService : MediaSessionService() {
     }
 
     companion object {
+        // Keep uncertain Stop ownership through service recreation in the same process.
+        private var rendererOutput: RemotePlaybackSession? = null
+        const val OPEN_RENDERER = "com.evanna.player.OPEN_RENDERER"
+        const val STOP_RENDERER = "com.evanna.player.STOP_RENDERER"
+        const val DISCONNECT_RENDERER = "com.evanna.player.DISCONNECT_RENDERER"
+        const val RENDERER_ADDRESS = "rendererAddress"
+        const val RENDERER_UDN = "rendererUdn"
+        const val RENDERER_ALLOW_HTTP = "rendererAllowHttp"
+        const val SELECT_SOURCE="com.evanna.player.SELECT_SOURCE"
+        const val SEARCH_QUEUE = "com.evanna.player.SEARCH_QUEUE"
+        const val SEARCH_IDS = "searchIds"
+        const val ENQUEUE_SOURCE="com.evanna.player.ENQUEUE_SOURCE"
+        const val PLAY_NEXT_SOURCE="com.evanna.player.PLAY_NEXT_SOURCE"
+        const val SOURCE_REF="source_reference"
         internal fun volumeReadback(snapshot:UsbPlaybackSnapshot):Bundle {
             if(usbDeviceVolume(snapshot)==null)return Bundle.EMPTY
             val gain=checkNotNull(snapshot.usbVolume)
@@ -320,9 +412,11 @@ class PlaybackService : MediaSessionService() {
         const val OPEN_USB = "com.evanna.player.OPEN_USB"
         const val OPEN_ANDROID = "com.evanna.player.OPEN_ANDROID"
         const val ONLY_IF_UNSELECTED = "onlyIfUnselected"
+        const val AUTO_ATTACH = "autoAttach"
         const val ANDROID_BIT_PERFECT = "androidBitPerfect"
         const val DEVICE_ID = "deviceId"
         const val SELECT_FILE = "com.evanna.player.SELECT_FILE"
+        const val PLAY_WEB_STREAM = "com.evanna.player.PLAY_WEB_STREAM"
         const val FILE_URI = "fileUri"
         const val PLAY_CONVERTED = "com.evanna.player.PLAY_CONVERTED_ONCE"
         const val SET_USB_POLICY = "com.evanna.player.SET_USB_POLICY"

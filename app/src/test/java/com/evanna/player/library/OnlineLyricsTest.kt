@@ -1,5 +1,9 @@
 package com.evanna.player.library
 
+import com.evanna.player.metadata.MusicTagSource
+import com.evanna.player.metadata.TagFileStatus
+import java.io.IOException
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -134,6 +138,52 @@ class OnlineLyricsTest {
         val other = record(200.0, words = true, title = "Other song")
         val same = record(180.0, title = "song")
         assertSame(same, bestLrcLibRecord(query, null, listOf(other, same)))
+    }
+
+    @Test fun bulkLookupChecksTitleArtistAlbumAndDurationBeforePreferringTiming() {
+        val query = LyricsQuery("Song", "Artist", "Album", 200_400)
+        val match = record(200.0).copy(artistName = " Artist ", albumName = "album")
+        val otherTitle = match.copy(trackName = "Another Song", wordSync = true, lyricsfile = wordSynced)
+        val otherArtist = match.copy(artistName = "Cover Artist")
+        val otherRelease = match.copy(albumName = "Live Album")
+        val otherLength = match.copy(durationS = 210.0)
+        assertSame(match, bulkLrcLibRecord(query, listOf(otherTitle, otherArtist, otherRelease, otherLength, match)))
+        assertNull(bulkLrcLibRecord(query.copy(artist = null), listOf(match)))
+        assertNull(bulkLrcLibRecord(query.copy(durationMs = null), listOf(match, match.copy(durationS = 212.0))))
+    }
+
+    private val bulkSong = MusicTagSource("id", "content:/song", "Song", "Artist", "Album", "Artist",
+        "root", "Music", "Song.flac", TagFileStatus.READABLE, 200_400_000)
+
+    @Test fun bulkLeavesExistingAndUnreadableLyricsAlone() = runBlocking {
+        assertEquals(BulkLyricsOutcome.EXISTING, fillMissingLyrics(bulkSong, { true },
+            { error("Existing lyrics triggered a request") }, { error("Existing lyrics triggered a save") }))
+        assertEquals(BulkLyricsOutcome.UNAVAILABLE, fillMissingLyrics(bulkSong, { throw IOException() },
+            { error("Unreadable lyrics triggered a request") }, { error("Unreadable lyrics triggered a save") }))
+        assertEquals(BulkLyricsOutcome.UNAVAILABLE, fillMissingLyrics(bulkSong.copy(status = TagFileStatus.CUE),
+            { error("A virtual track was inspected") }, { error("A virtual track triggered a request") }, { error("Unexpected save") }))
+    }
+
+    @Test fun bulkReportsSavedLocationAndPreservesLyricsThatAppearDuringLookup() = runBlocking {
+        val match = LyricsLookup.Match("Words", checkNotNull(parseLyrics("Words")))
+        for ((place, result) in listOf(LyricsPlace.BESIDE_SONG to BulkLyricsOutcome.BESIDE_SONG,
+            LyricsPlace.IN_APP to BulkLyricsOutcome.IN_APP, null to BulkLyricsOutcome.EXISTING)) {
+            assertEquals(result, fillMissingLyrics(bulkSong, { false }, { query ->
+                assertEquals(LyricsQuery("Song", "Artist", "Album", 200_400), query)
+                match
+            }, { found -> assertSame(match, found); place }))
+        }
+    }
+
+    @Test fun bulkLetsTheCallerPauseForLrcLibRateLimits() = runBlocking {
+        val busy = LrcLibBusy(1_234)
+        val failure = try {
+            fillMissingLyrics(bulkSong, { false }, { throw busy }, { error("Rate limit triggered a save") })
+            null
+        } catch (rateLimit: LrcLibBusy) {
+            rateLimit
+        }
+        assertSame(busy, failure)
     }
 
     @Test fun anInstrumentalRecordIsReportedWhenNothingHasWords() {

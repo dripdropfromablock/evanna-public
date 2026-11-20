@@ -83,7 +83,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-internal fun routeLabel(route: String) = when (route) { "ANDROID" -> "Android audio"; "DIRECT_USB" -> "Direct USB"; else -> "Choose output" }
+internal fun routeLabel(route: String) = when (route) { "ANDROID" -> "Android audio"; "DIRECT_USB" -> "Direct USB"; "DLNA" -> "Network speaker"; else -> "Choose output" }
 
 /** Title row for pushed screens: an accent chevron and a centred title. */
 @Composable

@@ -7,9 +7,11 @@ import kotlin.math.roundToLong
 
 internal const val PLAYLIST_LIMIT=1000
 internal data class PlaylistEntry(val trackId:String?,val title:String,val artist:String?=null,val album:String?=null,
-    val durationUs:Long?=null,val fileName:String?=null) {
+    val durationUs:Long?=null,val fileName:String?=null,val sourceRef:com.evanna.player.sources.SourceReference?=null) {
+    val personalId get()=sourceRef?.personalId ?: trackId
     init {
         require(trackId==null || trackId.matches(Regex("[0-9a-f]{64}")))
+        require(sourceRef==null || trackId==null && fileName==null)
         require(title.length in 1..512 && (artist?.length ?: 0)<=512 && (album?.length ?: 0)<=512)
         require(durationUs==null || durationUs in 0..604_800_000_000L)
         require(fileName==null || fileName.length in 1..4096 && fileName.none {it=='/' || it=='\\' || it.isISOControl()})

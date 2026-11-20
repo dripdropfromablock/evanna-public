@@ -76,8 +76,8 @@ internal fun PlaylistsScreen(onBack:()->Unit,onPlay:(Long,Long,Boolean,Int,(Bool
         try {
             val result=withContext(Dispatchers.IO) {
                 val list=database.playlists();val detail=selectedId?.let {database.playlist(it)}
-                val available=detail?.items?.mapNotNull {it.trackId}?.distinct()?.filter {id ->
-                    playlistFile(context,id)?.let {it.available && hasTreeReadGrant(context,android.net.Uri.parse(it.root))}==true
+                val available=detail?.items?.mapNotNull {it.personalId}?.distinct()?.filter {id ->
+                    personalSourceInfo(context,id)?.available==true
                 }?.toSet().orEmpty()
                 Triple(list,detail,available)
             }
@@ -141,14 +141,14 @@ internal fun PlaylistsScreen(onBack:()->Unit,onPlay:(Long,Long,Boolean,Int,(Bool
             item {TextButton(onClick={exportId=list.id;exportRevision=list.revision;exporter.launch("Evanna-playlist.m3u8")},enabled=!busy,modifier=Modifier.heightIn(min=48.dp)){Text("Export M3U8")}}
             item {TextButton(onClick={operate {
                 val linked=withContext(Dispatchers.IO){list.items.map {entry ->
-                    if(entry.trackId!=null && entry.trackId in availability)entry else matchPlaylistEntry(entry,playlistMatches(context,entry).map {it.entry}.distinctBy {it.trackId}) ?: entry
+                    if(entry.sourceRef!=null || entry.trackId!=null && entry.trackId in availability)entry else matchPlaylistEntry(entry,playlistMatches(context,entry).map {it.entry}.distinctBy {it.trackId}) ?: entry
                 }}
                 check(withContext(Dispatchers.IO){database.savePlaylist(list.id,list.name,linked,list.revision)}!=null)
                 revision++;message="Missing-song search finished; ambiguous or inaccessible songs were kept."
             }},enabled=!busy,modifier=Modifier.heightIn(min=48.dp)){Text("Find missing songs")}}
             item {TextButton(onClick={delete=list},enabled=!busy,modifier=Modifier.heightIn(min=48.dp)){Text("Delete playlist")}}
             itemsIndexed(list.items,key={index,_->index}) {index,entry ->Column {
-                val available=entry.trackId in availability
+                val available=entry.personalId in availability
                 Text(entry.title,style=EvannaDesign.typography.titleMedium,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)
                     .then(if(available && !busy)Modifier.clickable {onPlay(list.id,list.revision,false,index){if(!it)message="Song could not start; reload the list and check output and conversion permission."}}else Modifier))
                 Text(entry.artist ?: "Unknown artist",style=EvannaDesign.typography.bodyMedium)

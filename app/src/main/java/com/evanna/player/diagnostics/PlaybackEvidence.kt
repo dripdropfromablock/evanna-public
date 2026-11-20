@@ -1,8 +1,13 @@
 package com.evanna.player.diagnostics
 
 import com.evanna.player.playback.UsbPlaybackSnapshot
+import com.evanna.player.playback.UsbPlaybackFailure
 import com.evanna.player.playback.PlaybackRoute
 import com.evanna.player.playback.usbSamplePathEligible
+
+internal fun confirmedUsbDetach(snapshot: UsbPlaybackSnapshot, deviceAttached: (Int) -> Boolean): Boolean =
+    snapshot.route == PlaybackRoute.DIRECT_USB && snapshot.failure == UsbPlaybackFailure.DISCONNECTED &&
+        snapshot.deviceId?.let { !deviceAttached(it) } == true
 
 /** Only typed signal evidence crosses this boundary; source locations and track IDs are excluded. */
 internal fun playbackSignalFields(snapshot: UsbPlaybackSnapshot?): Map<ReportField, String> = buildMap {

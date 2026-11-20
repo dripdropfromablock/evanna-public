@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.update
 import com.evanna.player.loudness.storedLevelingMode
 import com.evanna.player.equalizer.storedCrossfeed
 
-internal const val USER_DB_VERSION=8
+internal const val USER_DB_VERSION=9
 
 internal fun userSchema(version:Int):List<String> = listOf(
     "CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL)",
@@ -31,7 +31,8 @@ internal fun userSchema(version:Int):List<String> = listOf(
         "CREATE TABLE eq_presets(id INTEGER PRIMARY KEY,name TEXT NOT NULL,preamp_db REAL NOT NULL,bands_json TEXT NOT NULL,created INTEGER NOT NULL,modified INTEGER NOT NULL,revision INTEGER NOT NULL)",
         "ALTER TABLE dac_profiles ADD COLUMN eq_preset_id INTEGER REFERENCES eq_presets(id) ON DELETE SET NULL")else emptyList())+
     (if(version>=7)listOf("ALTER TABLE dac_profiles ADD COLUMN crossfeed TEXT NOT NULL DEFAULT 'OFF'")else emptyList())+
-    if(version>=8)listOf("ALTER TABLE eq_presets ADD COLUMN graphic INTEGER NOT NULL DEFAULT 0")else emptyList()
+    (if(version>=8)listOf("ALTER TABLE eq_presets ADD COLUMN graphic INTEGER NOT NULL DEFAULT 0")else emptyList())+
+    (if(version>=9)listOf("ALTER TABLE playlist_items ADD COLUMN source_ref TEXT")else emptyList())
 
 /** Durable personal data is separate from the rebuildable file index. All calls run on an IO lane. */
 internal class UserDatabase(context:Context,name:String="user.db"):SQLiteOpenHelper(context,name,null,USER_DB_VERSION) {

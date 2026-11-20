@@ -18,10 +18,13 @@ internal suspend fun loadSessionArtwork(context:Context,owner:UsbSessionOwner,pl
         player.setCurrentArtwork(id,null)
         val source=owner.queueSource(id) ?: return@collectLatest
         val bytes=try {withContext(Dispatchers.IO) {
-            val cache=LocalLibrary.artwork(context)
-            val bitmap=source.libraryId?.let {cache.song(it,ArtworkSize.MEDIUM)}
-                ?: source.fileUri?.let {cache.file(id,it,ArtworkSize.MEDIUM)}
-            bitmap?.let(::artworkForSession)
+            if(source.sourceRef!=null)com.evanna.player.sources.SourceCatalog(context).artwork(source.sourceRef,com.evanna.player.network.CancelScope())
+            else {
+                val cache=LocalLibrary.artwork(context)
+                val bitmap=source.libraryId?.let {cache.song(it,ArtworkSize.MEDIUM)}
+                    ?: source.fileUri?.let {cache.file(id,it,ArtworkSize.MEDIUM)}
+                bitmap?.let(::artworkForSession)
+            }
         }}catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){null}
         currentCoroutineContext().ensureActive()
         player.setCurrentArtwork(id,bytes)

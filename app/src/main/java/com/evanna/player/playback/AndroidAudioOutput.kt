@@ -27,6 +27,8 @@ internal interface AndroidTrackSink {
     fun release()
 }
 
+internal class AndroidOutputRouteChanged : IllegalStateException("Android output device changed")
+
 internal class PlaybackHeadCounter {
     private var previous = 0L
     private var wraps = 0L
@@ -73,19 +75,27 @@ internal class AndroidAudioOutput(
         check(!closed && !active && !writing.get() && stopComplete)
         require(source.sampleRate in 8000..384000 && source.channels in 1..2)
         sink?.release(); sink = null
+        // A stopped system-output session can pick the current device on the next start.
+        if (routeLost && !bitPerfect) pinnedDevice = null
         submitted.set(0); errors.set(0); completed = 0; observedUnderruns = 0
         head = PlaybackHeadCounter(); failed = false; routeLost = false; sealed = false; drained = false
-        val current = factory(source, pinnedDevice).also { sink = it; stopComplete = false }
         try {
+            val current = factory(source, pinnedDevice).also { sink = it; stopComplete = false }
             check(current.sampleRate == source.sampleRate && current.channels == source.channels && current.bitPerfect == bitPerfect &&
                 (!bitPerfect || source.strictEligible && current.encodingBits == source.significantBits))
             current.play()
-            check(pinnedDevice == null || pinnedDevice == current.deviceId) { "Select Android output again after a device change" }
+            if (pinnedDevice != null && pinnedDevice != current.deviceId) throw AndroidOutputRouteChanged()
             pinnedDevice = current.deviceId
             active = true
-            check(ready())
+            if (!ready()) {
+                if (routeLost) throw AndroidOutputRouteChanged()
+                error("Android output is not ready")
+            }
             return StartedOutput.Android(AndroidOutputInfo(current.sampleRate, current.channels, current.deviceType,
                 bitPerfect, current.encodingBits.takeIf { bitPerfect }))
+        } catch (failure: AndroidOutputRouteChanged) {
+            routeLost = true
+            throw failure
         } catch (failure: Exception) { failed = true; errors.incrementAndGet(); throw failure }
     }
 

@@ -91,7 +91,10 @@ internal object PlaybackRuntime {
             openUsbPlaybackOutput(manager,id)
         }, gate, { CrashRecorder.event(it) }, persistence=queueStore,
             restoreSource={ saved ->
-                QueueSource(saved.libraryId,saved.title,saved.artist,saved.album,saved.durationUs,saved.fileUri,saved.musicTags) {
+                if(saved.sourceRef!=null)QueueSource(null,saved.title,saved.artist,saved.album,saved.durationUs,sourceRef=saved.sourceRef,
+                    prepare={cancel->com.evanna.player.sources.SourceCatalog(app).queueSource(saved.sourceRef).prepare!!.invoke(cancel)}) {
+                    com.evanna.player.sources.SourceCatalog(app).queueSource(saved.sourceRef).create()
+                } else QueueSource(saved.libraryId,saved.title,saved.artist,saved.album,saved.durationUs,saved.fileUri,saved.musicTags) {
                     if(saved.libraryId!=null)libraryTrack(app,com.evanna.player.library.LocalLibrary.database(app).song(saved.libraryId)?.takeIf { it.available }
                         ?: throw java.io.IOException("LIBRARY_SONG_UNAVAILABLE"))
                     else com.evanna.player.decoder.DecodedAudioTrack.local(app,android.net.Uri.parse(saved.fileUri ?: throw java.io.IOException("SOURCE_RESELECTION_REQUIRED")))

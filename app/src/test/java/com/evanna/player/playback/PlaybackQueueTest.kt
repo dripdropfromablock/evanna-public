@@ -166,6 +166,20 @@ class PlaybackQueueTest {
             assertEquals(UsbPlaybackState.CLOSED,owner.snapshot.value.state)
         } finally { owner.close() }
     }
+    @Test fun appendingAnAlbumPreservesItsTrackOrderAndCurrentTrack() = runBlocking {
+        val owner = UsbSessionOwner(UsbPlaybackController { Output() }, Focus())
+        try {
+            owner.enqueue(entry("Current"))
+            owner.enqueue(entry("Earlier queue item"))
+            val current = owner.queue.value.current?.id
+            assertTrue(owner.enqueueSelection(next = false) { listOf(entry("Disc 1"), entry("Disc 2")) })
+            assertEquals(listOf("Current", "Earlier queue item", "Disc 1", "Disc 2"), owner.queue.value.items.map { it.title })
+            assertEquals(current, owner.queue.value.current?.id)
+        } finally {
+            owner.close()
+        }
+    }
+
     @Test fun pauseDuringContextLookupCancelsItsPlayIntentBeforeMutation() = runBlocking {
         val owner=UsbSessionOwner(UsbPlaybackController {Output()},Focus())
         val entered=CountDownLatch(1);val release=CountDownLatch(1)

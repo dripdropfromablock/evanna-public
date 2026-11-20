@@ -49,9 +49,10 @@ internal fun TextField(value: String, onValueChange: (String) -> Unit, modifier:
 
 @Composable
 internal fun OutlinedTextField(value: String, onValueChange: (String) -> Unit, label: String,
-    modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false,
-) = InputField(value, onValueChange, modifier, label, null, null, null, KeyboardOptions.Default, KeyboardActions.Default,
-    FieldShape, FieldColors(Color.Transparent, Color.Transparent), enabled, outlined = true, isError = isError)
+    modifier: Modifier = Modifier, enabled: Boolean = true, isError: Boolean = false, secret:Boolean=false,
+) = InputField(value, onValueChange, modifier, label, null, null, null,
+    if(secret)KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Password) else KeyboardOptions.Default,
+    KeyboardActions.Default,FieldShape, FieldColors(Color.Transparent, Color.Transparent), enabled, outlined = true, isError = isError,secret=secret)
 
 private val FieldShape = RoundedCornerShape(12.dp).continuous()
 
@@ -100,6 +101,7 @@ internal fun SearchField(value: String, onValueChange: (String) -> Unit, placeho
 private fun InputField(value: String, onValueChange: (String) -> Unit, modifier: Modifier, label: String?, placeholder: String?,
     leadingIcon: (@Composable () -> Unit)?, trailingIcon: (@Composable () -> Unit)?, keyboardOptions: KeyboardOptions,
     keyboardActions: KeyboardActions, shape: Shape, colors: FieldColors, enabled: Boolean, outlined: Boolean, isError: Boolean,
+    secret:Boolean=false,
 ) {
     val palette = EvannaDesign.colorScheme
     val dark = LocalLookStyle.current.look.dark
@@ -117,6 +119,7 @@ private fun InputField(value: String, onValueChange: (String) -> Unit, modifier:
     val selection = remember(palette.primary) { TextSelectionColors(palette.primary, palette.primary.copy(alpha = 0.35f)) }
     CompositionLocalProvider(LocalTextSelectionColors provides selection, LocalContentColor provides palette.onSurfaceVariant) {
         BasicTextField(value = value, onValueChange = onValueChange, enabled = enabled, singleLine = true,
+            visualTransformation = if(secret)androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
             textStyle = style.copy(color = ink), cursorBrush = SolidColor(palette.primary),
             keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
             modifier = modifier.onFocusChanged { focused = it.isFocused }.semantics {

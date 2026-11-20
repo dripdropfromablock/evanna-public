@@ -80,6 +80,11 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import com.evanna.player.playback.PlaybackService
+import com.evanna.player.playback.SearchQueueAction
+import com.evanna.player.sources.SourceCatalog
+import com.evanna.player.webmusic.MusicSearchScreen
+import com.evanna.player.webmusic.SearchTrack
+import androidx.lifecycle.lifecycleScope
 import com.evanna.player.playback.EvannaPlayer
 import com.evanna.player.playback.UsbPlaybackPolicy
 import com.evanna.player.playback.USB_START_VOLUME_DEFAULT_DB
@@ -104,9 +109,8 @@ import com.evanna.player.library.FoundLyrics
 import com.evanna.player.library.LrcLib
 import com.evanna.player.library.Lyrics
 import com.evanna.player.library.LyricsQuery
-import com.evanna.player.library.lrcLibText
-import com.evanna.player.library.lrcLibTier
-import com.evanna.player.library.parseLyrics
+import com.evanna.player.library.LyricsLookup
+import com.evanna.player.library.lrcLibClient
 import com.evanna.player.library.musicNote
 import com.evanna.player.usb.UsbPermissionSession
 import com.evanna.player.usb.DacIdentity
@@ -206,6 +210,7 @@ class MainActivity : ComponentActivity() {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var playbackMessage by mutableStateOf("Connecting playback controls…")
     private var playerUi by mutableStateOf(PlayerPresentation())
+    private var sessionCover by mutableStateOf<ByteArray?>(null)
     private var playlistAddIds by mutableStateOf<List<String>>(emptyList())
     private var playlistAddFilter by mutableStateOf<com.evanna.player.library.LibraryFilter?>(null)
     private var playlistSaveQueue by mutableStateOf(false)
@@ -264,6 +269,9 @@ class MainActivity : ComponentActivity() {
         crossfeed=com.evanna.player.equalizer.storedCrossfeed(extras?.getString(EvannaPlayer.CROSSFEED))
         signalStatus = extras?.getString(EvannaPlayer.SIGNAL_STATUS) ?: ""
         playerUi = playerPresentation(player)
+        if(outputRoute==EvannaPlayer.DLNA_ROUTE)playAfterOpenUntil=0
+        val cover=player.mediaMetadata.artworkData
+        if(!sessionCover.contentEquals(cover))sessionCover=cover
         val keyContext=usbKeyContext()
         if(keyContext!=previousKeys)usbKeys.observe(keyContext)?.let(::sendUsbKeyVolume)
         if(keyContext==null)usbKeyIndicator=null
@@ -383,7 +391,7 @@ class MainActivity : ComponentActivity() {
             // On a song change the old cover and palette stay until the new cover is ready, so the player never flashes
             // the empty note card. A song with no cover clears them, and so does a cover still loading after 0.6 s.
             var artwork by remember(controller) { mutableStateOf<Pair<Bitmap, Color?>?>(null) }
-            LaunchedEffect(controller, songId, scansFinished) {
+            LaunchedEffect(controller, songId, scansFinished, sessionCover) {
                 if (controller == null || songId == null) { artwork = null; return@LaunchedEffect }
                 val slow = launch { delay(600); artwork = null }
                 val decoded = try { currentArtwork(controller, songId) }
@@ -440,6 +448,20 @@ class MainActivity : ComponentActivity() {
                 // Tabs stay alive side by side, so a tab keeps its scroll spot and loaded lists.
                 // Set by the first scroll on the Carousel; cleared when the Carousel is left (see the system bars below).
                 var carouselScrolled by remember { mutableStateOf(false) }
+                val libraryContent: @Composable (Boolean) -> Unit = { search ->
+                    LibraryScreen(
+                        bottomInset = dockInset,
+                        onSelect = { request, complete -> libraryContext(request) { success -> complete(success); if (success) navigate(PlayerScreen.NOW_PLAYING) } },
+                        onAdd = { id, result -> librarySong(id, true, result) },
+                        onPlayNext = { id, result -> librarySong(id, true, result, next = true) },
+                        searchMode = search, onPlaylists = { openPlaylists() },
+                        onPlaylistSong = { openPlaylists(listOf(it)) }, onPlaylistAlbum = { openPlaylists(filter = it) },
+                        onFavorites = { navigate(PlayerScreen.FAVORITES) }, onRecent = { navigate(PlayerScreen.RECENT) },
+                        onMostPlayed = { navigate(PlayerScreen.MOST) }, onSources = { navigate(PlayerScreen.SOURCES) },
+                        nowPlaying = playerUi.takeIf { it.hasSong }?.let {
+                            com.evanna.player.library.NowPlayingMark(it.title, it.album, it.playing)
+                        })
+                }
                 val tabContent: @Composable (PlayerScreen) -> Unit = { tab ->
                     if (tab == PlayerScreen.OUTPUT) SettingsScreen(tab, null, dockInset, openNotices)
                     else if (tab == PlayerScreen.CAROUSEL) com.evanna.player.library.CarouselScreen(
@@ -454,21 +476,14 @@ class MainActivity : ComponentActivity() {
                         },
                         onScrolled = { carouselScrolled = true },
                     )
-                    else LibraryScreen(
-                        bottomInset = dockInset,
-                        onSelect = { request, complete -> libraryContext(request) { success -> complete(success); if (success) navigate(PlayerScreen.NOW_PLAYING) } },
-                        onAdd = { id, result -> librarySong(id, true, result) },
-                        onPlayNext = { id, result -> librarySong(id, true, result, next=true) },
-                        searchMode = tab == PlayerScreen.SEARCH,onPlaylists={openPlaylists()},
-                        onPlaylistSong={openPlaylists(listOf(it))},onPlaylistAlbum={openPlaylists(filter=it)},onFavorites={navigate(PlayerScreen.FAVORITES)},
-                        onRecent={navigate(PlayerScreen.RECENT)},onMostPlayed={navigate(PlayerScreen.MOST)},
-                        nowPlaying = playerUi.takeIf { it.hasSong }?.let {
-                            com.evanna.player.library.NowPlayingMark(it.title, it.album, it.playing)
-                        })
+                    else if (tab == PlayerScreen.SEARCH) MusicSearchScreen(dockInset, ::searchQueue) { libraryContent(true) }
+                    else libraryContent(false)
                 }
                 // Screens pushed over the tabs; Now Playing is the sheet above everything.
                 val pushedContent: @Composable (PlayerScreen) -> Unit = { shown -> when (shown) {
                     PlayerScreen.CAROUSEL, PlayerScreen.LIBRARY, PlayerScreen.SEARCH, PlayerScreen.NOW_PLAYING -> Unit
+                    PlayerScreen.SOURCES -> com.evanna.player.sources.SourcesScreen(::back,dockInset,::playSource)
+                    PlayerScreen.MUSIC_TAGS -> com.evanna.player.metadata.MusicTagsScreen(::back, dockInset)
                     PlayerScreen.PLAYLISTS -> com.evanna.player.user.PlaylistsScreen(::back,::playPlaylist,::saveQueuePlaylist,
                         playlistAddIds,playlistAddFilter,playlistSaveQueue,onAdded={playlistAddIds=emptyList();playlistAddFilter=null;playlistSaveQueue=false;back()})
                     PlayerScreen.FAVORITES,PlayerScreen.RECENT,PlayerScreen.MOST -> {
@@ -716,6 +731,7 @@ class MainActivity : ComponentActivity() {
                                     if (device.permitted) checkPlaybackReadiness() else requestAccess()
                                 }
                             }
+                            com.evanna.player.casting.RendererPicker(mediaController)
                         }
                     }
                 }
@@ -753,7 +769,7 @@ class MainActivity : ComponentActivity() {
         val state = devices.firstOrNull { it.device.deviceId == id } ?: return
         if (id == activeDacId || id == autoConnectingId) return
         val eligible = shouldAutoConnect(autoConnectEnabled, sameDac(lastDac, state.device.dacIdentity()), state.permitted,
-            alreadyOpen = false, busy = autoConnectingId != null || pending != null || playerUi.playing)
+            alreadyOpen = false, busy = autoConnectingId != null || pending != null || playerUi.playing || outputRoute==EvannaPlayer.DLNA_ROUTE)
         if (!eligible) { message = "${state.device.dacIdentity().displayName} connected. Choose an output to use it."; return }
         selectedId = id
         autoConnectingId = id
@@ -823,6 +839,9 @@ class MainActivity : ComponentActivity() {
         // One large cover serves both Now Playing and the mini player.
         return source.getString(PlaybackService.LIBRARY_ID)?.let { cache.song(it, ArtworkSize.LARGE) }
             ?: source.getString(PlaybackService.FILE_URI)?.let { cache.file(id, it, ArtworkSize.LARGE) }
+            ?: sessionCover?.takeIf {playerUi.id==id && it.isNotEmpty()}?.let {bytes ->
+                withContext(Dispatchers.Default){android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size)}
+            }
     }
     /** A small cover for a queue row; null when there is none or the controls are gone. */
     private suspend fun queueArtwork(id: String): Bitmap? {
@@ -857,11 +876,11 @@ class MainActivity : ComponentActivity() {
         val source = sourceOf(controller, id) ?: throw java.io.IOException("LYRICS_SOURCE_UNAVAILABLE")
         val library = source.getString(PlaybackService.LIBRARY_ID)
         val file = if (library == null) source.getString(PlaybackService.FILE_URI) ?: throw java.io.IOException("LYRICS_SOURCE_UNAVAILABLE") else null
-        val client = "Evanna ${installedPackage.versionName.orEmpty()} (https://github.com/dripdropfromablock/evanna-public)"
-        val record = LrcLib.find(query, client) ?: return FoundLyrics.NotFound
-        if (lrcLibTier(record) == 0) return if (record.instrumental) FoundLyrics.Instrumental else FoundLyrics.NotFound
-        val text = lrcLibText(record, query) ?: return FoundLyrics.NotFound
-        val lyrics = parseLyrics(text) ?: return FoundLyrics.NotFound
+        val (text, lyrics) = when (val match = LrcLib.lookup(query, lrcLibClient(installedPackage.versionName.orEmpty()))) {
+            LyricsLookup.NotFound -> return FoundLyrics.NotFound
+            LyricsLookup.Instrumental -> return FoundLyrics.Instrumental
+            is LyricsLookup.Match -> match
+        }
         val kept = LocalLibrary.lyrics(applicationContext).keep(applicationContext, library ?: id, file, text, lyrics)
         // Found on its own, the lyrics just go where they can; Now Playing asks about the folder only when the user searched.
         val folder = kept.askRoot?.takeUnless { auto }?.let { root ->
@@ -1021,6 +1040,7 @@ class MainActivity : ComponentActivity() {
         val result = controller.sendCustomCommand(SessionCommand(PlaybackService.OPEN_USB, Bundle.EMPTY),
             Bundle().apply {
                 putInt(PlaybackService.DEVICE_ID, id)
+                putBoolean(PlaybackService.AUTO_ATTACH,play)
             })
         result.addListener({
             autoConnectingId = null
@@ -1096,6 +1116,54 @@ class MainActivity : ComponentActivity() {
             putString(PlaybackService.QUEUE_ID,id);putBoolean(EvannaPlayer.FAVORITE,selected)
         })
         reply.addListener({if(mediaController===controller && runCatching {reply.get().resultCode}.getOrNull()!=SessionResult.RESULT_SUCCESS)actionError="The favorite could not be changed."},mainExecutor)
+    }
+    private fun searchQueue(tracks: List<SearchTrack>, action: SearchQueueAction, complete: (Boolean) -> Unit) {
+        val controller = mediaController ?: run { complete(false); return }
+        lifecycleScope.launch {
+            val ids = try {
+                withContext(Dispatchers.IO) {
+                    val catalog = SourceCatalog(applicationContext)
+                    tracks.map(catalog::searchPlaybackId)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                complete(false)
+                return@launch
+            }
+            if (mediaController !== controller) {
+                complete(false)
+                return@launch
+            }
+            val reply = controller.sendCustomCommand(SessionCommand(PlaybackService.SEARCH_QUEUE, Bundle.EMPTY), Bundle().apply {
+                putStringArrayList(PlaybackService.SEARCH_IDS, ArrayList(ids))
+                putString(PlaybackService.CONTEXT_ACTION, action.name)
+            })
+            reply.addListener({
+                val accepted = mediaController === controller && runCatching { reply.get().resultCode }.getOrNull() == SessionResult.RESULT_SUCCESS
+                complete(accepted)
+                if (accepted) {
+                    refreshPlayback(controller)
+                    if (action == SearchQueueAction.PLAY) navigate(PlayerScreen.NOW_PLAYING)
+                }
+            }, mainExecutor)
+        }
+    }
+
+    private fun playSource(ref:com.evanna.player.sources.SourceReference,action:String,complete:(Boolean)->Unit) {
+        val controller=mediaController ?: run {complete(false);return}
+        val reply=controller.sendCustomCommand(SessionCommand(action,Bundle.EMPTY),Bundle().apply {
+            putString(PlaybackService.SOURCE_REF,ref.encoded)
+        })
+        reply.addListener({
+            val success=mediaController===controller && runCatching {reply.get().resultCode}.getOrNull()==SessionResult.RESULT_SUCCESS
+            complete(success)
+            if(success && action==PlaybackService.SELECT_SOURCE){
+                controller.play()
+                refreshPlayback(controller)
+                navigate(PlayerScreen.NOW_PLAYING)
+            }
+        },mainExecutor)
     }
     private fun playPersonal(view:com.evanna.player.user.PersonalView,id:String?,shuffle:Boolean,complete:(Boolean)->Unit) {
         val controller=mediaController ?: run {complete(false);return}
@@ -1389,7 +1457,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private val settingsPages = setOf(PlayerScreen.OUTPUT, PlayerScreen.AUDIO_OUTPUT, PlayerScreen.LIBRARY_SETTINGS,
-        PlayerScreen.APPEARANCE, PlayerScreen.SETTINGS_TOOLS)
+        PlayerScreen.APPEARANCE, PlayerScreen.SETTINGS_TOOLS, PlayerScreen.MUSIC_TAGS)
 
     /** Settings and EQ use the grouped background. Lists sit on the plain one. */
     @Composable
@@ -1453,6 +1521,8 @@ class MainActivity : ComponentActivity() {
                     ),
                     "App" to listOf(
                         SettingsEntry("Library settings", "Manage folders and open files", null, PlayerScreen.LIBRARY_SETTINGS, musicNote, TilePurple),
+                        SettingsEntry("Music Tags", "Missing tags and bulk editing", null, PlayerScreen.MUSIC_TAGS, musicNote, TileOrange),
+                        SettingsEntry("Sources", "Music servers and audio links", null, PlayerScreen.SOURCES, PlayerIcons.Sources, TilePurple),
                         SettingsEntry("Appearance", null, look.label, PlayerScreen.APPEARANCE, PlayerIcons.Appearance, TileBlue),
                         SettingsEntry("Diagnostics and notices", "Signal status, file checks and licenses", null, PlayerScreen.SETTINGS_TOOLS,
                             PlayerIcons.Pulse, TileGray),
@@ -1479,6 +1549,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
             if (page == PlayerScreen.AUDIO_OUTPUT) {
+                item(key = "network-speakers") {
+                    SettingsSection("Network speakers") {
+                        row { SettingsCell { com.evanna.player.casting.RendererPicker(mediaController) } }
+                    }
+                }
                 item(key = "dac") {
                     SettingsSection("Check your DAC", footer = "Direct USB sends music to your DAC and checks its volume before playback.",
                         choices = true) {
@@ -1525,6 +1600,7 @@ class MainActivity : ComponentActivity() {
                         when (outputRoute) {
                             "ANDROID" -> "Android audio uses system volume and may change the audio."
                             "DIRECT_USB" -> "Direct USB uses DAC volume and bypasses Android's mixer."
+                            EvannaPlayer.DLNA_ROUTE -> "The network speaker decodes and plays the track."
                             else -> "No output selected"
                         },
                         // Shown only on Android 14+ when a USB output lists a bit-perfect mixer; never chosen automatically.
@@ -1763,6 +1839,11 @@ private val FloorFade = 32.dp
 private data class LicenseFile(val title: String, val asset: String, val source: String? = null)
 private val licenseFiles = listOf(
     LicenseFile("Evanna · GPL 3.0", "licenses/Evanna-GPL-3.0.txt"),
+    LicenseFile("SMB encryption · Bouncy Castle", "licenses/Bouncy-Castle.txt", "https://www.bouncycastle.org/about/license/"),
+    LicenseFile("MBassador · MIT", "licenses/MBassador-MIT.txt", "https://github.com/bennidi/mbassador"),
+    LicenseFile("SLF4J · MIT", "licenses/SLF4J-MIT.txt", "https://github.com/qos-ch/slf4j"),
+    LicenseFile("libtorrent4j · MIT", "licenses/libtorrent4j-MIT.txt", "https://github.com/aldenml/libtorrent4j"),
+    LicenseFile("libtorrent · BSD 3-Clause", "licenses/libtorrent-BSD.txt", "https://github.com/arvidn/libtorrent"),
     LicenseFile("libebur128 · MIT", "licenses/libebur128-MIT.txt", "https://github.com/jiixyj/libebur128/tree/67b33abe1558160ed76ada1322329b0e9e058b02"),
     LicenseFile("libebur128 queue · BSD 3-Clause", "licenses/libebur128-queue-BSD-3-Clause.txt"),
     LicenseFile("C++ runtime · LLVM notices", "licenses/NDK-libcxx.txt", "https://developer.android.com/ndk/downloads"),
